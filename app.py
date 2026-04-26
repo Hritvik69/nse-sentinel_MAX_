@@ -2844,7 +2844,7 @@ with st.sidebar:
         unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    scan_clicked = st.button("▶  SCAN MARKET NOW")
+    scan_clicked = False
     sector_screener_clicked = st.button("🔭 Sector Screener Dashboard", key="sector_screener_dashboard_btn")
     battle_compare_clicked = st.button("⚔️ Compare Stocks", key="battle_compare_btn")
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
@@ -3029,6 +3029,12 @@ if not _show_sector_screener:
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
+main_scan_clicked = False
+if not _show_sector_screener:
+    _scan_cta_cols = st.columns([1.5, 3.2, 1.5])
+    with _scan_cta_cols[1]:
+        main_scan_clicked = st.button("▶  SCAN MARKET NOW", key="main_panel_scan_btn", width="stretch")
+
 # ── SCAN ──────────────────────────────────────────────────────────────
 
 # ── 🕰️ Time-travel banner (shown whenever TT is active) ───────────────
@@ -3042,7 +3048,7 @@ if _tt_banner:
         unsafe_allow_html=True,
     )
 
-if scan_clicked:
+if scan_clicked or main_scan_clicked:
     st.markdown(
         f'<div class="section-lbl">⏳ Scanning {n:,} NSE Equities — Mode {mode_display["display_num"]}: {mode_display["display_name"]}</div>',
         unsafe_allow_html=True)
