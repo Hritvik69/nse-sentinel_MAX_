@@ -17,7 +17,7 @@ CHANGES vs original:
   • All existing analyse() / run_scan()
     logic is 100 % untouched.
 """
-#https://nse-sentinelmax-qreolqqgfvhb3tm4nwapno.streamlit.app/
+#https://nse-sentinelmax-msrfjdkwmksf6jama4jvmx.streamlit.app/
 #.\.venv\Scripts\python.exe -m streamlit run app.py
 from __future__ import annotations
 
