@@ -2752,13 +2752,26 @@ def render_top_picks(df: pd.DataFrame, n: int = 5) -> None:
 # SIDEBAR  (unchanged logic, unchanged options)
 # ═════════════════════════════════════════════════════════════════════
 mode_names  = {1:"Momentum", 2:"Balanced", 3:"Relaxed", 4:"Institutional", 5:"Intraday", 6:"Swing"}
-mode_colors = {1:"#00d4a8",  2:"#0094ff",  3:"#f0b429", 4:"#b08cff", 5:"#ff8c00", 6:"#ff4d6d"}
+mode_colors = {1:"#00d4a8",  2:"#0094ff",  3:"#f0b429", 4:"#b08cff", 5:"#00d4a8", 6:"#ff4d6d"}
 pill_cls    = {1:"pill-m1",  2:"pill-m2",  3:"pill-m3", 4:"pill-m3", 5:"pill-m5", 6:"pill-m6"}
 ui_mode_meta = {
     3: {"display_num": 1, "display_name": "Relaxed"},
     6: {"display_num": 2, "display_name": "Swing"},
     5: {"display_num": 3, "display_name": "Intraday"},
 }
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    try:
+        value = hex_color.lstrip("#")
+        if len(value) != 6:
+            raise ValueError("expected 6-digit hex")
+        r = int(value[0:2], 16)
+        g = int(value[2:4], 16)
+        b = int(value[4:6], 16)
+        return f"rgba({r},{g},{b},{alpha})"
+    except Exception:
+        return f"rgba(0,212,168,{alpha})"
 
 with st.sidebar:
     st.markdown(
@@ -2991,7 +3004,37 @@ with st.sidebar:
 # MAIN PAGE
 # ─────────────────────────────────────────────────────────────────────
 mc = mode_colors[mode]
+_mc_soft = _hex_to_rgba(mc, 0.10)
+_mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
+
+st.markdown(
+    f"""
+    <style>
+    :root {{
+      --accent: {mc};
+      --accent2: {mc};
+      --accent3: {mc};
+    }}
+    h2, h3 {{
+      color: var(--accent) !important;
+    }}
+    .section-lbl {{
+      color: var(--accent) !important;
+      border-bottom-color: {_mc_border} !important;
+    }}
+    .count-pill {{
+      color: var(--accent) !important;
+      border-color: var(--accent) !important;
+      background: {_mc_soft} !important;
+    }}
+    .pick-rank {{
+      color: var(--accent) !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 if not _show_sector_screener:
     st.markdown(
@@ -3730,7 +3773,7 @@ else:
             f'<div style="font-size:52px;opacity:0.25;margin-bottom:18px;">📡</div>'
             f'<div style="color:#4a6480;font-size:14px;line-height:1.8;">'
             f'Select a <b style="color:#ccd9e8">strategy mode</b> in the sidebar<br>'
-            f'then click <b style="color:#00d4a8">▶ SCAN MARKET NOW</b> to begin.'
+            f'then click <b style="color:{mc}">▶ SCAN MARKET NOW</b> to begin.'
             f'</div></div>',
             unsafe_allow_html=True)
 
