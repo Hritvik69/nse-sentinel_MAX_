@@ -46,6 +46,7 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 
 _VISIBLE_RESULT_LIMIT = 10
@@ -893,11 +894,25 @@ section[data-testid="stSidebar"] > div { padding-top:20px !important; }
 [data-testid="stMetricValue"] { font-family:var(--sans) !important; font-weight:800 !important; font-size:2rem !important; color:var(--accent) !important; }
 [data-testid="stMetricLabel"] { font-family:var(--sans) !important; font-size:10px !important; letter-spacing:2px !important; text-transform:uppercase !important; color:var(--muted) !important; }
 [data-testid="stMetricDelta"] { color:var(--accent3) !important; }
-.stButton > button { background:transparent !important; border:1px solid var(--accent) !important; color:var(--accent) !important; font-family:var(--mono) !important; font-size:13px !important; font-weight:700 !important; letter-spacing:1px !important; border-radius:10px !important; padding:14px 28px !important; width:100% !important; transition:all 0.2s !important; }
-.stButton > button:hover { background:var(--accent) !important; color:var(--bg) !important; }
+.stButton > button { background:transparent !important; border:1px solid var(--accent) !important; color:var(--accent) !important; font-family:var(--mono) !important; font-size:13px !important; font-weight:700 !important; letter-spacing:1px !important; border-radius:10px !important; padding:14px 28px !important; width:100% !important; transition:transform 0.14s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease !important; position:relative !important; overflow:hidden !important; isolation:isolate !important; }
+.stButton > button::before,
+.stDownloadButton > button::before { content:""; position:absolute; inset:-2px auto -2px -40%; width:32%; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.16),transparent); transform:skewX(-22deg); opacity:0; pointer-events:none; z-index:0; }
+.stButton > button::after,
+.stDownloadButton > button::after { content:""; position:absolute; width:18px; height:18px; left:50%; top:50%; border-radius:999px; background:rgba(255,255,255,0.24); transform:translate(-50%,-50%) scale(0); opacity:0; pointer-events:none; z-index:0; }
+.stButton > button > div,
+.stDownloadButton > button > div { position:relative; z-index:1; }
+.stButton > button:hover::before,
+.stDownloadButton > button:hover::before { animation:btn-sheen 0.55s ease; opacity:1; }
+.stButton > button:hover { background:var(--accent) !important; color:var(--bg) !important; box-shadow:0 0 18px rgba(0,0,0,0.18), 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent) !important; transform:translateY(-1px); }
 .stButton > button:disabled { border-color:var(--muted) !important; color:var(--muted) !important; }
-.stDownloadButton > button { background:rgba(0,148,255,0.1) !important; border:1px solid var(--accent2) !important; color:var(--accent2) !important; font-family:var(--mono) !important; font-weight:700 !important; border-radius:8px !important; width:100% !important; }
-.stDownloadButton > button:hover { background:var(--accent2) !important; color:var(--bg) !important; }
+.stButton > button:active,
+.stDownloadButton > button:active { transform:scale(0.975) translateY(1px) !important; }
+.stButton > button.btn-clicked,
+.stDownloadButton > button.btn-clicked { animation:btn-pop 0.34s ease-out; }
+.stButton > button.btn-clicked::after,
+.stDownloadButton > button.btn-clicked::after { animation:btn-ripple 0.6s ease-out; }
+.stDownloadButton > button { background:rgba(0,148,255,0.1) !important; border:1px solid var(--accent2) !important; color:var(--accent2) !important; font-family:var(--mono) !important; font-weight:700 !important; border-radius:8px !important; width:100% !important; transition:transform 0.14s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease, border-color 0.18s ease !important; position:relative !important; overflow:hidden !important; isolation:isolate !important; }
+.stDownloadButton > button:hover { background:var(--accent2) !important; color:var(--bg) !important; box-shadow:0 0 18px rgba(0,0,0,0.18), 0 0 18px rgba(0,148,255,0.35) !important; transform:translateY(-1px); }
 .stProgress > div > div { background:linear-gradient(90deg,var(--accent),var(--accent2)) !important; box-shadow:0 0 10px var(--accent) !important; }
 .stProgress > div { background:var(--border) !important; border-radius:3px !important; height:6px !important; }
 .stDataFrame { border:1px solid var(--border) !important; border-radius:12px !important; overflow:hidden !important; font-family:var(--mono) !important; }
@@ -910,6 +925,9 @@ h2,h3 { color:#79c0ff !important; font-weight:700 !important; }
 hr { border-color:var(--border) !important; }
 
 @keyframes pdot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.75)} }
+@keyframes btn-sheen { 0% { left:-40%; opacity:0; } 30% { opacity:1; } 100% { left:120%; opacity:0; } }
+@keyframes btn-ripple { 0% { transform:translate(-50%,-50%) scale(0); opacity:0.34; } 100% { transform:translate(-50%,-50%) scale(14); opacity:0; } }
+@keyframes btn-pop { 0% { transform:scale(1); } 35% { transform:scale(0.965); } 70% { transform:scale(1.02); } 100% { transform:scale(1); } }
 .live-dot { width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pdot 2s ease infinite;display:inline-block;margin-right:8px; }
 .section-lbl { font-family:var(--sans);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border); }
 .mode-pill { display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid currentColor;font-family:var(--mono); }
@@ -947,6 +965,31 @@ hr { border-color:var(--border) !important; }
 }
 </style>
 """, unsafe_allow_html=True)
+
+components.html(
+    """
+    <script>
+    const wireAnimatedButtons = () => {
+      const selectors = [".stButton > button", ".stDownloadButton > button"];
+      document.querySelectorAll(selectors.join(",")).forEach((btn) => {
+        if (btn.dataset.animReady === "1") return;
+        btn.dataset.animReady = "1";
+        btn.addEventListener("click", () => {
+          btn.classList.remove("btn-clicked");
+          void btn.offsetWidth;
+          btn.classList.add("btn-clicked");
+          window.setTimeout(() => btn.classList.remove("btn-clicked"), 650);
+        });
+      });
+    };
+    wireAnimatedButtons();
+    const observer = new MutationObserver(() => wireAnimatedButtons());
+    observer.observe(document.body, { childList: true, subtree: true });
+    </script>
+    """,
+    height=0,
+    width=0,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────
