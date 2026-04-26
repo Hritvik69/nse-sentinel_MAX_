@@ -1,27 +1,25 @@
 """
-════════════════════════════════════════════════════════════════
-  NSE SENTINEL — ANIMATIONS PATCH  (app.py direct edit)
-════════════════════════════════════════════════════════════════
+Non-executable reference file.
 
-TWO STEPS. Open app.py in any text editor and follow them.
+This file intentionally stores patch snippets as plain text so it stays valid
+Python (and doesn't produce parsing/lint errors).
+"""
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 1 — CSS  (paste before the closing </style> tag)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTRUCTIONS = r"""
+NSE SENTINEL - ANIMATIONS PATCH (manual app.py edit)
 
-Find this line in app.py  (~line 207):
+STEP 1 - CSS (paste before the closing </style> tag)
 
+In app.py, find the big CSS block that contains:
     .breakdown-box {
 
-Scroll a few lines down until you see:
-
+Scroll down to the line:
     </style>
-    """, unsafe_allow_html=True)
 
-Paste the CSS block below JUST BEFORE that </style> line.
+Paste the CSS block below just BEFORE that </style> line.
 
-─────────────────────────── PASTE CSS HERE ───────────────────
-/* ═══════════════ ANIMATION KEYFRAMES ═══════════════ */
+----- PASTE CSS HERE -----
+/* ANIMATION KEYFRAMES */
 @keyframes fadeSlideUp {
   from { opacity:0; transform:translateY(22px); }
   to   { opacity:1; transform:translateY(0); }
@@ -42,9 +40,7 @@ Paste the CSS block below JUST BEFORE that </style> line.
   0%   { background-position:-400px 0; }
   100% { background-position: 400px 0; }
 }
-@keyframes barReveal {
-  from { width:0 !important; }
-}
+@keyframes barReveal { from { width:0 !important; } }
 @keyframes radarPing {
   0%  { transform:scale(1);   opacity:.85; }
   70% { transform:scale(3);   opacity:0;   }
@@ -68,13 +64,10 @@ Paste the CSS block below JUST BEFORE that </style> line.
   to   { transform:translateX(-50%); }
 }
 
-/* ═══════════════ APPLY TO EXISTING CLASSES ═════════════ */
-
-/* Pick cards — slide up on render, staggered */
+/* APPLY TO EXISTING CLASSES */
 .pick-card {
   animation: fadeSlideUp .45s cubic-bezier(.22,.68,0,1.2) both;
-  transition: transform .22s ease, box-shadow .22s ease,
-              border-color .22s ease !important;
+  transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease !important;
 }
 .pick-card:nth-child(1){ animation-delay:.00s }
 .pick-card:nth-child(2){ animation-delay:.08s }
@@ -82,16 +75,11 @@ Paste the CSS block below JUST BEFORE that </style> line.
 .pick-card:nth-child(4){ animation-delay:.24s }
 .pick-card:nth-child(5){ animation-delay:.32s }
 .pick-card:nth-child(6){ animation-delay:.40s }
-
-/* Hover lift */
 .pick-card:hover {
   transform: translateY(-6px) !important;
   border-color: #243550 !important;
-  box-shadow: 0 14px 36px rgba(0,0,0,.5),
-              0 0 18px rgba(0,212,168,.13) !important;
+  box-shadow: 0 14px 36px rgba(0,0,0,.5), 0 0 18px rgba(0,212,168,.13) !important;
 }
-
-/* Animated gradient on the banner logo text */
 .banner-logo {
   background: linear-gradient(270deg,#00d4a8,#0094ff,#f0b429,#00d4a8);
   background-size: 400% 400%;
@@ -100,12 +88,7 @@ Paste the CSS block below JUST BEFORE that </style> line.
   -webkit-text-fill-color: transparent;
   animation: logoGradient 6s ease infinite;
 }
-
-/* Scan header sweep line */
-.scan-header-wrap {
-  position: relative;
-  overflow: hidden;
-}
+.scan-header-wrap { position: relative; overflow: hidden; }
 .scan-header-wrap::after {
   content: '';
   position: absolute;
@@ -115,22 +98,11 @@ Paste the CSS block below JUST BEFORE that </style> line.
   animation: scanSweep 2.4s linear infinite;
   pointer-events: none;
 }
+.sig-buy   { color: #00d4a8 !important; animation: glowPulse 2.2s ease-in-out infinite; }
+.sig-sell,
+.sig-avoid { color: #ff4d6d !important; animation: glowPulse 2.5s ease-in-out infinite; }
+.sig-watch { color: #f0b429 !important; animation: glowPulse 3s ease-in-out infinite; }
 
-/* Signal badges glow — JS adds these classes automatically */
-.sig-buy {
-  color: #00d4a8 !important;
-  animation: glowPulse 2.2s ease-in-out infinite;
-}
-.sig-sell, .sig-avoid {
-  color: #ff4d6d !important;
-  animation: glowPulse 2.5s ease-in-out infinite;
-}
-.sig-watch {
-  color: #f0b429 !important;
-  animation: glowPulse 3s ease-in-out infinite;
-}
-
-/* Winner / aura verdict card border breathes */
 .winner-card,
 div[style*="border:2px solid #00d4a8"],
 div[style*="border:2px solid #0094ff"],
@@ -139,23 +111,13 @@ div[style*="border:2px solid #f0b429"] {
   animation: borderBreath 3.5s ease-in-out infinite;
 }
 
-/* Progress bar fill reveal */
-[data-testid="stProgressBar"] > div > div {
-  animation: barReveal 1s cubic-bezier(.4,0,.2,1) both;
-}
-
-/* Metric cards float gently */
-[data-testid="stMetric"] {
-  animation: floatUp 5s ease-in-out infinite;
-}
+[data-testid="stProgressBar"] > div > div { animation: barReveal 1s cubic-bezier(.4,0,.2,1) both; }
+[data-testid="stMetric"] { animation: floatUp 5s ease-in-out infinite; }
 [data-testid="stMetric"]:nth-child(2){ animation-delay: .9s }
 [data-testid="stMetric"]:nth-child(3){ animation-delay:1.8s }
 [data-testid="stMetric"]:nth-child(4){ animation-delay:2.7s }
 
-/* Live radar ring on the live-dot */
-.live-dot {
-  position: relative;
-}
+.live-dot { position: relative; }
 .live-dot::after {
   content: '';
   position: absolute;
@@ -165,33 +127,20 @@ div[style*="border:2px solid #f0b429"] {
   animation: radarPing 2.2s ease-out infinite;
   pointer-events: none;
 }
-
-/* Section label reveal */
-.section-lbl {
-  animation: fadeSlideUp .5s ease both;
-}
-
-/* Grade colours (applied by JS) */
-.grade-s  { color:#00d4a8 !important; font-weight:800 !important; }
-.grade-a  { color:#0094ff !important; font-weight:800 !important; }
-.grade-b  { color:#f0b429 !important; font-weight:800 !important; }
-.grade-c  { color:#ff8c00 !important; font-weight:800 !important; }
-.grade-d  { color:#ff4d6d !important; font-weight:800 !important; }
-
-/* Skeleton shimmer for loading state */
+.section-lbl { animation: fadeSlideUp .5s ease both; }
+.grade-s { color:#00d4a8 !important; font-weight:800 !important; }
+.grade-a { color:#0094ff !important; font-weight:800 !important; }
+.grade-b { color:#f0b429 !important; font-weight:800 !important; }
+.grade-c { color:#ff8c00 !important; font-weight:800 !important; }
+.grade-d { color:#ff4d6d !important; font-weight:800 !important; }
 .skeleton {
   border-radius: 6px;
   background: linear-gradient(90deg,#0f1823 25%,#1a2d42 50%,#0f1823 75%);
   background-size: 400px 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
+.row-new { animation: rowFlash 1.4s ease-out both; }
 
-/* New table row flash */
-.row-new {
-  animation: rowFlash 1.4s ease-out both;
-}
-
-/* Ticker strip */
 .ticker-strip {
   overflow: hidden;
   white-space: nowrap;
@@ -202,49 +151,35 @@ div[style*="border:2px solid #f0b429"] {
   font-family: var(--mono);
   font-size: 11px;
 }
-.ticker-inner {
-  display: inline-block;
-  animation: tickerScroll 28s linear infinite;
-}
-.ticker-item       { display:inline-block; padding:0 20px; color:var(--muted); }
-.ticker-item.up    { color:#00d4a8; }
-.ticker-item.down  { color:#ff4d6d; }
+.ticker-inner { display: inline-block; animation: tickerScroll 28s linear infinite; }
+.ticker-item      { display:inline-block; padding:0 20px; color:var(--muted); }
+.ticker-item.up   { color:#00d4a8; }
+.ticker-item.down { color:#ff4d6d; }
 
 /* Scrollbar */
 ::-webkit-scrollbar             { width:5px; height:5px; }
 ::-webkit-scrollbar-track       { background:var(--bg2); }
 ::-webkit-scrollbar-thumb       { background:var(--border2); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background:var(--accent); }
-─────────────────────── END CSS PASTE ────────────────────────
+----- END CSS -----
 
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 2 — JavaScript  (paste inside the existing components.html block)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 2 - JavaScript (paste inside the existing components.html <script> block)
 
-Find this exact block in app.py (~line 215):
-
+In app.py, find the existing:
     components.html(
-        """
+        \"\"\"
         <script>
-        const wireAnimatedButtons = () => {
-          ...
-        };
-        wireAnimatedButtons();
-        const observer = new MutationObserver(() => wireAnimatedButtons());
-        observer.observe(document.body, { childList: true, subtree: true });
+        ...
         </script>
-        """,
+        \"\"\",
         height=0,
         width=0,
     )
 
-Paste the JS block below JUST BEFORE the closing </script> tag
-(i.e. after the observer.observe line but before </script>).
+Paste the JS block below just BEFORE the closing </script> tag.
 
-─────────────────────────── PASTE JS HERE ────────────────────
-
-/* ── Signal badge auto-colouring ── */
+----- PASTE JS HERE -----
 const BUY_KW  = ["buy","breakout","long","strong","fire","🔥","✅"];
 const SELL_KW = ["sell","avoid","short","❌","trap","bearish","weak"];
 const WATCH_KW= ["watch","wait","caution","neutral","👀","⚠️"];
@@ -262,7 +197,6 @@ function patchSignals() {
   });
 }
 
-/* ── Grade badge colouring ── */
 function patchGrades() {
   document.querySelectorAll("td").forEach(el => {
     if (el.dataset.gp) return;
@@ -275,7 +209,6 @@ function patchGrades() {
   });
 }
 
-/* ── Card stagger fade-in ── */
 function staggerCards() {
   document.querySelectorAll(".pick-card, .breakdown-box").forEach((el, i) => {
     if (el.dataset.sf) return;
@@ -291,7 +224,6 @@ function staggerCards() {
   });
 }
 
-/* ── Counter animation for metric values ── */
 function animCounters() {
   document.querySelectorAll("[data-testid='stMetricValue']").forEach(el => {
     if (el.dataset.ac) return;
@@ -312,7 +244,6 @@ function animCounters() {
   });
 }
 
-/* ── Table row stagger ── */
 function staggerRows() {
   document.querySelectorAll(".stDataFrame tbody tr").forEach((row, i) => {
     if (row.dataset.rs) return;
@@ -325,7 +256,6 @@ function staggerRows() {
   });
 }
 
-/* ── New row flash ── */
 let _prevRowCount = 0;
 function flashNewRows() {
   const rows = document.querySelectorAll(".stDataFrame tbody tr");
@@ -339,7 +269,6 @@ function flashNewRows() {
   _prevRowCount = rows.length;
 }
 
-/* ── Scan header sweep class ── */
 function wireScanHeaders() {
   document.querySelectorAll("h2, h3").forEach(h => {
     if (!h.innerText.includes("Scanner") && !h.innerText.includes("Scan")) return;
@@ -350,7 +279,6 @@ function wireScanHeaders() {
   });
 }
 
-/* ── Run all patches ── */
 function runAll() {
   patchSignals();
   patchGrades();
@@ -362,15 +290,11 @@ function runAll() {
 }
 
 runAll();
-/* Hook into the existing MutationObserver already set up above */
 const _animObserver = new MutationObserver(runAll);
 _animObserver.observe(document.body, { childList: true, subtree: true });
+----- END JS -----
 
-─────────────────────────── END JS PASTE ─────────────────────
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DONE. Save app.py, then run:
     .\.venv\Scripts\python.exe -m streamlit run app.py
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
+
