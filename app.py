@@ -2999,6 +2999,7 @@ with st.sidebar:
             _activate_sidebar_panel("csv_next_day_show_panel")
         live_pulse_clicked = st.button("📡 Live Breakout Pulse", key="live_pulse_btn")
         if live_pulse_clicked:
+            st.session_state["live_pulse_autorun"] = True
             _activate_sidebar_panel("live_pulse_show_panel")
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
@@ -3034,6 +3035,7 @@ with st.sidebar:
             _activate_sidebar_panel("csv_next_day_show_panel")
         live_pulse_clicked = st.button("📡 Live Breakout Pulse", key="live_pulse_btn")
         if live_pulse_clicked:
+            st.session_state["live_pulse_autorun"] = True
             _activate_sidebar_panel("live_pulse_show_panel")
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'

@@ -196,6 +196,8 @@ def render_live_breakout_pulse(
     _panel_open = bool(st.session_state.get("live_pulse_show_panel", False))
     if not (live_pulse_clicked or _panel_open):
         return
+    _auto_run_scan = bool(st.session_state.pop("live_pulse_autorun", False))
+    _run_scan_now = live_pulse_clicked or _auto_run_scan
 
 
     # ── Header ────────────────────────────────────────────────────────
@@ -238,7 +240,7 @@ def render_live_breakout_pulse(
         )
 
     # ── Trigger scan ─────────────────────────────────────────────────
-    if live_pulse_clicked:
+    if _run_scan_now:
         _pb, _status_box, _meta_box, _started_at = _start_scan_feedback(
             "Preparing live breakout scan..."
         )
@@ -305,7 +307,7 @@ def render_live_breakout_pulse(
         return
 
     if not isinstance(pulse_df, pd.DataFrame) or pulse_df.empty:
-        if live_pulse_clicked:
+        if _run_scan_now:
             st.info(
                 "No stocks passed the Live Breakout Pulse filters right now. "
                 "Market may be in a low-momentum phase — check back later."
