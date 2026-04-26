@@ -2803,6 +2803,14 @@ ui_mode_meta = {
     5: {"display_num": 3, "display_name": "Intraday"},
 }
 
+_SIDEBAR_PANEL_KEYS = (
+    "show_sector_screener",
+    "battle_show_panel",
+    "aura_show_panel",
+    "csv_next_day_show_panel",
+    "live_pulse_show_panel",
+)
+
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     try:
@@ -2815,6 +2823,11 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
         return f"rgba({r},{g},{b},{alpha})"
     except Exception:
         return f"rgba(0,212,168,{alpha})"
+
+
+def _activate_sidebar_panel(active_key: str | None = None) -> None:
+    for key in _SIDEBAR_PANEL_KEYS:
+        st.session_state[key] = (key == active_key)
 
 with st.sidebar:
     st.markdown(
@@ -2906,11 +2919,11 @@ with st.sidebar:
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
 
     if sector_screener_clicked:
-        st.session_state["show_sector_screener"] = True
+        _activate_sidebar_panel("show_sector_screener")
     if battle_compare_clicked:
-        st.session_state["battle_show_panel"] = True
+        _activate_sidebar_panel("battle_show_panel")
     if aura_clicked:
-        st.session_state["aura_show_panel"] = True
+        _activate_sidebar_panel("aura_show_panel")
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -2982,10 +2995,10 @@ with st.sidebar:
         )
         csv_scan_clicked = st.button("⚡ Breakout Radar (CSV)", key="csv_next_day_btn")
         if csv_scan_clicked:
-            st.session_state["csv_next_day_show_panel"] = True
+            _activate_sidebar_panel("csv_next_day_show_panel")
         live_pulse_clicked = st.button("📡 Live Breakout Pulse", key="live_pulse_btn")
         if live_pulse_clicked:
-            st.session_state["live_pulse_show_panel"] = True
+            _activate_sidebar_panel("live_pulse_show_panel")
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
             '⚡ Cached CSV scan for pre-move setups<br>'
@@ -3017,10 +3030,10 @@ with st.sidebar:
         )
         csv_scan_clicked = st.button("⚡ Breakout Radar (CSV)", key="csv_next_day_btn")
         if csv_scan_clicked:
-            st.session_state["csv_next_day_show_panel"] = True
+            _activate_sidebar_panel("csv_next_day_show_panel")
         live_pulse_clicked = st.button("📡 Live Breakout Pulse", key="live_pulse_btn")
         if live_pulse_clicked:
-            st.session_state["live_pulse_show_panel"] = True
+            _activate_sidebar_panel("live_pulse_show_panel")
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
             '⚡ Uses local CSV data when available<br>'
@@ -3050,6 +3063,8 @@ mc = mode_colors[mode]
 _mc_soft = _hex_to_rgba(mc, 0.10)
 _mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
+_show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
+_show_home_scanner = not (_show_sector_screener or _show_live_pulse_panel)
 
 st.markdown(
     f"""
@@ -3079,7 +3094,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not _show_sector_screener:
+if _show_home_scanner:
     st.markdown(
         f'<div class="top-banner">'
         f'<div class="banner-logo"><span class="live-dot"></span>NSE SENTINEL</div>'
@@ -3099,7 +3114,7 @@ with st.spinner("Loading NSE ticker list..."):
     all_tickers = fetch_nse_tickers()
 n = len(all_tickers)
 
-if not _show_sector_screener:
+if _show_home_scanner:
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.metric("📋 NSE Tickers Loaded", f"{n:,}")
     with c2: st.metric("🎯 Active Mode", f"M{mode_display['display_num']} · {mode_display['display_name']}")
@@ -3116,7 +3131,7 @@ if not _show_sector_screener:
     st.markdown("<hr>", unsafe_allow_html=True)
 
 main_scan_clicked = False
-if not _show_sector_screener:
+if _show_home_scanner:
     _scan_cta_cols = st.columns([1.5, 3.2, 1.5])
     with _scan_cta_cols[1]:
         main_scan_clicked = st.button("▶  SCAN MARKET NOW", key="main_panel_scan_btn", width="stretch")
@@ -3125,7 +3140,7 @@ if not _show_sector_screener:
 
 # ── 🕰️ Time-travel banner (shown whenever TT is active) ───────────────
 _tt_banner = _tt.format_banner()
-if _tt_banner:
+if _tt_banner and _show_home_scanner:
     st.markdown(
         f'<div style="background:#1a0a00;border:2px solid #f0b429;border-radius:10px;'
         f'padding:12px 18px;margin-bottom:16px;font-family:\'Space Mono\',monospace;'
@@ -3396,7 +3411,7 @@ if st.session_state.get("show_bias_engine"):
     st.markdown("<hr>", unsafe_allow_html=True)
 
 # ── RESULTS ───────────────────────────────────────────────────────────
-if "results" in st.session_state:
+if _show_home_scanner and "results" in st.session_state:
     results     = st.session_state["results"]
     stored_mode = st.session_state.get("mode", mode)
     stored_mode_display = ui_mode_meta.get(
@@ -3799,7 +3814,7 @@ if "results" in st.session_state:
             )
 
     else:
-        if not st.session_state.get("show_sector_screener", False):
+        if _show_home_scanner:
             st.markdown(
                 f'<div style="text-align:center;padding:60px 24px;background:#0f1823;'
                 f'border:1px solid #1a2840;border-radius:12px;">'
@@ -3809,7 +3824,7 @@ if "results" in st.session_state:
                 f'Try <b style="color:#ccd9e8">Mode 1 (Relaxed)</b> for a broader scan.</div></div>',
                 unsafe_allow_html=True)
 else:
-    if not st.session_state.get("show_sector_screener", False):
+    if _show_home_scanner:
         st.markdown(
             f'<div style="text-align:center;padding:64px 24px;background:#0f1823;'
             f'border:1px solid #1a2840;border-radius:12px;">'
