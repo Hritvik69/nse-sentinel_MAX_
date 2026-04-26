@@ -197,7 +197,6 @@ def render_live_breakout_pulse(
     if not (live_pulse_clicked or _panel_open):
         return
 
-    st.markdown("<hr>", unsafe_allow_html=True)
 
     # ── Header ────────────────────────────────────────────────────────
     st.markdown(
@@ -212,6 +211,17 @@ def render_live_breakout_pulse(
     )
 
     # ── Engine availability check ─────────────────────────────────────
+    _close_live_cols = st.columns([5.5, 1.5])
+    with _close_live_cols[1]:
+        _close_live_pulse = st.button(
+            "Back",
+            key="live_pulse_close_panel_btn",
+        )
+
+    if _close_live_pulse:
+        st.session_state["live_pulse_show_panel"] = False
+        st.rerun()
+
     if not _LIVE_PULSE_ENGINE_OK:
         st.warning(
             "⚠️ `live_breakout_pulse_engine.py` not found. "
