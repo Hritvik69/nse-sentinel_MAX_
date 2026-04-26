@@ -131,6 +131,15 @@ except Exception:
     def render_live_breakout_pulse(live_pulse_clicked: bool, tt_date_val=None):  # type: ignore[misc]
         return None
 
+try:
+    from nse_animations import inject_animations
+    _NSE_ANIMATIONS_OK = True
+except Exception:
+    _NSE_ANIMATIONS_OK = False
+
+    def inject_animations() -> None:  # type: ignore[misc]
+        return None
+
 # AFTER the csv_next_day import block, add:
 try:
     from breakout_radar_engine import run_breakout_radar, radar_summary
@@ -990,6 +999,8 @@ components.html(
     height=0,
     width=0,
 )
+
+inject_animations()
 
 
 # ─────────────────────────────────────────────────────────────────────
