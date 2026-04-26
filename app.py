@@ -2828,6 +2828,7 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
 def _activate_sidebar_panel(active_key: str | None = None) -> None:
     for key in _SIDEBAR_PANEL_KEYS:
         st.session_state[key] = (key == active_key)
+    st.rerun()
 
 with st.sidebar:
     st.markdown(
