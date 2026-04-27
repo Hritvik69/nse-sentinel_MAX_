@@ -34,6 +34,15 @@ _PARENT = _os.path.dirname(_HERE)
 if _os.path.isdir(_os.path.join(_PARENT, "strategy_engines")) and _PARENT not in _sys.path:
     _sys.path.insert(0, _PARENT)
 
+# ── Compatibility alias: allow `from learning_engine import ...` ─────────
+# (In this project, the learning engine code currently lives in
+# `trade_decision_engine.py`.)
+try:
+    import trade_decision_engine as _learning_engine  # type: ignore[import]
+    _sys.modules.setdefault("learning_engine", _learning_engine)
+except Exception:
+    pass
+
 import io
 import threading
 import time
@@ -48,6 +57,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
+from learning_engine import train_learning_model, predict_success
 
 _VISIBLE_RESULT_LIMIT = 10
 from strategy_engines import (
@@ -1010,7 +1020,7 @@ inject_animations()
 # Path where we persist the large ticker list inside the container.
 # /tmp/ is writable on Streamlit Cloud and survives within a single
 # server run (i.e. across Streamlit "reruns" / page refreshes).
-_TMP_TICKER_CACHE_PATH = "/tmp/nse_sentinel_tickers.txt"
+_TMP_TICKER_CACHE_PATH = "/tmp/nse_sentinel_live_tickers_v2.txt"
 _TICKER_GOOD_COUNT     = 2000   # minimum for a "full" list
 
 
@@ -3059,7 +3069,7 @@ with st.sidebar:
     st.markdown(
         '<div style="font-size:11px;color:#4a6480;line-height:1.7;">'
         'Data: Yahoo Finance (NSE)<br>Indicators: EMA · RSI · Volume<br>'
-        'Universe: NSE equity archive<br><br>'
+        'Universe: Current NSE listed equities<br><br>'
         '⚠️ Educational use only.<br>Not financial advice.</div>',
         unsafe_allow_html=True)
 
@@ -3164,6 +3174,11 @@ if _tt_banner and _show_home_scanner:
     )
 
 if scan_clicked or main_scan_clicked:
+    try:
+        from learning_engine import train_learning_model
+        train_learning_model()
+    except Exception:
+        pass
     st.markdown(
         f'<div class="section-lbl">⏳ Scanning {n:,} NSE Equities — Mode {mode_display["display_num"]}: {mode_display["display_name"]}</div>',
         unsafe_allow_html=True)
@@ -3494,6 +3509,19 @@ if _show_home_scanner and "results" in st.session_state:
         except Exception:
             pass
 
+        try:
+            from trade_decision_simple import apply_trade_decision_simple
+            df = apply_trade_decision_simple(df)
+        except Exception:
+            pass
+
+        # ── Learning prediction (added column only) ───────────────────
+        try:
+            from learning_engine import predict_success
+            df["Learned Prob %"] = df.apply(lambda row: predict_success(row), axis=1)
+        except Exception:
+            pass
+
         # ── Phase 4.2 Logic Engine (Advanced Trap, Expected Move, Adjusted Signal)
         try:
             df = apply_phase42_logic(df)
@@ -3647,6 +3675,8 @@ if _show_home_scanner and "results" in st.session_state:
         display_cols = [
             "Rank", "Rank Score", "Ticker", "Score", "Backtest %", "ML %",
             "Final Score", "Prediction Score", "Conviction Tier", "Trap", "Next-Day Signal", "TradingView",
+            "Learned Prob %",
+            "Action", "Hold Days",
         ]
         display_cols = [c for c in display_cols if c in table_df.columns]
 
@@ -3665,6 +3695,8 @@ if _show_home_scanner and "results" in st.session_state:
                 "Trap": st.column_config.TextColumn("Trap"),
                 "Next-Day Signal": st.column_config.TextColumn("Signal"),
                 "TradingView": st.column_config.LinkColumn("TradingView Link", display_text="📈 Open Chart"),
+                "Action": st.column_config.TextColumn("Action"),
+                "Hold Days": st.column_config.TextColumn("Hold Days"),
             },
             use_container_width=True,
             hide_index=True,
@@ -3796,6 +3828,11 @@ if _show_home_scanner and "results" in st.session_state:
 
         if isinstance(_tomorrow_df, pd.DataFrame) and not _tomorrow_df.empty:
             _tomorrow_df = _tomorrow_df.copy()
+            try:
+                from trade_decision_simple import apply_trade_decision_simple_any
+                _tomorrow_df = apply_trade_decision_simple_any(_tomorrow_df)
+            except Exception:
+                pass
             _signal_col = "Adjusted Signal" if "Adjusted Signal" in _tomorrow_df.columns else "Next-Day Signal"
             _tomorrow_df["Chart"] = _tomorrow_df["Symbol"].apply(lambda s: tv_chart_url(str(s)))
 
@@ -3806,6 +3843,7 @@ if _show_home_scanner and "results" in st.session_state:
             _tomorrow_cols = [
                 "Symbol", "Tomorrow Pick Score", "Final Score", "Prediction Score",
                 _signal_col, "Conviction Tier", "Trap", "Tomorrow Pick Reason", "Chart",
+                "Action", "Hold Days",
             ]
             _tomorrow_cols = [c for c in _tomorrow_cols if c in _tomorrow_df.columns]
 
@@ -3822,6 +3860,8 @@ if _show_home_scanner and "results" in st.session_state:
                     "Trap": st.column_config.TextColumn("Trap"),
                     "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
                     "Chart": st.column_config.LinkColumn("Chart", display_text="Open Chart"),
+                    "Action": st.column_config.TextColumn("Action"),
+                    "Hold Days": st.column_config.TextColumn("Hold Days"),
                 },
                 use_container_width=True,
                 hide_index=True,
@@ -3944,8 +3984,15 @@ else:
                             unsafe_allow_html=True,
                         )
 
+                _csv_display_df = csv_df.copy()
+                try:
+                    from trade_decision_simple import apply_trade_decision_simple_any
+                    _csv_display_df = apply_trade_decision_simple_any(_csv_display_df)
+                except Exception:
+                    pass
+
                 st.dataframe(
-                    csv_df,
+                    _csv_display_df,
                     column_config={
                         "Symbol":           st.column_config.TextColumn("Ticker"),
                         "Price (₹)":        st.column_config.NumberColumn("Close (₹)", format="₹%.2f"),
@@ -3967,6 +4014,8 @@ else:
                         "Bull Trap":        st.column_config.TextColumn("Trap"),
                         "Risk Notes":       st.column_config.TextColumn("Risk Notes", width="large"),
                         "Chart Link":       st.column_config.LinkColumn("Chart", display_text="📈 Open"),
+                        "Action":           st.column_config.TextColumn("Action"),
+                        "Hold Days":        st.column_config.TextColumn("Hold Days"),
                     },
                     use_container_width=True,
                     hide_index=True,
