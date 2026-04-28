@@ -957,6 +957,12 @@ def render_tomorrow_picks_panel() -> None:
           color:#060a0f !important;
           box-shadow:0 0 18px rgba(255,77,109,0.35) !important;
         }
+        div[data-testid="stVerticalBlock"]:has(.tmr-add-scope) .stButton > button {
+          white-space:nowrap !important;
+          letter-spacing:0.2px !important;
+          padding:12px 16px !important;
+          min-height:54px !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -986,7 +992,7 @@ def render_tomorrow_picks_panel() -> None:
                 )
                 st.caption("📡 Synced live across all devices")
 
-                add_input_col, add_btn_col = st.columns([4, 1], gap="small")
+                add_input_col, add_btn_col = st.columns([4, 1.3], gap="small")
                 with add_input_col:
                     new_symbol = st.text_input(
                         "List Your Trending Stocks",
@@ -994,6 +1000,7 @@ def render_tomorrow_picks_panel() -> None:
                         placeholder="e.g. RELIANCE",
                     )
                 with add_btn_col:
+                    st.markdown('<div class="tmr-add-scope"></div>', unsafe_allow_html=True)
                     st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                     add_clicked = st.button(
                         "＋ Add",
@@ -3382,7 +3389,12 @@ _mc_soft = _hex_to_rgba(mc, 0.10)
 _mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
 _show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
-_show_home_scanner = not (_show_sector_screener or _show_live_pulse_panel)
+_show_tomorrow_picks_panel = bool(st.session_state.get("tomorrow_picks_show_panel", False))
+_show_home_scanner = not (
+    _show_sector_screener
+    or _show_live_pulse_panel
+    or _show_tomorrow_picks_panel
+)
 
 st.markdown(
     f"""
