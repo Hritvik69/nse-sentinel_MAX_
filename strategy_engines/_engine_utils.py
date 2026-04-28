@@ -14,6 +14,11 @@ from datetime import date, datetime, time as dtime, timedelta
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from data_session_manager import (
+    get_current_window as _get_current_window,
+    get_expected_data_date as _get_expected_data_date,
+    is_data_fresh as _is_data_fresh,
+)
 
 try:
     from zoneinfo import ZoneInfo
@@ -100,9 +105,9 @@ def _previous_market_day(day: date) -> date:
 
 def _expected_live_data_date() -> date | None:
     """
-    Return the market date a live scan should be using in IST.
+    Return the market date the cache-reset guard should be tracking.
 
-    In Time Travel mode we disable staleness enforcement entirely because the
+    In Time Travel mode we disable date-based cache resets entirely because the
     active cutoff date is intentionally historical.
     """
     try:
@@ -113,16 +118,19 @@ def _expected_live_data_date() -> date | None:
     except Exception:
         pass
 
-    now_ist = _now_ist()
-    today = now_ist.date()
+    try:
+        return _get_expected_data_date()
+    except Exception:
+        now_ist = _now_ist()
+        today = now_ist.date()
 
-    if today.weekday() >= 5:
-        return _previous_market_day(today)
+        if today.weekday() >= 5:
+            return _previous_market_day(today)
 
-    if now_ist.time() < _MARKET_OPEN_IST:
-        return _previous_market_day(today - timedelta(days=1))
+        if now_ist.time() < _MARKET_OPEN_IST:
+            return _previous_market_day(today - timedelta(days=1))
 
-    return today
+        return today
 
 
 def _frame_last_market_date(df: pd.DataFrame | None) -> date | None:
@@ -135,15 +143,21 @@ def _frame_last_market_date(df: pd.DataFrame | None) -> date | None:
 
 
 def _is_stale_live_frame(df: pd.DataFrame | None) -> bool:
-    expected = _expected_live_data_date()
-    if expected is None:
-        return False
-
-    last_seen = _frame_last_market_date(df)
-    if last_seen is None:
+    if df is None or df.empty:
         return True
 
-    return last_seen < expected
+    try:
+        return not _is_data_fresh(df)
+    except Exception:
+        expected = _expected_live_data_date()
+        if expected is None:
+            return False
+
+        last_seen = _frame_last_market_date(df)
+        if last_seen is None:
+            return True
+
+        return last_seen < expected
 
 
 def _is_fresh_live_frame(df: pd.DataFrame | None) -> bool:
@@ -151,13 +165,6 @@ def _is_fresh_live_frame(df: pd.DataFrame | None) -> bool:
 
 
 def is_fresh_enough(df: pd.DataFrame | None, strict: bool = False) -> bool:
-    """
-    Public freshness helper for scan callers.
-
-    strict=True enforces the expected live market date from the central engine.
-    strict=False keeps the older loose "within the last week" fallback check.
-    Time Travel mode bypasses live-date freshness and relies on its own cutoff.
-    """
     if df is None or df.empty:
         return False
 
@@ -169,14 +176,18 @@ def is_fresh_enough(df: pd.DataFrame | None, strict: bool = False) -> bool:
     except Exception:
         pass
 
-    last_seen = _frame_last_market_date(df)
-    if last_seen is None:
-        return False
+    if not strict:
+        try:
+            window = _get_current_window()
+            if window in ("PRE_MARKET", "WEEKEND", "CLOSED"):
+                return True
+        except Exception:
+            return True
 
-    if strict:
+    try:
+        return _is_data_fresh(df)
+    except Exception:
         return not _is_stale_live_frame(df)
-
-    return (_now_ist().date() - last_seen).days <= 7
 
 
 def _persist_frame_to_csv(ticker_ns: str, df: pd.DataFrame | None) -> None:

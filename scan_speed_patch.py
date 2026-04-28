@@ -55,7 +55,7 @@ from strategy_engines._engine_utils import (
     ALL_DATA,
     _ALL_DATA_LOCK,
     _NO_DATA_LOCK,
-    _NO_DATA_TICKERS,
+    _coerce_no_data_tickers,
     download_history,
     ema,
     rsi_vec,
@@ -81,7 +81,7 @@ def _fast_fetch_one(ticker_ns: str, period: str) -> tuple[str, pd.DataFrame | No
         df = load_csv(ticker_ns)
         if df is not None and len(df) >= 5:
             with _NO_DATA_LOCK:
-                _NO_DATA_TICKERS.discard(ticker_ns)
+                _coerce_no_data_tickers().discard(ticker_ns)
             return ticker_ns, df
     except Exception:
         pass

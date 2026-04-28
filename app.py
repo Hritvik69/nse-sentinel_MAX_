@@ -45,12 +45,14 @@ except Exception:
 
 import io
 import html
+import json
 import threading
 import time
 import warnings
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -59,6 +61,15 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 from learning_engine import train_learning_model, predict_success
+from data_session_manager import (
+    get_current_window,
+    get_expected_data_date,
+    get_data_status_label,
+    snapshot_exists,
+    save_closing_snapshot,
+    load_snapshot_into_ALL_DATA,
+    get_snapshot_path,
+)
 
 try:
     import gspread
@@ -191,6 +202,7 @@ _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+_TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
 
 
 @st.cache_resource(ttl=0)
@@ -232,7 +244,6 @@ def _load_picks() -> dict:
         # Read row 2 (data row)
         picks_json = ws.cell(2, 1).value or "[]"
         notes_text = ws.cell(2, 2).value or ""
-        import json
         picks = json.loads(picks_json)
         return {"picks": picks, "notes": notes_text}
     except Exception:
@@ -248,7 +259,6 @@ def _save_picks(store: dict) -> None:
         ws = _get_sheet()
         if ws is None:
             return
-        import json
         # Write headers if empty
         if not ws.cell(1, 1).value:
             ws.update("A1:B1", [["picks", "notes"]])
@@ -282,23 +292,56 @@ def _normalize_tomorrow_store(store: dict | None) -> dict:
     }
 
 
-def _load_tomorrow_store() -> tuple[dict, bool]:
+def _load_local_tomorrow_store() -> dict:
+    default = {"picks": [], "notes": ""}
+    try:
+        if not _TOMORROW_STORE_PATH.exists():
+            return default
+        payload = json.loads(_TOMORROW_STORE_PATH.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else default
+    except Exception:
+        return default
+
+
+def _save_local_tomorrow_store(store: dict) -> bool:
+    try:
+        _TOMORROW_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _TOMORROW_STORE_PATH.write_text(
+            json.dumps(store, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _load_tomorrow_store() -> tuple[dict, str]:
     default = _normalize_tomorrow_store(None)
     sheets_ready = _get_sheet() is not None
     if sheets_ready:
         store = _normalize_tomorrow_store(_load_picks())
+        storage_mode = "cloud"
     else:
-        store = _normalize_tomorrow_store(
-            st.session_state.get("tomorrow_picks_store", default)
-        )
+        local_store = _normalize_tomorrow_store(_load_local_tomorrow_store())
+        if local_store["picks"] or local_store["notes"]:
+            store = local_store
+            storage_mode = "local"
+        else:
+            store = _normalize_tomorrow_store(
+                st.session_state.get("tomorrow_picks_store", default)
+            )
+            storage_mode = "local"
     st.session_state["tomorrow_picks_store"] = store
-    return store, sheets_ready
+    return store, storage_mode
 
 
 def _persist_tomorrow_store(store: dict) -> None:
     normalized = _normalize_tomorrow_store(store)
     st.session_state["tomorrow_picks_store"] = normalized
-    _save_picks(normalized)
+    if _get_sheet() is not None:
+        _save_picks(normalized)
+    else:
+        _save_local_tomorrow_store(normalized)
 
 try:
     import scan_diagnostics as _scan_diag
@@ -763,16 +806,22 @@ def render_stock_aura_panel() -> None:
 
     # Input row
     configure_nse_stock_search(fetch_nse_tickers())
-    c_in, c_btn, c_cls = st.columns([3, 1, 1])
-    with c_in:
-        ticker_raw = render_nse_stock_input(
-            "Stock Symbol",
-            key="aura_ticker_input",
-            placeholder="e.g. RELIANCE or search company name",
-            label_visibility="collapsed",
-        )
-    with c_btn:
-        analyze_clicked = st.button("🧠 Analyze Aura", key="aura_analyze_btn")
+    c_form, c_cls = st.columns([4, 1])
+    with c_form:
+        with st.form("stock_aura_form", clear_on_submit=False):
+            c_in, c_btn = st.columns([3, 1])
+            with c_in:
+                ticker_raw = render_nse_stock_input(
+                    "Stock Symbol",
+                    key="aura_ticker_input",
+                    placeholder="e.g. RELIANCE or search company name",
+                    label_visibility="collapsed",
+                )
+            with c_btn:
+                analyze_clicked = st.form_submit_button(
+                    "🧠 Analyze Aura",
+                    use_container_width=True,
+                )
     with c_cls:
         if st.button("✕ Close", key="aura_close_btn"):
             st.session_state["aura_show_panel"] = False
@@ -913,40 +962,105 @@ def render_tomorrow_picks_panel() -> None:
     if not st.session_state.get("tomorrow_picks_show_panel", False):
         return
 
-    store, sheets_ready = _load_tomorrow_store()
+    store, storage_mode = _load_tomorrow_store()
     if st.session_state.get("tmr_notes_area") != store["notes"]:
         st.session_state["tmr_notes_area"] = store["notes"]
+
+    sync_caption = "Synced live across all devices" if storage_mode == "cloud" else "Saved locally on this machine"
+    lead_copy = (
+        "Add tomorrow’s trending ideas and keep notes synced across your devices."
+        if storage_mode == "cloud"
+        else "Add tomorrow’s trending ideas and keep notes saved locally without extra setup."
+    )
+    status_tone = "cloud" if storage_mode == "cloud" else "local"
+    status_copy = (
+        "Cloud sync active via Google Sheets."
+        if storage_mode == "cloud"
+        else "Local persistence active on this machine."
+    )
 
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(
         """
         <style>
         div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) {
-          background:#0d1b2a;
-          border:1px solid #1a2840;
+          background:
+            radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 32%),
+            radial-gradient(circle at top left, rgba(0,148,255,0.10), transparent 28%),
+            linear-gradient(180deg, rgba(9,13,20,0.96), rgba(5,8,13,0.99));
+          border:1px solid rgba(88,120,154,0.34);
           border-radius:18px;
           padding:24px 24px 20px 24px;
+          box-shadow:
+            0 22px 48px rgba(0,0,0,0.42),
+            inset 0 1px 0 rgba(255,255,255,0.04),
+            inset 0 0 0 1px rgba(0,148,255,0.05);
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor),
         div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) {
-          background:#0d1b2a;
-          border:1px solid #1a2840;
+          background:
+            linear-gradient(180deg, rgba(14,20,30,0.94), rgba(9,14,22,0.98));
+          border:1px solid rgba(61,86,114,0.42);
           border-radius:16px;
           padding:18px 18px 20px 18px;
           height:100%;
+          box-shadow:
+            inset 0 0 0 1px rgba(36,53,80,0.24),
+            0 16px 34px rgba(0,0,0,0.20);
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] input,
         div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
-          background:#0f2033 !important;
+          background:rgba(9,17,27,0.94) !important;
           color:#e0e8f0 !important;
-          border:1px solid #1a2840 !important;
+          border:1px solid rgba(56,86,116,0.52) !important;
+          box-shadow:none !important;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] label p,
         div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] label p {
-          color:#ccd9e8 !important;
+          color:#dbe8f6 !important;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
           min-height:400px !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) div[data-testid="stAlert"] {
+          background:linear-gradient(90deg, rgba(79,67,18,0.44), rgba(126,109,31,0.30)) !important;
+          border:1px solid rgba(240,180,41,0.42) !important;
+          border-left:3px solid #f0b429 !important;
+          border-radius:12px !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) div[data-testid="stAlert"] * {
+          color:#fff2bf !important;
+        }
+        .tmr-status-pill {
+          display:flex;
+          align-items:center;
+          gap:10px;
+          border-radius:12px;
+          padding:12px 16px;
+          margin:0 0 20px 0;
+          font-size:13px;
+          line-height:1.45;
+          border:1px solid rgba(96,132,167,0.30);
+          color:#d8e6f4;
+          background:linear-gradient(90deg, rgba(13,23,34,0.94), rgba(11,18,28,0.98));
+          box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+        .tmr-status-pill strong {
+          color:#f4f8ff;
+        }
+        .tmr-status-pill-local {
+          border-color:rgba(240,180,41,0.34);
+          background:linear-gradient(90deg, rgba(46,38,12,0.62), rgba(20,24,18,0.94));
+        }
+        .tmr-status-pill-local .tmr-status-icon {
+          color:#f0b429;
+        }
+        .tmr-status-pill-cloud {
+          border-color:rgba(0,212,168,0.34);
+          background:linear-gradient(90deg, rgba(7,40,34,0.68), rgba(10,21,30,0.96));
+        }
+        .tmr-status-pill-cloud .tmr-status-icon {
+          color:#00d4a8;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-remove-scope) .stButton > button {
           border-color:#ff4d6d !important;
@@ -963,6 +1077,42 @@ def render_tomorrow_picks_panel() -> None:
           padding:12px 16px !important;
           min-height:54px !important;
         }
+        .tmr-main-title {
+          font-family:'Syne',sans-serif;
+          font-size:48px;
+          font-weight:800;
+          letter-spacing:-1px;
+          color:#f0b429;
+          margin:0 0 8px 0;
+        }
+        .tmr-panel-lead {
+          font-size:14px;
+          color:#8eb0cf;
+          margin-bottom:18px;
+        }
+        .tmr-section-title {
+          font-family:'Syne',sans-serif;
+          font-size:34px;
+          font-weight:800;
+          line-height:1.12;
+          letter-spacing:-0.7px;
+          color:#f4f8ff;
+          margin-bottom:8px;
+          text-shadow:0 8px 24px rgba(0,0,0,0.18);
+        }
+        .tmr-section-caption {
+          font-size:13px;
+          color:#9ab4d0;
+          margin:0 0 22px 0;
+        }
+        .tmr-notes-title {
+          font-family:'Syne',sans-serif;
+          font-size:28px;
+          font-weight:800;
+          color:#f4f8ff;
+          letter-spacing:-0.5px;
+          margin-bottom:12px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -970,15 +1120,22 @@ def render_tomorrow_picks_panel() -> None:
 
     with st.container():
         st.markdown('<div class="tmr-panel-anchor"></div>', unsafe_allow_html=True)
-        st.markdown('<h2>📈 Tomorrow\'s Picks</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="tmr-main-title">📈 Tomorrow\'s Picks</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div style="font-size:12px;color:#4a6480;margin-bottom:18px;">'
-            'Add tomorrow’s trending ideas and keep notes synced across your devices.</div>',
+            '<div class="tmr-panel-lead">'
+            f'{lead_copy}</div>',
             unsafe_allow_html=True,
         )
-
-        if not sheets_ready:
-            st.warning("⚠️ Google Sheets not configured. Add secrets to enable persistence.")
+        st.markdown(
+            '<div class="tmr-status-pill tmr-status-pill-'
+            f'{status_tone}">'
+            '<span class="tmr-status-icon">'
+            f'{"☁" if storage_mode == "cloud" else "💾"}</span>'
+            f'<span><strong>{status_copy}</strong> '
+            f'{"Changes sync across sessions and devices." if storage_mode == "cloud" else "You can still enable Google Sheets later for cross-device sync."}</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
         left_col, right_col = st.columns([3, 2], gap="large")
 
@@ -986,35 +1143,36 @@ def render_tomorrow_picks_panel() -> None:
             with st.container():
                 st.markdown('<div class="tmr-left-panel-anchor"></div>', unsafe_allow_html=True)
                 st.markdown(
-                    '<div style="font-family:\'Syne\',sans-serif;font-size:24px;font-weight:800;'
-                    'color:#ccd9e8;margin-bottom:4px;">📈 Tomorrow\'s Trending Stocks</div>',
+                    '<div class="tmr-section-title">📈 Tomorrow\'s Trending Stocks</div>',
                     unsafe_allow_html=True,
                 )
-                st.caption("📡 Synced live across all devices")
+                st.markdown(
+                    f'<div class="tmr-section-caption">📡 {sync_caption}</div>',
+                    unsafe_allow_html=True,
+                )
 
-                add_input_col, add_btn_col = st.columns([4, 1.3], gap="small")
-                with add_input_col:
-                    new_symbol = st.text_input(
-                        "List Your Trending Stocks",
-                        key="tmr_symbol_input",
-                        placeholder="e.g. RELIANCE",
-                    )
-                with add_btn_col:
-                    st.markdown('<div class="tmr-add-scope"></div>', unsafe_allow_html=True)
-                    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                    add_clicked = st.button(
-                        "＋ Add",
-                        key="tmr_add_btn",
-                        use_container_width=True,
-                        disabled=len(store["picks"]) >= 20,
-                    )
+                with st.form("tmr_add_form", clear_on_submit=True):
+                    add_input_col, add_btn_col = st.columns([4, 1.3], gap="small")
+                    with add_input_col:
+                        new_symbol = st.text_input(
+                            "List Your Trending Stocks",
+                            key="tmr_symbol_input",
+                            placeholder="e.g. RELIANCE",
+                        )
+                    with add_btn_col:
+                        st.markdown('<div class="tmr-add-scope"></div>', unsafe_allow_html=True)
+                        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                        add_clicked = st.form_submit_button(
+                            "＋ Add",
+                            use_container_width=True,
+                            disabled=len(store["picks"]) >= 20,
+                        )
 
                 if add_clicked:
                     symbol = (new_symbol or "").strip().upper()
                     if symbol and len(store["picks"]) < 20:
                         store["picks"].append(symbol)
                         _persist_tomorrow_store(store)
-                        st.session_state["tmr_symbol_input"] = ""
                         st.rerun()
 
                 if len(store["picks"]) >= 20:
@@ -1033,7 +1191,7 @@ def render_tomorrow_picks_panel() -> None:
                             card_col, remove_col = st.columns([6, 1], gap="small")
                             with card_col:
                                 st.markdown(
-                                    f'<div style="background:#0f2033;border-left:3px solid #00d4a8;'
+                                    f'<div style="background:linear-gradient(180deg, rgba(10,21,32,0.98), rgba(8,16,25,0.98));border-left:3px solid #00d4a8;'
                                     f'border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
                                     f'<div style="color:#00d4a8;font-weight:800;font-size:18px;">'
                                     f'{html.escape(symbol)}</div></div>',
@@ -1055,25 +1213,32 @@ def render_tomorrow_picks_panel() -> None:
             with st.container():
                 st.markdown('<div class="tmr-notes-panel-anchor"></div>', unsafe_allow_html=True)
                 st.markdown(
-                    '<div style="font-family:\'Syne\',sans-serif;font-size:22px;font-weight:800;'
-                    'color:#ccd9e8;margin-bottom:12px;">Notes</div>',
+                    '<div class="tmr-notes-title">Notes</div>',
                     unsafe_allow_html=True,
                 )
-                notes_value = st.text_area(
-                    "Notes",
-                    key="tmr_notes_area",
-                    height=400,
-                    label_visibility="collapsed",
-                )
-                if notes_value != store["notes"]:
+                with st.form("tmr_notes_form", clear_on_submit=False):
+                    notes_value = st.text_area(
+                        "Notes",
+                        key="tmr_notes_area",
+                        height=400,
+                        label_visibility="collapsed",
+                    )
+                    save_notes_clicked = st.form_submit_button(
+                        "Save Notes",
+                        use_container_width=True,
+                    )
+                if save_notes_clicked and notes_value != store["notes"]:
                     store["notes"] = notes_value
                     _persist_tomorrow_store(store)
                     st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Close", key="tmr_picks_close_btn", use_container_width=True):
-            st.session_state["tomorrow_picks_show_panel"] = False
-            st.rerun()
+        st.button(
+            "Close",
+            key="tmr_picks_close_btn",
+            use_container_width=True,
+            on_click=_close_tomorrow_picks_panel,
+        )
 
 _STOCK_AURA_OK = True   # always True — no external dependency
 
@@ -1315,126 +1480,659 @@ inject_animations()
 # NSE TICKER LOADER
 # ─────────────────────────────────────────────────────────────────────
 
-# Path where we persist the large ticker list inside the container.
-# /tmp/ is writable on Streamlit Cloud and survives within a single
-# server run (i.e. across Streamlit "reruns" / page refreshes).
-_TMP_TICKER_CACHE_PATH = "/tmp/nse_sentinel_live_tickers_v2.txt"
-_TICKER_GOOD_COUNT     = 2000   # minimum for a "full" list
+_TICKER_GOOD_COUNT = 2000
+_TICKER_FALLBACK_MIN_COUNT = 500
+_HARDCODED_TICKER_FALLBACK = [
+    "20MICRONS.NS",
+    "21STCENMGM.NS",
+    "360ONE.NS",
+    "3BBLACKBIO.NS",
+    "3IINFOLTD.NS",
+    "3MINDIA.NS",
+    "3PLAND.NS",
+    "5PAISA.NS",
+    "63MOONS.NS",
+    "A2ZINFRA.NS",
+    "AAATECH.NS",
+    "AADHARHFC.NS",
+    "AAKASH.NS",
+    "AAREYDRUGS.NS",
+    "AARNAV.NS",
+    "AARON.NS",
+    "AARTECH.NS",
+    "AARTI.NS",
+    "AARTIDRUGS.NS",
+    "AARTIIND.NS",
+    "AARTIPHARM.NS",
+    "AARTISURF.NS",
+    "AARVI.NS",
+    "AAVAS.NS",
+    "ABAN.NS",
+    "ABANSENT.NS",
+    "ABB.NS",
+    "ABBOTINDIA.NS",
+    "ABCAPITAL.NS",
+    "ABCOTS.NS",
+    "ABDL.NS",
+    "ABDPL.NS",
+    "ABFRL.NS",
+    "ABGSHIP.NS",
+    "ABHICAP.NS",
+    "ABHIINFRAS.NS",
+    "ABINBEV.NS",
+    "ABINFRA.NS",
+    "ABLBL.NS",
+    "ABMINTL.NS",
+    "ABMINTLLTD.NS",
+    "ABMKNO.NS",
+    "ABREL.NS",
+    "ABSLAMC.NS",
+    "ACC.NS",
+    "ACCELYA.NS",
+    "ACCURACY.NS",
+    "ACE.NS",
+    "ACEINTEG.NS",
+    "ACI.NS",
+    "ACL.NS",
+    "ACME.NS",
+    "ACMESOLAR.NS",
+    "ACROPETAL.NS",
+    "ACROW.NS",
+    "ACRYSIL.NS",
+    "ACSTECH.NS",
+    "ACUTAAS.NS",
+    "ADANI.NS",
+    "ADANIENSOL.NS",
+    "ADANIENT.NS",
+    "ADANIGREEN.NS",
+    "ADANIPORTS.NS",
+    "ADANIPOWER.NS",
+    "ADANITRANS.NS",
+    "ADANIWILMAR.NS",
+    "ADANIWIND.NS",
+    "ADFFOODS.NS",
+    "ADHUNIK.NS",
+    "ADIPURIYA.NS",
+    "ADL.NS",
+    "ADOR.NS",
+    "ADORWELD.NS",
+    "ADPBIO.NS",
+    "ADROITINFO.NS",
+    "ADSL.NS",
+    "ADVAIT.NS",
+    "ADVANCE.NS",
+    "ADVANCICON.NS",
+    "ADVANIHOTR.NS",
+    "ADVENTHTL.NS",
+    "ADVENZYMES.NS",
+    "AECS.NS",
+    "AEGISLOG.NS",
+    "AEGISVOPAK.NS",
+    "AEKTRA.NS",
+    "AELPCL.NS",
+    "AEPL.NS",
+    "AEQUS.NS",
+    "AEROENTER.NS",
+    "AEROFLEX.NS",
+    "AERONEU.NS",
+    "AETHER.NS",
+    "AFCONS.NS",
+    "AFFLE.NS",
+    "AFFORDABLE.NS",
+    "AFIL.NS",
+    "AFRO.NS",
+    "AFSL.NS",
+    "AGARIND.NS",
+    "AGARWALEYE.NS",
+    "AGCNET.NS",
+    "AGI.NS",
+    "AGIIL.NS",
+    "AGIO.NS",
+    "AGRITECH.NS",
+    "AGROPHOS.NS",
+    "AGSL.NS",
+    "AHCL.NS",
+    "AHFL.NS",
+    "AHIMSA.NS",
+    "AHLADA.NS",
+    "AHLEAST.NS",
+    "AHLUCONT.NS",
+    "AHLWEST.NS",
+    "AHMEDABADSTEEL.NS",
+    "AIAENG.NS",
+    "AIIL.NS",
+    "AIMCO.NS",
+    "AINDIA.NS",
+    "AINDRA.NS",
+    "AINTGEN.NS",
+    "AIRAN.NS",
+    "AIRLINE.NS",
+    "AIRO.NS",
+    "AIROLAM.NS",
+    "AIRTELPP.NS",
+    "AJANTPHARM.NS",
+    "AJAXENG.NS",
+    "AJAXENGG.NS",
+    "AJMERA.NS",
+    "AJOONI.NS",
+    "AKASH.NS",
+    "AKASHDEEP.NS",
+    "AKASHINFRA.NS",
+    "AKCAPIT.NS",
+    "AKG.NS",
+    "AKGSL.NS",
+    "AKHIL.NS",
+    "AKI.NS",
+    "AKSHAR.NS",
+    "AKSHARCHEM.NS",
+    "AKSHOPTFBR.NS",
+    "AKUMS.NS",
+    "AKZOINDIA.NS",
+    "ALANKIT.NS",
+    "ALBERTDAVD.NS",
+    "ALEMBICLTD.NS",
+    "ALENNOV.NS",
+    "ALESAIND.NS",
+    "ALEXISLGO.NS",
+    "ALGOQUANT.NS",
+    "ALICON.NS",
+    "ALIVUS.NS",
+    "ALKALI.NS",
+    "ALKEM.NS",
+    "ALKYLAMINE.NS",
+    "ALLCARGO.NS",
+    "ALLDIGI.NS",
+    "ALLENSOLVE.NS",
+    "ALLSEC.NS",
+    "ALLTIME.NS",
+    "ALMONDZ.NS",
+    "ALOKINDS.NS",
+    "ALPA.NS",
+    "ALPHAGEO.NS",
+    "ALPHAICON.NS",
+    "ALPHAREALM.NS",
+    "ALTIMETRICS.NS",
+    "ALTIUS.NS",
+    "ALUFLUORIDE.NS",
+    "AMAGI.NS",
+    "AMANTA.NS",
+    "AMARARAJA.NS",
+    "AMBALALRES.NS",
+    "AMBALALSA.NS",
+    "AMBASSADOR.NS",
+    "AMBER.NS",
+    "AMBICAAGAR.NS",
+    "AMBIKCO.NS",
+    "AMBUJACEM.NS",
+    "AMCO.NS",
+    "AMCORIS.NS",
+    "AMDIND.NS",
+    "AMFIL.NS",
+    "AMFORGE.NS",
+    "AMINES.NS",
+    "AMIORG.NS",
+    "AMIRCHAND.NS",
+    "AMJLAND.NS",
+    "AMJUMBO.NS",
+    "AMMAPET.NS",
+    "AMNPLST.NS",
+    "AMPERE.NS",
+    "AMRUTANJAN.NS",
+    "AMTL.NS",
+    "ANANDRATHI.NS",
+    "ANANTRAJ.NS",
+    "ANDHRAPAP.NS",
+    "ANDHRPAPER.NS",
+    "ANDHRPAPMILL.NS",
+    "ANDHRSUGAR.NS",
+    "ANGELONE.NS",
+    "ANGIND.NS",
+    "ANIKINDS.NS",
+    "ANKIT.NS",
+    "ANKITMETAL.NS",
+    "ANMOL.NS",
+    "ANNPURNA.NS",
+    "ANNTL.NS",
+    "ANSALAPI.NS",
+    "ANTELOPUS.NS",
+    "ANTGRAPHIC.NS",
+    "ANTHEM.NS",
+    "ANTONY.NS",
+    "ANUHPHR.NS",
+    "ANUP.NS",
+    "ANUPAM.NS",
+    "ANURAS.NS",
+    "APAR.NS",
+    "APARINDS.NS",
+    "APCL.NS",
+    "APCOTEXIND.NS",
+    "APEX.NS",
+    "APIIND.NS",
+    "APL.NS",
+    "APLAPOLLO.NS",
+    "APLLTD.NS",
+    "APOLLO.NS",
+    "APOLLOFINVEST.NS",
+    "APOLLOHOSP.NS",
+    "APOLLOHSP.NS",
+    "APOLLOPIPE.NS",
+    "APOLLOTYRE.NS",
+    "APOLSINHOT.NS",
+    "APPLEIND.NS",
+    "APPLIEDDNA.NS",
+    "APT.NS",
+    "APTECHT.NS",
+    "APTUS.NS",
+    "AQUA.NS",
+    "AQUALITE.NS",
+    "AQYLON.NS",
+    "ARCHIDPLY.NS",
+    "ARCHIES.NS",
+    "ARCOTECH.NS",
+    "ARE&M.NS",
+    "AREL.NS",
+    "ARENTERP.NS",
+    "AREV.NS",
+    "ARFIN.NS",
+    "ARIES.NS",
+    "ARIHANT.NS",
+    "ARIHANTCAP.NS",
+    "ARIHANTSUP.NS",
+    "ARIS.NS",
+    "ARKADE.NS",
+    "ARMAN.NS",
+    "ARMANFIN.NS",
+    "ARNITJ.NS",
+    "AROGRANITE.NS",
+    "AROHAN.NS",
+    "ARROWGREEN.NS",
+    "ARROWHEAD.NS",
+    "ARSHIYA.NS",
+    "ARSSBL.NS",
+    "ARTEMISMED.NS",
+    "ARTNIRMAN.NS",
+    "ARTSON.NS",
+    "ARVEE.NS",
+    "ARVIND.NS",
+    "ARVINDFASHN.NS",
+    "ARVINDFASN.NS",
+    "ARVSMART.NS",
+    "ASAHIINDIA.NS",
+    "ASAHISONG.NS",
+    "ASAL.NS",
+    "ASALCBR.NS",
+    "ASCOM.NS",
+    "ASEL.NS",
+    "ASHAPURMIN.NS",
+    "ASHARI.NS",
+    "ASHIANA.NS",
+    "ASHIKA.NS",
+    "ASHIMASYN.NS",
+    "ASHOKA.NS",
+    "ASHOKAMET.NS",
+    "ASHOKLEY.NS",
+    "ASIANENE.NS",
+    "ASIANHOTNR.NS",
+    "ASIANPAINT.NS",
+    "ASIANTILES.NS",
+    "ASKAUTOLTD.NS",
+    "ASMS.NS",
+    "ASPINWALL.NS",
+    "ASSOCEMEN.NS",
+    "ASTAR.NS",
+    "ASTEC.NS",
+    "ASTECINDIA.NS",
+    "ASTER.NS",
+    "ASTERDM.NS",
+    "ASTHAGRAPH.NS",
+    "ASTRA.NS",
+    "ASTRAL.NS",
+    "ASTRAMICRO.NS",
+    "ASTRAZEN.NS",
+    "ASTRON.NS",
+    "ASTTRAL.NS",
+    "ATALREAL.NS",
+    "ATAM.NS",
+    "ATGL.NS",
+    "ATHERENERG.NS",
+    "ATISHAY.NS",
+    "ATL.NS",
+    "ATLANTAA.NS",
+    "ATLANTAELE.NS",
+    "ATLAS.NS",
+    "ATLASCOPC.NS",
+    "ATLASCYCLE.NS",
+    "ATLP.NS",
+    "ATSS.NS",
+    "ATTICUS.NS",
+    "ATUL.NS",
+    "ATULAUTO.NS",
+    "AUBANK.NS",
+    "AURIGROW.NS",
+    "AURIONPRO.NS",
+    "AUROPHARMA.NS",
+    "AURUM.NS",
+    "AUSOME.NS",
+    "AUSOMENT.NS",
+    "AUSTIN.NS",
+    "AUTOAXLES.NS",
+    "AUTOBEES.NS",
+    "AUTOCORP.NS",
+    "AUTOIND.NS",
+    "AUTONC.NS",
+    "AVADHSUGAR.NS",
+    "AVAILFC.NS",
+    "AVALON.NS",
+    "AVANTEL.NS",
+    "AVANTIFEED.NS",
+    "AVG.NS",
+    "AVL.NS",
+    "AVONMORE.NS",
+    "AVROIND.NS",
+    "AVSL.NS",
+    "AVTNPL.NS",
+    "AWFIS.NS",
+    "AWHCL.NS",
+    "AWL.NS",
+    "AXISBANK.NS",
+    "AXISCADES.NS",
+    "AXITA.NS",
+    "AYE.NS",
+    "AYMSYNTEX.NS",
+    "AYUDHAN.NS",
+    "AZAD.NS",
+    "AZIMUTH.NS",
+    "BAFNAPH.NS",
+    "BAGFILMS.NS",
+    "BAIDFIN.NS",
+    "BAJAJ-AUTO.NS",
+    "BAJAJCON.NS",
+    "BAJAJELEC.NS",
+    "BAJAJFINSV.NS",
+    "BAJAJHCARE.NS",
+    "BAJAJHFL.NS",
+    "BAJAJHHL.NS",
+    "BAJAJHIND.NS",
+    "BAJAJHLDNG.NS",
+    "BAJAJHOUSING.NS",
+    "BAJAJINDEF.NS",
+    "BAJAJSFL.NS",
+    "BAJAJST.NS",
+    "BAJEL.NS",
+    "BAJELECTR.NS",
+    "BAJFINANCE.NS",
+    "BALAJEE.NS",
+    "BALAJITELE.NS",
+    "BALAMAR.NS",
+    "BALAMERCANTILE.NS",
+    "BALAMINES.NS",
+    "BALASORE.NS",
+    "BALAXI.NS",
+    "BALI.NS",
+    "BALKRISHIND.NS",
+    "BALKRISHNA.NS",
+    "BALKRISIND.NS",
+    "BALMLAWRIE.NS",
+    "BALPHARMA.NS",
+    "BALRAMCHIN.NS",
+    "BALUFORGE.NS",
+    "BAMBINO.NS",
+    "BANARBEADS.NS",
+    "BANARISUG.NS",
+    "BANCO.NS",
+    "BANCOINDIA.NS",
+    "BANDHANBNK.NS",
+    "BANG.NS",
+    "BANGALHOT.NS",
+    "BANKA.NS",
+    "BANKBARODA.NS",
+    "BANKINDIA.NS",
+    "BANKMAHA.NS",
+    "BANNARI.NS",
+    "BANSALWIRE.NS",
+    "BANSWRAS.NS",
+    "BARBEQUE.NS",
+    "BARCLAYS.NS",
+    "BARODA.NS",
+    "BASF.NS",
+    "BASML.NS",
+    "BATAINDIA.NS",
+    "BATLIBOI.NS",
+    "BAYER.NS",
+    "BAYERCROP.NS",
+    "BBL.NS",
+    "BBOX.NS",
+    "BBTC.NS",
+    "BBTCL.NS",
+    "BCG.NS",
+    "BCLIND.NS",
+    "BCONCEPTS.NS",
+    "BCPL.NS",
+    "BDL.NS",
+    "BEARDSELL.NS",
+    "BECTORFOOD.NS",
+    "BEDMUTHA.NS",
+    "BEEKAY.NS",
+    "BEEKAYST.NS",
+    "BEL.NS",
+    "BELLACASA.NS",
+    "BELRISE.NS",
+    "BEML.NS",
+    "BENGALASM.NS",
+    "BEPL.NS",
+    "BERGEPAINT.NS",
+    "BESTAGRO.NS",
+    "BETA.NS",
+    "BFINVEST.NS",
+    "BFUTILITIE.NS",
+    "BGRENERGY.NS",
+    "BHAGCHEM.NS",
+    "BHAGERIA.NS",
+    "BHAGWATI.NS",
+    "BHAGYANAGAR.NS",
+    "BHAGYANGR.NS",
+    "BHANDARI.NS",
+    "BHARAT.NS",
+    "BHARATCOAL.NS",
+    "BHARATFORG.NS",
+    "BHARATGEAR.NS",
+    "BHARATRAS.NS",
+    "BHARATSE.NS",
+    "BHARATWIRE.NS",
+    "BHARTIARTL.NS",
+    "BHARTIAXML.NS",
+    "BHARTIGAS.NS",
+    "BHARTIHEXA.NS",
+    "BHAVYA.NS",
+    "BHEL.NS",
+    "BHILWARA.NS",
+    "BHORUKA.NS",
+    "BI.NS",
+    "BIGBLOC.NS",
+    "BIGSHARE.NS",
+    "BIKAJI.NS",
+    "BIL.NS",
+    "BIMETAL.NS",
+    "BINANIIND.NS",
+    "BINDAL.NS",
+    "BINDHYA.NS",
+    "BIOCON.NS",
+    "BIOFILCHEM.NS",
+    "BIOPAC.NS",
+    "BIRLACABLE.NS",
+    "BIRLACORPN.NS",
+    "BIRLAMONEY.NS",
+    "BIRLANU.NS",
+    "BIRLANUVO.NS",
+    "BIRLAPREC.NS",
+    "BIRLASOFT.NS",
+    "BLACKBUCK.NS",
+    "BLACKROSE.NS",
+    "BLAL.NS",
+    "BLBLIMITED.NS",
+    "BLIL.NS",
+    "BLISS.NS",
+    "BLISSGVS.NS",
+    "BLKASHYAP.NS",
+    "BLS.NS",
+    "BLSE.NS",
+    "BLUECHIP.NS",
+    "BLUECOAST.NS",
+    "BLUEDART.NS",
+    "BLUEJET.NS",
+    "BLUESTAR.NS",
+    "BLUESTARCO.NS",
+    "BLUESTONE.NS",
+]
 
 
-def _tmp_write_tickers(tickers: list) -> None:
-    """Save ticker list to /tmp/ so it survives in-process restarts."""
+def _save_tickers_to_gsheets(tickers: list) -> None:
+    """
+    Save full ticker list to Google Sheets tickers tab.
+    Called once after a successful live fetch.
+    Never crashes — fully wrapped.
+    """
     try:
-        with open(_TMP_TICKER_CACHE_PATH, "w", encoding="utf-8") as _fh:
-            _fh.write("\n".join(tickers))
+        normalized = sorted({
+            symbol if symbol.endswith(".NS") else f"{symbol}.NS"
+            for symbol in [
+                str(t).strip().upper().replace(".NS", "")
+                for t in (tickers or [])
+                if str(t).strip()
+            ]
+        })
+        if not normalized:
+            return
+
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        _SCOPES = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]),
+            scopes=_SCOPES,
+        )
+        client = gspread.authorize(creds)
+        sh = client.open_by_key(
+            st.secrets["google_sheets"]["sheet_id"]
+        )
+        try:
+            ws = sh.worksheet("tickers")
+        except Exception:
+            ws = sh.add_worksheet("tickers", rows=3500, cols=1)
+
+        rows = [["# NSE Tickers — auto-updated"]] + [
+            [ticker] for ticker in normalized
+        ]
+        ws.clear()
+        ws.update("A1", rows)
     except Exception:
         pass
 
 
-def _tmp_read_tickers() -> list:
-    """Read ticker list from /tmp/. Returns [] if missing or too small."""
+@st.cache_data(ttl=43200, show_spinner=False)
+def fetch_nse_tickers() -> list:
+
+    # ── LAYER 1: session_state permanent backup ───────────────
+    # If we already loaded a full list this session keep it
+    # even after cache TTL expires — survives indefinitely
     try:
-        import os
-        if not os.path.exists(_TMP_TICKER_CACHE_PATH):
-            return []
-        with open(_TMP_TICKER_CACHE_PATH, "r", encoding="utf-8") as _fh:
-            lines = [l.strip() for l in _fh.read().splitlines() if l.strip()]
-        return lines if len(lines) >= _TICKER_GOOD_COUNT else []
-    except Exception:
-        return []
-
-
-def _fetch_tickers_from_all_sources() -> list:
-    """
-    Try every source in priority order and return the largest list found.
-    Called at most ONCE per process lifetime (held in cache_resource).
-    """
-    best_tickers: list[str] = []
-
-    def _remember(candidate: list[str] | None) -> None:
-        nonlocal best_tickers
-        if candidate and len(candidate) > len(best_tickers):
-            best_tickers = list(candidate)
-
-    # Source 1: /tmp/ file written by a previous fetch this server-run
-    _tmp = _tmp_read_tickers()
-    _remember(_tmp)
-
-    # Source 2: nse_ticker_universe module (GitHub + NSE + repo txt)
-    try:
-        from nse_ticker_universe import get_all_tickers as _gat
-        from nse_ticker_universe import invalidate_cache as _inv
-        tickers_live = _gat(live=True)
-        _remember(tickers_live)
-        if len(tickers_live) < _TICKER_GOOD_COUNT:
-            _inv()
-        tickers_fallback = _gat(live=False)
-        _remember(tickers_fallback)
+        cached = st.session_state.get("_ticker_master_list", [])
+        if isinstance(cached, list) and len(cached) >= _TICKER_GOOD_COUNT:
+            return cached
     except Exception:
         pass
 
-    # Source 3: repo nse_tickers.txt read directly
+    # ── LAYER 2: Google Sheets backup (permanent storage) ─────
+    # The full ticker list is saved to Google Sheets once on
+    # first successful load. Every subsequent wake reads from
+    # there — not from GitHub or NSE.
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+
+        _SCOPES = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(
+            dict(st.secrets["gcp_service_account"]),
+            scopes=_SCOPES,
+        )
+        client = gspread.authorize(creds)
+        sh = client.open_by_key(
+            st.secrets["google_sheets"]["sheet_id"]
+        )
+        try:
+            ws = sh.worksheet("tickers")
+        except Exception:
+            ws = sh.add_worksheet("tickers", rows=3500, cols=1)
+
+        values = ws.col_values(1)
+        gs_tickers = [
+            value.strip().upper() for value in values
+            if value.strip() and not value.strip().startswith("#")
+        ]
+        gs_tickers = [
+            ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+            for ticker in gs_tickers
+        ]
+        gs_tickers = sorted(set(gs_tickers))
+        if len(gs_tickers) >= _TICKER_GOOD_COUNT:
+            st.session_state["_ticker_master_list"] = gs_tickers
+            return gs_tickers
+    except Exception:
+        pass
+
+    # ── LAYER 3: nse_ticker_universe module ───────────────────
+    try:
+        from nse_ticker_universe import (
+            get_all_tickers,
+            invalidate_cache,
+        )
+
+        tickers = sorted(set(get_all_tickers(live=True) or []))
+        if len(tickers) >= _TICKER_GOOD_COUNT:
+            st.session_state["_ticker_master_list"] = tickers
+            _save_tickers_to_gsheets(tickers)
+            return tickers
+
+        invalidate_cache()
+        tickers = sorted(set(get_all_tickers(live=False) or []))
+        if len(tickers) >= 1000:
+            if len(tickers) >= _TICKER_GOOD_COUNT:
+                st.session_state["_ticker_master_list"] = tickers
+            return tickers
+    except Exception:
+        pass
+
+    # ── LAYER 4: nse_tickers.txt in repo ─────────────────────
     try:
         import pathlib
-        _tf = pathlib.Path(__file__).with_name("nse_tickers.txt")
-        if _tf.exists():
-            syms = sorted({
-                f"{l.strip().upper().replace('.NS','')}.NS"
-                for l in _tf.read_text(encoding="utf-8", errors="ignore").splitlines()
-                if l.strip()
-            })
-            _remember(syms)
+
+        f = pathlib.Path(__file__).with_name("nse_tickers.txt")
+        if f.exists():
+            symbols = sorted(set([
+                f"{line.strip().upper().replace('.NS', '')}.NS"
+                for line in f.read_text(
+                    encoding="utf-8", errors="ignore"
+                ).splitlines()
+                if line.strip()
+            ]))
+            if len(symbols) >= _TICKER_FALLBACK_MIN_COUNT:
+                if len(symbols) >= _TICKER_GOOD_COUNT:
+                    st.session_state["_ticker_master_list"] = symbols
+                return symbols
     except Exception:
         pass
 
-    if len(best_tickers) >= _TICKER_GOOD_COUNT:
-        _tmp_write_tickers(best_tickers)
-    if best_tickers:
-        return best_tickers
-
-    # Source 4: hardcoded Nifty-50 last resort
-    return [
-        "RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS",
-        "HINDUNILVR.NS","SBIN.NS","BHARTIARTL.NS","ITC.NS","KOTAKBANK.NS",
-        "LT.NS","AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS","BAJFINANCE.NS",
-        "HCLTECH.NS","SUNPHARMA.NS","TITAN.NS","ULTRACEMCO.NS","ONGC.NS",
-        "NESTLEIND.NS","WIPRO.NS","POWERGRID.NS","NTPC.NS","TECHM.NS",
-        "INDUSINDBK.NS","ADANIPORTS.NS","TATAMOTORS.NS","JSWSTEEL.NS",
-        "BAJAJFINSV.NS","HINDALCO.NS","GRASIM.NS","DIVISLAB.NS","CIPLA.NS",
-        "DRREDDY.NS","BPCL.NS","EICHERMOT.NS","APOLLOHOSP.NS","TATACONSUM.NS",
-        "BRITANNIA.NS","COALINDIA.NS","HEROMOTOCO.NS","SHREECEM.NS",
-        "SBILIFE.NS","HDFCLIFE.NS","ADANIENT.NS","BAJAJ-AUTO.NS",
-        "TATASTEEL.NS","UPL.NS","M&M.NS",
-    ]
-
-
-@st.cache_resource(show_spinner=False)
-def _ticker_resource_store() -> dict:
-    """
-    A module-level mutable dict cached with st.cache_resource.
-
-    KEY DIFFERENCE vs st.cache_data:
-      • cache_resource has NO TTL — it lives for the ENTIRE process lifetime.
-      • cache_data(ttl=...) re-runs the function after the TTL expires.
-        When GitHub returns 403 on re-run, the count drops from 2985 → 1524.
-      • cache_resource is never automatically cleared by Streamlit.
-
-    This is the root-cause fix. The dict holds the tickers loaded on
-    first startup and never drops them regardless of time elapsed.
-    """
-    tickers = _fetch_tickers_from_all_sources()
-    return {"tickers": tickers}
-
-
-def fetch_nse_tickers() -> list:
-    """
-    Return the NSE ticker universe for scanning.
-
-    Always returns the list loaded on first startup (via cache_resource).
-    Never re-fetches from GitHub after startup, so the count is stable.
-    """
-    store = _ticker_resource_store()
-    return store["tickers"]
+    # ── LAYER 5: hardcoded Nifty 500 top stocks ───────────────
+    # This is NOT 50 stocks — expanded so even total failure
+    # still leaves the app with a large scan universe.
+    return list(_HARDCODED_TICKER_FALLBACK)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -3163,6 +3861,10 @@ def _activate_sidebar_panel(active_key: str | None = None) -> None:
         st.session_state[key] = (key == active_key)
     st.rerun()
 
+
+def _close_tomorrow_picks_panel() -> None:
+    st.session_state["tomorrow_picks_show_panel"] = False
+
 with st.sidebar:
     st.markdown(
         '<div style="font-family:\'Syne\',sans-serif;font-weight:800;font-size:20px;'
@@ -3439,10 +4141,25 @@ if _show_home_scanner:
         f'{(_tt.get_reference_datetime()).strftime("%d %b %Y, %H:%M")}'
         f'{"  🕰️ TIME TRAVEL" if _tt.is_active() else ""}</p>',
         unsafe_allow_html=True)
+    st.caption(get_data_status_label())
 
 with st.spinner("Loading NSE ticker list..."):
     all_tickers = fetch_nse_tickers()
 n = len(all_tickers)
+
+with st.sidebar:
+    ticker_count = len(all_tickers)
+    if ticker_count < _TICKER_GOOD_COUNT:
+        st.warning(
+            f"⚠️ Only {ticker_count} tickers loaded. "
+            f"Click below to restore full list."
+        )
+        if st.button("🔄 Restore Full Ticker List", key="restore_full_ticker_list_btn"):
+            st.cache_data.clear()
+            st.session_state.pop("_ticker_master_list", None)
+            st.rerun()
+    else:
+        st.caption(f"✅ {ticker_count:,} tickers loaded")
 
 if _show_home_scanner:
     c1, c2, c3, c4 = st.columns(4)
@@ -3499,62 +4216,119 @@ if scan_clicked or main_scan_clicked:
         # with the TT cutoff applied, not a previously cached live value.
         _NIFTY_20D_RET = None
 
-    preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
-        "Preparing price-history preload..."
-    )
-    _preload_state = {
-        "done": 0,
-        "total": len(all_tickers),
-        "loaded": 0,
-    }
-    _preload_render = {
-        "done": 0,
-        "ts": 0.0,
-        "step": max(12, len(all_tickers) // 120) if all_tickers else 12,
-    }
+    window = get_current_window()
+    expected_date = get_expected_data_date()
+    _snapshot_hint_path = get_snapshot_path(expected_date)
+    skip_preload = False
+    do_snapshot = False
 
-    def _update_preload(done: int, total: int, loaded: int) -> None:
-        _preload_state["done"] = done
-        _preload_state["total"] = total
-        _preload_state["loaded"] = loaded
-        now = time.time()
-        should_render = (
-            done == total
-            or done == 1
-            or (done - _preload_render["done"]) >= _preload_render["step"]
-            or (now - _preload_render["ts"]) >= 0.25
+    if _tt_active_date is None:
+        if window in ("PRE_MARKET", "WEEKEND"):
+            if snapshot_exists(expected_date):
+                loaded = load_snapshot_into_ALL_DATA(expected_date)
+                if loaded > 0:
+                    st.info(
+                        f"📂 Loaded {loaded} tickers from "
+                        f"{expected_date} closing snapshot. "
+                        f"No download needed."
+                    )
+                    skip_preload = True
+                else:
+                    st.warning(
+                        f"⚠️ Snapshot found at {_snapshot_hint_path} "
+                        "but could not be loaded. Falling back to preload."
+                    )
+                    skip_preload = False
+            else:
+                skip_preload = False
+        elif window == "CLOSED":
+            if snapshot_exists(expected_date):
+                loaded = load_snapshot_into_ALL_DATA(expected_date)
+                if loaded > 0:
+                    st.info(
+                        f"📂 Loaded {loaded} tickers from "
+                        f"{expected_date} closing snapshot. "
+                        f"No download needed."
+                    )
+                    skip_preload = True
+                    do_snapshot = False
+                else:
+                    skip_preload = False
+                    do_snapshot = False
+            else:
+                skip_preload = False
+                do_snapshot = True
+        else:
+            skip_preload = False
+            do_snapshot = False
+
+    if not skip_preload:
+        preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
+            "Preparing price-history preload..."
         )
-        if not should_render:
-            return
-        _preload_render["done"] = done
-        _preload_render["ts"] = now
-        _update_stage_feedback(
+        _preload_state = {
+            "done": 0,
+            "total": len(all_tickers),
+            "loaded": 0,
+        }
+        _preload_render = {
+            "done": 0,
+            "ts": 0.0,
+            "step": max(12, len(all_tickers) // 120) if all_tickers else 12,
+        }
+
+        def _update_preload(done: int, total: int, loaded: int) -> None:
+            _preload_state["done"] = done
+            _preload_state["total"] = total
+            _preload_state["loaded"] = loaded
+            now = time.time()
+            should_render = (
+                done == total
+                or done == 1
+                or (done - _preload_render["done"]) >= _preload_render["step"]
+                or (now - _preload_render["ts"]) >= 0.25
+            )
+            if not should_render:
+                return
+            _preload_render["done"] = done
+            _preload_render["ts"] = now
+            _update_stage_feedback(
+                preload_bar,
+                preload_status,
+                preload_eta,
+                preload_started,
+                done,
+                total,
+                loaded,
+                "Preloaded",
+                "Ready",
+            )
+
+        preload_all(
+            all_tickers,
+            period="3mo",
+            workers=workers,
+            progress_callback=_update_preload,
+        )
+        _finish_stage_feedback(
             preload_bar,
             preload_status,
             preload_eta,
             preload_started,
-            done,
-            total,
-            loaded,
-            "Preloaded",
+            _preload_state["total"] if _preload_state["total"] > 0 else len(all_tickers),
+            _preload_state["loaded"],
             "Ready",
         )
 
-    preload_all(
-        all_tickers,
-        period="6mo",
-        workers=workers,
-        progress_callback=_update_preload,
-    )
-    _finish_stage_feedback(
-        preload_bar,
-        preload_status,
-        preload_eta,
-        preload_started,
-        _preload_state["total"] if _preload_state["total"] > 0 else len(all_tickers),
-        _preload_state["loaded"],
-        "Ready",
-    )
+    if _tt_active_date is None and do_snapshot and window == "CLOSED" and not snapshot_exists(expected_date):
+        try:
+            from strategy_engines._engine_utils import ALL_DATA
+
+            saved = save_closing_snapshot(ALL_DATA, expected_date)
+            if saved > 0:
+                st.success(f"💾 Closing snapshot saved: {saved} tickers for {expected_date}")
+        except Exception:
+            pass
 
     # Warm the active-mode ML model only after preload so it can reuse the
     # loaded history and avoid duplicate network work during scan startup.
@@ -3699,21 +4473,22 @@ if st.session_state.get("battle_show_panel", False):
         st.rerun()
 
     configure_nse_stock_search(fetch_nse_tickers())
-    _battle_input_col1, _battle_input_col2 = st.columns(2)
-    with _battle_input_col1:
-        _t1  = render_nse_stock_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
-        _t2  = render_nse_stock_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
-        _t3  = render_nse_stock_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
-        _t4  = render_nse_stock_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
-        _t5  = render_nse_stock_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
-    with _battle_input_col2:
-        _t6  = render_nse_stock_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
-        _t7  = render_nse_stock_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
-        _t8  = render_nse_stock_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
-        _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
-        _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
+    with st.form("battle_mode_form", clear_on_submit=False):
+        _battle_input_col1, _battle_input_col2 = st.columns(2)
+        with _battle_input_col1:
+            _t1  = render_nse_stock_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
+            _t2  = render_nse_stock_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
+            _t3  = render_nse_stock_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
+            _t4  = render_nse_stock_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
+            _t5  = render_nse_stock_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
+        with _battle_input_col2:
+            _t6  = render_nse_stock_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
+            _t7  = render_nse_stock_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
+            _t8  = render_nse_stock_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
+            _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
+            _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
 
-    _battle_main_run = st.button("Run Battle Analysis", key="battle_run_btn", use_container_width=True)
+        _battle_main_run = st.form_submit_button("Run Battle Analysis", use_container_width=True)
     if _battle_main_run:
         _all_inputs = [_t1, _t2, _t3, _t4, _t5, _t6, _t7, _t8, _t9, _t10]
         _battle_tickers = [t.strip() for t in _all_inputs if t and t.strip()][:10]
