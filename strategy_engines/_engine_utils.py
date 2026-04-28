@@ -32,6 +32,8 @@ ALL_DATA: dict[str, pd.DataFrame | None] = {}
 _ALL_DATA_LOCK = threading.Lock()
 _NO_DATA_TICKERS: set[str] = set()
 _NO_DATA_LOCK = threading.Lock()
+_LAST_LIVE_CACHE_DATE: date | None = None
+_LIVE_CACHE_LOCK = threading.Lock()
 
 
 # ── optional sklearn ──────────────────────────────────────────────────
@@ -144,6 +146,39 @@ def _is_stale_live_frame(df: pd.DataFrame | None) -> bool:
     return last_seen < expected
 
 
+def _is_fresh_live_frame(df: pd.DataFrame | None) -> bool:
+    return df is not None and not _is_stale_live_frame(df)
+
+
+def is_fresh_enough(df: pd.DataFrame | None, strict: bool = False) -> bool:
+    """
+    Public freshness helper for scan callers.
+
+    strict=True enforces the expected live market date from the central engine.
+    strict=False keeps the older loose "within the last week" fallback check.
+    Time Travel mode bypasses live-date freshness and relies on its own cutoff.
+    """
+    if df is None or df.empty:
+        return False
+
+    try:
+        import time_travel_engine as _tt
+
+        if _tt.is_active():
+            return True
+    except Exception:
+        pass
+
+    last_seen = _frame_last_market_date(df)
+    if last_seen is None:
+        return False
+
+    if strict:
+        return not _is_stale_live_frame(df)
+
+    return (_now_ist().date() - last_seen).days <= 7
+
+
 def _persist_frame_to_csv(ticker_ns: str, df: pd.DataFrame | None) -> None:
     if df is None or df.empty:
         return
@@ -183,6 +218,32 @@ def _coerce_no_data_tickers() -> set[str]:
     return _NO_DATA_TICKERS
 
 
+def _reset_live_caches_if_market_day_changed() -> None:
+    """
+    Reset process-global live caches when the expected market date advances.
+
+    Streamlit can keep the worker alive overnight, so this cannot rely on
+    per-session state inside app.py.
+    """
+    expected = _expected_live_data_date()
+    if expected is None:
+        return
+
+    global _LAST_LIVE_CACHE_DATE
+    with _LIVE_CACHE_LOCK:
+        if _LAST_LIVE_CACHE_DATE is None:
+            _LAST_LIVE_CACHE_DATE = expected
+            return
+        if _LAST_LIVE_CACHE_DATE == expected:
+            return
+
+        with _ALL_DATA_LOCK:
+            ALL_DATA.clear()
+        with _NO_DATA_LOCK:
+            _coerce_no_data_tickers().clear()
+        _LAST_LIVE_CACHE_DATE = expected
+
+
 def _mark_no_data(ticker_ns: str) -> None:
     with _NO_DATA_LOCK:
         _coerce_no_data_tickers().add(ticker_ns)
@@ -210,6 +271,8 @@ def download_history(ticker_ns: str, period: str = "6mo") -> pd.DataFrame | None
         prepared = _prepare_loaded_frame(df)
         if prepared is None:
             _mark_no_data(ticker_ns)
+            return None
+        if _is_stale_live_frame(prepared):
             return None
         _clear_no_data(ticker_ns)
         return prepared
@@ -259,7 +322,8 @@ def _download_batch(
     out: dict[str, pd.DataFrame | None] = {}
 
     if len(tickers_ns) == 1 and not isinstance(batch_df.columns, pd.MultiIndex):
-        out[tickers_ns[0]] = _prepare_loaded_frame(batch_df)
+        prepared = _prepare_loaded_frame(batch_df)
+        out[tickers_ns[0]] = prepared if _is_fresh_live_frame(prepared) else None
         return out, True
 
     if not isinstance(batch_df.columns, pd.MultiIndex):
@@ -275,7 +339,8 @@ def _download_batch(
         except Exception:
             out[ticker_ns] = None
             continue
-        out[ticker_ns] = _prepare_loaded_frame(one_df)
+        prepared = _prepare_loaded_frame(one_df)
+        out[ticker_ns] = prepared if _is_fresh_live_frame(prepared) else None
 
     return out, True
 
@@ -290,6 +355,8 @@ def preload_all(
     Fill ALL_DATA with OHLCV DataFrames for every ticker in parallel.
     Called once before run_scan() so analyse() can use get_df_for_ticker().
     """
+    _reset_live_caches_if_market_day_changed()
+
     tickers_ns = [t if t.endswith(".NS") else f"{t}.NS" for t in tickers]
     total = len(tickers_ns)
     done = 0
@@ -380,9 +447,17 @@ def preload_all(
             with _ALL_DATA_LOCK:
                 for ticker_ns in batch:
                     frame = batch_frames.get(ticker_ns)
-                    if frame is None:
-                        frame = stale_fallbacks.get(ticker_ns)
-                    ALL_DATA[ticker_ns] = frame
+                    if frame is not None:
+                        ALL_DATA[ticker_ns] = frame
+                        continue
+
+                    fallback = stale_fallbacks.get(ticker_ns)
+                    if fallback is None:
+                        continue
+
+                    existing_frame = ALL_DATA.get(ticker_ns)
+                    if existing_frame is None or _is_stale_live_frame(existing_frame):
+                        ALL_DATA[ticker_ns] = fallback
             for ticker_ns in batch:
                 frame = batch_frames.get(ticker_ns)
                 if frame is None:
