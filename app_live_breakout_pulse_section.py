@@ -196,8 +196,15 @@ def render_live_breakout_pulse(
     _panel_open = bool(st.session_state.get("live_pulse_show_panel", False))
     if not (live_pulse_clicked or _panel_open):
         return
+    _auto_run_scan = bool(st.session_state.pop("live_pulse_autorun", False))
+    _run_scan_now = live_pulse_clicked or _auto_run_scan
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    try:
+        from trade_decision_simple import apply_trade_decision_simple_any
+    except Exception:
+        def apply_trade_decision_simple_any(df):
+            return df
+
 
     # ── Header ────────────────────────────────────────────────────────
     st.markdown(
@@ -212,6 +219,17 @@ def render_live_breakout_pulse(
     )
 
     # ── Engine availability check ─────────────────────────────────────
+    _close_live_cols = st.columns([5.5, 1.5])
+    with _close_live_cols[1]:
+        _close_live_pulse = st.button(
+            "Back",
+            key="live_pulse_close_panel_btn",
+        )
+
+    if _close_live_pulse:
+        st.session_state["live_pulse_show_panel"] = False
+        st.rerun()
+
     if not _LIVE_PULSE_ENGINE_OK:
         st.warning(
             "⚠️ `live_breakout_pulse_engine.py` not found. "
@@ -228,7 +246,7 @@ def render_live_breakout_pulse(
         )
 
     # ── Trigger scan ─────────────────────────────────────────────────
-    if live_pulse_clicked:
+    if _run_scan_now:
         _pb, _status_box, _meta_box, _started_at = _start_scan_feedback(
             "Preparing live breakout scan..."
         )
@@ -295,7 +313,7 @@ def render_live_breakout_pulse(
         return
 
     if not isinstance(pulse_df, pd.DataFrame) or pulse_df.empty:
-        if live_pulse_clicked:
+        if _run_scan_now:
             st.info(
                 "No stocks passed the Live Breakout Pulse filters right now. "
                 "Market may be in a low-momentum phase — check back later."
@@ -382,17 +400,20 @@ def render_live_breakout_pulse(
         "Final Score":      st.column_config.NumberColumn("Score", format="%.1f"),
         "Signal":           st.column_config.TextColumn("Signal"),
         "Chart Link":       st.column_config.LinkColumn("Chart", display_text="📈 View"),
+        "Action":           st.column_config.TextColumn("Action"),
+        "Hold Days":        st.column_config.TextColumn("Hold Days"),
     }
 
     def _show_table(data: pd.DataFrame, key_suffix: str) -> None:
         if data.empty:
             st.info("No stocks in this category.")
             return
+        display_data = apply_trade_decision_simple_any(data.copy())
         st.caption(
             f"Showing top {_VISIBLE_RESULT_LIMIT} of {len(data)} results in this tab. Download keeps all rows."
         )
         st.dataframe(
-            data.head(_VISIBLE_RESULT_LIMIT),
+            display_data.head(_VISIBLE_RESULT_LIMIT),
             column_config=_col_cfg,
             width="stretch",
             hide_index=True,

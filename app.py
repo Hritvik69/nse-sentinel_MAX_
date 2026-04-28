@@ -45,12 +45,14 @@ except Exception:
 
 import io
 import html
+import json
 import threading
 import time
 import warnings
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -200,6 +202,7 @@ _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+_TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
 
 
 @st.cache_resource(ttl=0)
@@ -241,7 +244,6 @@ def _load_picks() -> dict:
         # Read row 2 (data row)
         picks_json = ws.cell(2, 1).value or "[]"
         notes_text = ws.cell(2, 2).value or ""
-        import json
         picks = json.loads(picks_json)
         return {"picks": picks, "notes": notes_text}
     except Exception:
@@ -257,7 +259,6 @@ def _save_picks(store: dict) -> None:
         ws = _get_sheet()
         if ws is None:
             return
-        import json
         # Write headers if empty
         if not ws.cell(1, 1).value:
             ws.update("A1:B1", [["picks", "notes"]])
@@ -291,23 +292,56 @@ def _normalize_tomorrow_store(store: dict | None) -> dict:
     }
 
 
-def _load_tomorrow_store() -> tuple[dict, bool]:
+def _load_local_tomorrow_store() -> dict:
+    default = {"picks": [], "notes": ""}
+    try:
+        if not _TOMORROW_STORE_PATH.exists():
+            return default
+        payload = json.loads(_TOMORROW_STORE_PATH.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else default
+    except Exception:
+        return default
+
+
+def _save_local_tomorrow_store(store: dict) -> bool:
+    try:
+        _TOMORROW_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _TOMORROW_STORE_PATH.write_text(
+            json.dumps(store, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _load_tomorrow_store() -> tuple[dict, str]:
     default = _normalize_tomorrow_store(None)
     sheets_ready = _get_sheet() is not None
     if sheets_ready:
         store = _normalize_tomorrow_store(_load_picks())
+        storage_mode = "cloud"
     else:
-        store = _normalize_tomorrow_store(
-            st.session_state.get("tomorrow_picks_store", default)
-        )
+        local_store = _normalize_tomorrow_store(_load_local_tomorrow_store())
+        if local_store["picks"] or local_store["notes"]:
+            store = local_store
+            storage_mode = "local"
+        else:
+            store = _normalize_tomorrow_store(
+                st.session_state.get("tomorrow_picks_store", default)
+            )
+            storage_mode = "local"
     st.session_state["tomorrow_picks_store"] = store
-    return store, sheets_ready
+    return store, storage_mode
 
 
 def _persist_tomorrow_store(store: dict) -> None:
     normalized = _normalize_tomorrow_store(store)
     st.session_state["tomorrow_picks_store"] = normalized
-    _save_picks(normalized)
+    if _get_sheet() is not None:
+        _save_picks(normalized)
+    else:
+        _save_local_tomorrow_store(normalized)
 
 try:
     import scan_diagnostics as _scan_diag
@@ -772,16 +806,22 @@ def render_stock_aura_panel() -> None:
 
     # Input row
     configure_nse_stock_search(fetch_nse_tickers())
-    c_in, c_btn, c_cls = st.columns([3, 1, 1])
-    with c_in:
-        ticker_raw = render_nse_stock_input(
-            "Stock Symbol",
-            key="aura_ticker_input",
-            placeholder="e.g. RELIANCE or search company name",
-            label_visibility="collapsed",
-        )
-    with c_btn:
-        analyze_clicked = st.button("🧠 Analyze Aura", key="aura_analyze_btn")
+    c_form, c_cls = st.columns([4, 1])
+    with c_form:
+        with st.form("stock_aura_form", clear_on_submit=False):
+            c_in, c_btn = st.columns([3, 1])
+            with c_in:
+                ticker_raw = render_nse_stock_input(
+                    "Stock Symbol",
+                    key="aura_ticker_input",
+                    placeholder="e.g. RELIANCE or search company name",
+                    label_visibility="collapsed",
+                )
+            with c_btn:
+                analyze_clicked = st.form_submit_button(
+                    "🧠 Analyze Aura",
+                    use_container_width=True,
+                )
     with c_cls:
         if st.button("✕ Close", key="aura_close_btn"):
             st.session_state["aura_show_panel"] = False
@@ -922,37 +962,57 @@ def render_tomorrow_picks_panel() -> None:
     if not st.session_state.get("tomorrow_picks_show_panel", False):
         return
 
-    store, sheets_ready = _load_tomorrow_store()
+    store, storage_mode = _load_tomorrow_store()
     if st.session_state.get("tmr_notes_area") != store["notes"]:
         st.session_state["tmr_notes_area"] = store["notes"]
-    if st.session_state.pop("_clear_tmr_symbol_input", False):
-        st.session_state["tmr_symbol_input"] = ""
+
+    sync_caption = "Synced live across all devices" if storage_mode == "cloud" else "Saved locally on this machine"
+    lead_copy = (
+        "Add tomorrow’s trending ideas and keep notes synced across your devices."
+        if storage_mode == "cloud"
+        else "Add tomorrow’s trending ideas and keep notes saved locally without extra setup."
+    )
+    status_tone = "cloud" if storage_mode == "cloud" else "local"
+    status_copy = (
+        "Cloud sync active via Google Sheets."
+        if storage_mode == "cloud"
+        else "Local persistence active on this machine."
+    )
 
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(
         """
         <style>
         div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) {
-          background:linear-gradient(180deg, rgba(13,27,42,0.98), rgba(8,19,31,0.98));
-          border:1px solid #1a2840;
+          background:
+            radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 32%),
+            radial-gradient(circle at top left, rgba(0,148,255,0.10), transparent 28%),
+            linear-gradient(180deg, rgba(9,13,20,0.96), rgba(5,8,13,0.99));
+          border:1px solid rgba(88,120,154,0.34);
           border-radius:18px;
           padding:24px 24px 20px 24px;
-          box-shadow:0 22px 48px rgba(0,0,0,0.28);
+          box-shadow:
+            0 22px 48px rgba(0,0,0,0.42),
+            inset 0 1px 0 rgba(255,255,255,0.04),
+            inset 0 0 0 1px rgba(0,148,255,0.05);
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor),
         div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) {
-          background:linear-gradient(180deg, rgba(15,32,51,0.96), rgba(11,24,38,0.98));
-          border:1px solid #1a2840;
+          background:
+            linear-gradient(180deg, rgba(14,20,30,0.94), rgba(9,14,22,0.98));
+          border:1px solid rgba(61,86,114,0.42);
           border-radius:16px;
           padding:18px 18px 20px 18px;
           height:100%;
-          box-shadow:inset 0 0 0 1px rgba(36,53,80,0.35);
+          box-shadow:
+            inset 0 0 0 1px rgba(36,53,80,0.24),
+            0 16px 34px rgba(0,0,0,0.20);
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] input,
         div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
-          background:#0f2033 !important;
+          background:rgba(9,17,27,0.94) !important;
           color:#e0e8f0 !important;
-          border:1px solid #1a2840 !important;
+          border:1px solid rgba(56,86,116,0.52) !important;
           box-shadow:none !important;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] label p,
@@ -963,13 +1023,44 @@ def render_tomorrow_picks_panel() -> None:
           min-height:400px !important;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) div[data-testid="stAlert"] {
-          background:rgba(114, 104, 17, 0.48) !important;
-          border:1px solid rgba(240,180,41,0.5) !important;
+          background:linear-gradient(90deg, rgba(79,67,18,0.44), rgba(126,109,31,0.30)) !important;
+          border:1px solid rgba(240,180,41,0.42) !important;
           border-left:3px solid #f0b429 !important;
           border-radius:12px !important;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) div[data-testid="stAlert"] * {
           color:#fff2bf !important;
+        }
+        .tmr-status-pill {
+          display:flex;
+          align-items:center;
+          gap:10px;
+          border-radius:12px;
+          padding:12px 16px;
+          margin:0 0 20px 0;
+          font-size:13px;
+          line-height:1.45;
+          border:1px solid rgba(96,132,167,0.30);
+          color:#d8e6f4;
+          background:linear-gradient(90deg, rgba(13,23,34,0.94), rgba(11,18,28,0.98));
+          box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+        .tmr-status-pill strong {
+          color:#f4f8ff;
+        }
+        .tmr-status-pill-local {
+          border-color:rgba(240,180,41,0.34);
+          background:linear-gradient(90deg, rgba(46,38,12,0.62), rgba(20,24,18,0.94));
+        }
+        .tmr-status-pill-local .tmr-status-icon {
+          color:#f0b429;
+        }
+        .tmr-status-pill-cloud {
+          border-color:rgba(0,212,168,0.34);
+          background:linear-gradient(90deg, rgba(7,40,34,0.68), rgba(10,21,30,0.96));
+        }
+        .tmr-status-pill-cloud .tmr-status-icon {
+          color:#00d4a8;
         }
         div[data-testid="stVerticalBlock"]:has(.tmr-remove-scope) .stButton > button {
           border-color:#ff4d6d !important;
@@ -996,7 +1087,7 @@ def render_tomorrow_picks_panel() -> None:
         }
         .tmr-panel-lead {
           font-size:14px;
-          color:#7fa3c8;
+          color:#8eb0cf;
           margin-bottom:18px;
         }
         .tmr-section-title {
@@ -1032,12 +1123,19 @@ def render_tomorrow_picks_panel() -> None:
         st.markdown('<div class="tmr-main-title">📈 Tomorrow\'s Picks</div>', unsafe_allow_html=True)
         st.markdown(
             '<div class="tmr-panel-lead">'
-            'Add tomorrow’s trending ideas and keep notes synced across your devices.</div>',
+            f'{lead_copy}</div>',
             unsafe_allow_html=True,
         )
-
-        if not sheets_ready:
-            st.warning("⚠️ Google Sheets not configured. Add secrets to enable persistence.")
+        st.markdown(
+            '<div class="tmr-status-pill tmr-status-pill-'
+            f'{status_tone}">'
+            '<span class="tmr-status-icon">'
+            f'{"☁" if storage_mode == "cloud" else "💾"}</span>'
+            f'<span><strong>{status_copy}</strong> '
+            f'{"Changes sync across sessions and devices." if storage_mode == "cloud" else "You can still enable Google Sheets later for cross-device sync."}</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
         left_col, right_col = st.columns([3, 2], gap="large")
 
@@ -1049,33 +1147,32 @@ def render_tomorrow_picks_panel() -> None:
                     unsafe_allow_html=True,
                 )
                 st.markdown(
-                    '<div class="tmr-section-caption">📡 Synced live across all devices</div>',
+                    f'<div class="tmr-section-caption">📡 {sync_caption}</div>',
                     unsafe_allow_html=True,
                 )
 
-                add_input_col, add_btn_col = st.columns([4, 1.3], gap="small")
-                with add_input_col:
-                    new_symbol = st.text_input(
-                        "List Your Trending Stocks",
-                        key="tmr_symbol_input",
-                        placeholder="e.g. RELIANCE",
-                    )
-                with add_btn_col:
-                    st.markdown('<div class="tmr-add-scope"></div>', unsafe_allow_html=True)
-                    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                    add_clicked = st.button(
-                        "＋ Add",
-                        key="tmr_add_btn",
-                        use_container_width=True,
-                        disabled=len(store["picks"]) >= 20,
-                    )
+                with st.form("tmr_add_form", clear_on_submit=True):
+                    add_input_col, add_btn_col = st.columns([4, 1.3], gap="small")
+                    with add_input_col:
+                        new_symbol = st.text_input(
+                            "List Your Trending Stocks",
+                            key="tmr_symbol_input",
+                            placeholder="e.g. RELIANCE",
+                        )
+                    with add_btn_col:
+                        st.markdown('<div class="tmr-add-scope"></div>', unsafe_allow_html=True)
+                        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                        add_clicked = st.form_submit_button(
+                            "＋ Add",
+                            use_container_width=True,
+                            disabled=len(store["picks"]) >= 20,
+                        )
 
                 if add_clicked:
                     symbol = (new_symbol or "").strip().upper()
                     if symbol and len(store["picks"]) < 20:
                         store["picks"].append(symbol)
                         _persist_tomorrow_store(store)
-                        st.session_state["_clear_tmr_symbol_input"] = True
                         st.rerun()
 
                 if len(store["picks"]) >= 20:
@@ -1094,7 +1191,7 @@ def render_tomorrow_picks_panel() -> None:
                             card_col, remove_col = st.columns([6, 1], gap="small")
                             with card_col:
                                 st.markdown(
-                                    f'<div style="background:#0f2033;border-left:3px solid #00d4a8;'
+                                    f'<div style="background:linear-gradient(180deg, rgba(10,21,32,0.98), rgba(8,16,25,0.98));border-left:3px solid #00d4a8;'
                                     f'border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
                                     f'<div style="color:#00d4a8;font-weight:800;font-size:18px;">'
                                     f'{html.escape(symbol)}</div></div>',
@@ -1119,21 +1216,29 @@ def render_tomorrow_picks_panel() -> None:
                     '<div class="tmr-notes-title">Notes</div>',
                     unsafe_allow_html=True,
                 )
-                notes_value = st.text_area(
-                    "Notes",
-                    key="tmr_notes_area",
-                    height=400,
-                    label_visibility="collapsed",
-                )
-                if notes_value != store["notes"]:
+                with st.form("tmr_notes_form", clear_on_submit=False):
+                    notes_value = st.text_area(
+                        "Notes",
+                        key="tmr_notes_area",
+                        height=400,
+                        label_visibility="collapsed",
+                    )
+                    save_notes_clicked = st.form_submit_button(
+                        "Save Notes",
+                        use_container_width=True,
+                    )
+                if save_notes_clicked and notes_value != store["notes"]:
                     store["notes"] = notes_value
                     _persist_tomorrow_store(store)
                     st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Close", key="tmr_picks_close_btn", use_container_width=True):
-            st.session_state["tomorrow_picks_show_panel"] = False
-            st.rerun()
+        st.button(
+            "Close",
+            key="tmr_picks_close_btn",
+            use_container_width=True,
+            on_click=_close_tomorrow_picks_panel,
+        )
 
 _STOCK_AURA_OK = True   # always True — no external dependency
 
@@ -3756,6 +3861,10 @@ def _activate_sidebar_panel(active_key: str | None = None) -> None:
         st.session_state[key] = (key == active_key)
     st.rerun()
 
+
+def _close_tomorrow_picks_panel() -> None:
+    st.session_state["tomorrow_picks_show_panel"] = False
+
 with st.sidebar:
     st.markdown(
         '<div style="font-family:\'Syne\',sans-serif;font-weight:800;font-size:20px;'
@@ -4364,21 +4473,22 @@ if st.session_state.get("battle_show_panel", False):
         st.rerun()
 
     configure_nse_stock_search(fetch_nse_tickers())
-    _battle_input_col1, _battle_input_col2 = st.columns(2)
-    with _battle_input_col1:
-        _t1  = render_nse_stock_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
-        _t2  = render_nse_stock_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
-        _t3  = render_nse_stock_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
-        _t4  = render_nse_stock_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
-        _t5  = render_nse_stock_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
-    with _battle_input_col2:
-        _t6  = render_nse_stock_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
-        _t7  = render_nse_stock_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
-        _t8  = render_nse_stock_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
-        _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
-        _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
+    with st.form("battle_mode_form", clear_on_submit=False):
+        _battle_input_col1, _battle_input_col2 = st.columns(2)
+        with _battle_input_col1:
+            _t1  = render_nse_stock_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
+            _t2  = render_nse_stock_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
+            _t3  = render_nse_stock_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
+            _t4  = render_nse_stock_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
+            _t5  = render_nse_stock_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
+        with _battle_input_col2:
+            _t6  = render_nse_stock_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
+            _t7  = render_nse_stock_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
+            _t8  = render_nse_stock_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
+            _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
+            _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
 
-    _battle_main_run = st.button("Run Battle Analysis", key="battle_run_btn", use_container_width=True)
+        _battle_main_run = st.form_submit_button("Run Battle Analysis", use_container_width=True)
     if _battle_main_run:
         _all_inputs = [_t1, _t2, _t3, _t4, _t5, _t6, _t7, _t8, _t9, _t10]
         _battle_tickers = [t.strip() for t in _all_inputs if t and t.strip()][:10]

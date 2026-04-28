@@ -17,6 +17,13 @@ streamlit_sector_err.log
 streamlit_test_out.log
 streamlit_test_err.log
 *.bak
+nse-sentinel-29227a3d9992.json
+smoke_screenshots/
+.battle_widget_*.log
+.pure_streamlit_search_*.log
+.streamlit_autocomplete_*.log
+.streamlit_run_*.log
+smoke_streamlit_*.log
 
 .DS_Store
 Thumbs.db
