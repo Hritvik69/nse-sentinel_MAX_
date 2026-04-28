@@ -207,6 +207,12 @@ def _render_breakout_radar_tab(
 ) -> None:
     """Render the ⚡ Breakout Radar sub-tab."""
 
+    try:
+        from trade_decision_simple import apply_trade_decision_simple_any
+    except Exception:
+        def apply_trade_decision_simple_any(df):
+            return df
+
     st.markdown(
         '<div style="font-size:12px;color:#4a6480;margin-bottom:14px;">'
         'Pre-breakout detection · ATR compression + volume build + trend alignment · '
@@ -396,20 +402,23 @@ def _render_breakout_radar_tab(
         )
 
     # ── Main results table ────────────────────────────────────────────
+    radar_display_df = apply_trade_decision_simple_any(radar_df.copy())
+
     display_cols = [
         "Symbol", "Price (₹)", "Volume Ratio", "RSI",
         "Δ EMA20 (%)", "Δ 20D High (%)", "5D Return (%)",
         "Compression Score", "Trend Score", "Volume Score",
         "RSI Score", "EMA Dist Score", "Risk Score",
         "Trap Flags", "Final Score", "Signal", "Chart Link",
+        "Action", "Hold Days",
     ]
-    show_cols = [c for c in display_cols if c in radar_df.columns]
+    show_cols = [c for c in display_cols if c in radar_display_df.columns]
 
     st.caption(
         f"Showing top {_VISIBLE_RESULT_LIMIT} of {len(radar_df)} radar results. Download keeps all rows."
     )
     st.dataframe(
-        radar_df.head(_VISIBLE_RESULT_LIMIT)[show_cols],
+        radar_display_df.head(_VISIBLE_RESULT_LIMIT)[show_cols],
         column_config={
             "Symbol":            st.column_config.TextColumn("Ticker"),
             "Price (₹)":         st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
@@ -440,6 +449,8 @@ def _render_breakout_radar_tab(
             ),
             "Signal":            st.column_config.TextColumn("Signal", width="large"),
             "Chart Link":        st.column_config.LinkColumn("Chart", display_text="📈 Open"),
+            "Action":            st.column_config.TextColumn("Action"),
+            "Hold Days":         st.column_config.TextColumn("Hold Days"),
         },
         width="stretch",
         hide_index=True,
@@ -461,6 +472,7 @@ def _render_breakout_radar_tab(
 
     _radar_top3 = get_tomorrow_top_picks(radar_df, source="breakout", top_n=3)
     if isinstance(_radar_top3, pd.DataFrame) and not _radar_top3.empty:
+        _radar_top3 = apply_trade_decision_simple_any(_radar_top3.copy())
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### Top 3 Buyable For Tomorrow")
         st.caption("Best next-day breakout candidates from this radar scan.")
@@ -468,6 +480,7 @@ def _render_breakout_radar_tab(
         _radar_cols = [
             "Symbol", "Tomorrow Pick Score", "Final Score", "Signal",
             "Risk Score", "Trap Flags", "Tomorrow Pick Reason", "Chart Link",
+            "Action", "Hold Days",
         ]
         _radar_cols = [c for c in _radar_cols if c in _radar_top3.columns]
 
@@ -482,6 +495,8 @@ def _render_breakout_radar_tab(
                 "Trap Flags": st.column_config.TextColumn("Traps"),
                 "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
                 "Chart Link": st.column_config.LinkColumn("Chart", display_text="Open"),
+                "Action": st.column_config.TextColumn("Action"),
+                "Hold Days": st.column_config.TextColumn("Hold Days"),
             },
             width="stretch",
             hide_index=True,
@@ -499,6 +514,12 @@ def _render_csv_next_day_tab(
     tt_date,
 ) -> None:
     """Render the original CSV Next-Day Potential sub-tab — zero changes to logic."""
+
+    try:
+        from trade_decision_simple import apply_trade_decision_simple_any
+    except Exception:
+        def apply_trade_decision_simple_any(df):
+            return df
 
     st.markdown(
         '<div style="font-size:12px;color:#4a6480;margin-bottom:14px;">'
@@ -663,8 +684,9 @@ def _render_csv_next_day_tab(
     st.caption(
         f"Showing top {_VISIBLE_RESULT_LIMIT} of {len(csv_df)} CSV setups. Download keeps all rows."
     )
+    _csv_display_df = apply_trade_decision_simple_any(csv_df.copy())
     st.dataframe(
-        csv_df.head(_VISIBLE_RESULT_LIMIT),
+        _csv_display_df.head(_VISIBLE_RESULT_LIMIT),
         column_config={
             "Symbol":            st.column_config.TextColumn("Ticker"),
             "Price (₹)":         st.column_config.NumberColumn("Close (₹)",     format="₹%.2f"),
@@ -686,6 +708,8 @@ def _render_csv_next_day_tab(
             "Bull Trap":         st.column_config.TextColumn("Trap"),
             "Risk Notes":        st.column_config.TextColumn("Risk Notes",        width="large"),
             "Chart Link":        st.column_config.LinkColumn("Chart",             display_text="📈 Open"),
+            "Action":            st.column_config.TextColumn("Action"),
+            "Hold Days":         st.column_config.TextColumn("Hold Days"),
         },
         width="stretch",
         hide_index=True,
@@ -693,6 +717,7 @@ def _render_csv_next_day_tab(
 
     _csv_top3 = get_tomorrow_top_picks(csv_df, source="csv", top_n=3)
     if isinstance(_csv_top3, pd.DataFrame) and not _csv_top3.empty:
+        _csv_top3 = apply_trade_decision_simple_any(_csv_top3.copy())
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### Top 3 Buyable For Tomorrow")
         st.caption("Best next-day buy candidates from the CSV probability engine.")
@@ -700,6 +725,7 @@ def _render_csv_next_day_tab(
         _csv_cols = [
             "Symbol", "Tomorrow Pick Score", "Next Day Prob", "Confidence",
             "Grade", "Signal", "Tomorrow Pick Reason", "Chart Link",
+            "Action", "Hold Days",
         ]
         _csv_cols = [c for c in _csv_cols if c in _csv_top3.columns]
 
@@ -714,6 +740,8 @@ def _render_csv_next_day_tab(
                 "Signal": st.column_config.TextColumn("Signal", width="medium"),
                 "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
                 "Chart Link": st.column_config.LinkColumn("Chart", display_text="Open"),
+                "Action": st.column_config.TextColumn("Action"),
+                "Hold Days": st.column_config.TextColumn("Hold Days"),
             },
             width="stretch",
             hide_index=True,

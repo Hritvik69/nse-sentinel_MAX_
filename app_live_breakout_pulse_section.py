@@ -199,6 +199,12 @@ def render_live_breakout_pulse(
     _auto_run_scan = bool(st.session_state.pop("live_pulse_autorun", False))
     _run_scan_now = live_pulse_clicked or _auto_run_scan
 
+    try:
+        from trade_decision_simple import apply_trade_decision_simple_any
+    except Exception:
+        def apply_trade_decision_simple_any(df):
+            return df
+
 
     # ── Header ────────────────────────────────────────────────────────
     st.markdown(
@@ -394,17 +400,20 @@ def render_live_breakout_pulse(
         "Final Score":      st.column_config.NumberColumn("Score", format="%.1f"),
         "Signal":           st.column_config.TextColumn("Signal"),
         "Chart Link":       st.column_config.LinkColumn("Chart", display_text="📈 View"),
+        "Action":           st.column_config.TextColumn("Action"),
+        "Hold Days":        st.column_config.TextColumn("Hold Days"),
     }
 
     def _show_table(data: pd.DataFrame, key_suffix: str) -> None:
         if data.empty:
             st.info("No stocks in this category.")
             return
+        display_data = apply_trade_decision_simple_any(data.copy())
         st.caption(
             f"Showing top {_VISIBLE_RESULT_LIMIT} of {len(data)} results in this tab. Download keeps all rows."
         )
         st.dataframe(
-            data.head(_VISIBLE_RESULT_LIMIT),
+            display_data.head(_VISIBLE_RESULT_LIMIT),
             column_config=_col_cfg,
             width="stretch",
             hide_index=True,

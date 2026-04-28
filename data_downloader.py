@@ -41,6 +41,11 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore[assignment]
+
 # ── Paths ──────────────────────────────────────────────────────────────
 _HERE      = Path(__file__).parent
 DATA_DIR   = _HERE / "data"
@@ -48,6 +53,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # ── Concurrency controls ───────────────────────────────────────────────
 _DOWNLOAD_WORKERS = 10
+_IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else None
 
 # ── Row thresholds ────────────────────────────────────────────────────
 # FIX 1: Hard minimum is 5 (genuinely unusable below this).
@@ -95,6 +101,12 @@ def _quality_tag(row_count: int) -> tuple[str, str]:
     if row_count >= _MIN_ROWS:
         return "LOW", f"only {row_count} rows (below preferred {_PREFERRED_MIN_ROWS})"
     return "CRITICAL", f"only {row_count} rows (below hard minimum {_MIN_ROWS})"
+
+
+def _now_ist() -> datetime:
+    if _IST_TZ is not None:
+        return datetime.now(_IST_TZ)
+    return datetime.utcnow() + timedelta(hours=5, minutes=30)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -161,7 +173,7 @@ def _download_one(
     try:
         old_result = load_csv_with_quality(ticker_ns)
         old_df     = old_result.df
-        today      = datetime.now()
+        today      = _now_ist()
 
         if old_df is not None and not old_df.empty:
             last_date = pd.to_datetime(old_df.index.max())
