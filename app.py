@@ -1059,24 +1059,27 @@ def _fetch_tickers_from_all_sources() -> list:
     Try every source in priority order and return the largest list found.
     Called at most ONCE per process lifetime (held in cache_resource).
     """
+    best_tickers: list[str] = []
+
+    def _remember(candidate: list[str] | None) -> None:
+        nonlocal best_tickers
+        if candidate and len(candidate) > len(best_tickers):
+            best_tickers = list(candidate)
+
     # Source 1: /tmp/ file written by a previous fetch this server-run
     _tmp = _tmp_read_tickers()
-    if len(_tmp) >= _TICKER_GOOD_COUNT:
-        return _tmp
+    _remember(_tmp)
 
     # Source 2: nse_ticker_universe module (GitHub + NSE + repo txt)
     try:
         from nse_ticker_universe import get_all_tickers as _gat
         from nse_ticker_universe import invalidate_cache as _inv
-        tickers = _gat(live=True)
-        if len(tickers) >= 1000:
-            if len(tickers) >= _TICKER_GOOD_COUNT:
-                _tmp_write_tickers(tickers)
-            return tickers
-        _inv()
-        tickers = _gat(live=False)
-        if tickers:
-            return tickers
+        tickers_live = _gat(live=True)
+        _remember(tickers_live)
+        if len(tickers_live) < _TICKER_GOOD_COUNT:
+            _inv()
+        tickers_fallback = _gat(live=False)
+        _remember(tickers_fallback)
     except Exception:
         pass
 
@@ -1090,10 +1093,14 @@ def _fetch_tickers_from_all_sources() -> list:
                 for l in _tf.read_text(encoding="utf-8", errors="ignore").splitlines()
                 if l.strip()
             })
-            if syms:
-                return syms
+            _remember(syms)
     except Exception:
         pass
+
+    if len(best_tickers) >= _TICKER_GOOD_COUNT:
+        _tmp_write_tickers(best_tickers)
+    if best_tickers:
+        return best_tickers
 
     # Source 4: hardcoded Nifty-50 last resort
     return [
