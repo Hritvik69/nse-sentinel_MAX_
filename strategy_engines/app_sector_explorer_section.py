@@ -38,15 +38,6 @@ except ImportError as exc:
         return sector_name
 
 
-def stock_search_widget(label: str, key_prefix: str, placeholder: str) -> str:
-    return render_nse_stock_input(
-        label,
-        key=key_prefix,
-        placeholder=placeholder,
-        label_visibility="collapsed",
-    )
-
-
 def render_sector_explorer_section(ticker_universe: list[str] | None = None) -> None:
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(
@@ -79,10 +70,10 @@ def render_sector_explorer_section(ticker_universe: list[str] | None = None) -> 
     configure_nse_stock_search(ticker_universe)
 
     with _lookup_col1:
-        _symbol_input = stock_search_widget(
+        _symbol_input = render_nse_stock_input(
             "Enter stock symbol",
-            "sector_exp_search",
             placeholder="e.g. HDFCBANK or company name: HDFC Bank",
+            key="sector_exp_search",
         ).strip().upper()
 
     with _lookup_col2:

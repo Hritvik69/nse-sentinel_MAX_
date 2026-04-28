@@ -74,6 +74,17 @@ def stock_search_widget(
         label_visibility=label_visibility,
     )
 
+try:
+    from strategy_engines._engine_utils import (
+        is_fresh_enough as _is_fresh_enough,
+    )
+    _FRESH_CHECK_OK = True
+except ImportError:
+    _FRESH_CHECK_OK = False
+
+    def _is_fresh_enough(df, strict=False):
+        return df is not None
+
 # ── Internal pipeline helpers ─────────────────────────────────────────
 try:
     from strategy_engines._engine_utils import ema as _ema, rsi_vec as _rsi_vec

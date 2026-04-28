@@ -393,7 +393,7 @@ _DROP_SYMBOLS = {
 # PUBLIC API
 # ══════════════════════════════════════════════════════════════════════
 
-_TMP_TICKER_FILE = "/tmp/nse_sentinel_tickers.txt"
+_TMP_TICKER_FILE = "/tmp/nse_sentinel_live_tickers_v2.txt"
 
 
 def get_all_tickers(live: bool = True) -> list[str]:
@@ -459,20 +459,26 @@ def invalidate_cache() -> None:
 # ══════════════════════════════════════════════════════════════════════
 
 def _build(live: bool) -> list[str]:
-    tickers = _load_repo_tickers()
-    tickers.update(_baseline_tickers())
+    repo_tickers = _load_repo_tickers()
+    baseline_tickers = _baseline_tickers()
+    tickers = set(repo_tickers)
+    tickers.update(baseline_tickers)
 
     if not live:
         return sorted(tickers)
 
     # ── Try ALL sources (no early-break) for maximum coverage ─────────
-    tickers.update(_fetch_github_raw_lists())
-    tickers.update(_fetch_nse_equity_list())
-    if len(tickers) < 2500:
-        tickers.update(_fetch_bhav_copy())
+    current_equities = _fetch_nse_equity_list()
+    if len(current_equities) >= 1500:
+        tickers = set(current_equities)
+    else:
+        tickers.update(_fetch_github_raw_lists())
+        tickers.update(current_equities)
+        if len(tickers) < 2500:
+            tickers.update(_fetch_bhav_copy())
 
     if not tickers:
-        tickers = _baseline_tickers()
+        tickers = set(baseline_tickers)
 
     result = sorted(tickers)
 
@@ -487,10 +493,6 @@ def _build(live: bool) -> list[str]:
                     _fh.write(bare_content)
             except Exception as exc:
                 _record_diagnostic("tmp_cache_write", exc)
-            try:
-                _REPO_TICKER_FILE.write_text(bare_content, encoding="utf-8")
-            except Exception as exc:
-                _record_diagnostic("repo_ticker_write", exc)
         except Exception as exc:
             _record_diagnostic("ticker_persist", exc)
 

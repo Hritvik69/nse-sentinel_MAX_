@@ -383,7 +383,7 @@ _JS = """
         el.classList.add("sig-buy");
       } else if (SELL_WORDS.some((w) => txt.includes(w))) {
         el.classList.add("sig-sell");
-      } else if (WATCH_WORDS.some((w)) => txt.includes(w)) {
+      } else if (WATCH_WORDS.some((w) => txt.includes(w))) {
         el.classList.add("sig-watch");
       }
       el.dataset.sigPatched = "1";
