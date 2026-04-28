@@ -11,7 +11,7 @@ import streamlit as st
 import pandas as pd
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
-    search_nse_stocks,
+    render_nse_stock_input,
 )
 
 # Safe stubs for lint/static analysis (this file is not imported by app.py).
@@ -43,39 +43,12 @@ except ImportError:
 
 
 def stock_search_widget(label: str, key_prefix: str, placeholder: str) -> str:
-    """
-    Returns bare symbol string e.g. "RELIANCE" or "" if nothing selected.
-    """
-    query = st.text_input(
+    return render_nse_stock_input(
         label,
+        key=key_prefix,
         placeholder=placeholder,
-        key=f"{key_prefix}_input",
-    ).strip().upper()
-
-    if not query:
-        return ""
-
-    matches = search_nse_stocks(query)
-    if not matches:
-        st.caption("No matches found.")
-        return ""
-
-    select_key = f"{key_prefix}_select"
-    options = [""] + matches
-    if st.session_state.get(select_key, "") not in options:
-        st.session_state[select_key] = ""
-
-    chosen = st.selectbox(
-        "Select stock",
-        options=options,
-        key=select_key,
         label_visibility="collapsed",
     )
-
-    if not chosen:
-        return ""
-
-    return chosen.split("—", 1)[0].strip()
 
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown('<h2>⚔️ Multi-Stock Battle Mode</h2>', unsafe_allow_html=True)

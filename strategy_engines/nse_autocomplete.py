@@ -2420,6 +2420,7 @@ _MANUAL_COMPANY_NAMES: dict[str, str] = {
 
 _SEARCH_UNIVERSE_KEY: tuple[str, ...] = ()
 _SEARCH_ROWS: list[tuple[str, str, str, str]] = []
+_SEARCH_OPTIONS: list[str] = []
 _DISPLAY_SEPARATOR = " \u2014 "
 
 
@@ -2442,7 +2443,7 @@ def _company_name_for_symbol(symbol: str) -> str:
 
 def configure_nse_stock_search(tickers: Sequence[str] | None) -> None:
     """Prepare the live search universe from fetch_nse_tickers()-style symbols."""
-    global _SEARCH_UNIVERSE_KEY, _SEARCH_ROWS
+    global _SEARCH_UNIVERSE_KEY, _SEARCH_ROWS, _SEARCH_OPTIONS
 
     symbols: list[str] = []
     seen: set[str] = set()
@@ -2463,12 +2464,19 @@ def configure_nse_stock_search(tickers: Sequence[str] | None) -> None:
         return
 
     _SEARCH_UNIVERSE_KEY = universe_key
-    _SEARCH_ROWS = [
-        (symbol, company, symbol.lower(), company.lower())
-        for symbol, company in (
-            (symbol, _company_name_for_symbol(symbol))
-            for symbol in symbols
-        )
+    _SEARCH_ROWS = sorted(
+        [
+            (symbol, company, symbol.lower(), company.lower())
+            for symbol, company in (
+                (symbol, _company_name_for_symbol(symbol))
+                for symbol in symbols
+            )
+        ],
+        key=lambda item: item[0],
+    )
+    _SEARCH_OPTIONS = [
+        f"{symbol}{_DISPLAY_SEPARATOR}{company}"
+        for symbol, company, _symbol_lc, _company_lc in _SEARCH_ROWS
     ]
 
 
@@ -2532,37 +2540,30 @@ def render_nse_stock_input(
     default_value: str = "",
     label_visibility: str = "visible",
 ) -> str:
-    """Render a pure Streamlit stock finder using text input + selectbox."""
-    query_key = f"{key}_input"
-    select_key = f"{key}_select"
+    """Render a fast pure Streamlit searchable selectbox."""
     seed_value = str(default_value or "")
+    if not _SEARCH_ROWS:
+        configure_nse_stock_search(None)
 
-    raw_value = st.text_input(
-        label,
-        value=seed_value,
-        placeholder=placeholder,
-        key=query_key,
-        label_visibility=label_visibility,
-    ).strip().upper()
+    default_choice = ""
+    default_symbol = extract_selected_symbol(seed_value)
+    if default_symbol:
+        for symbol, company, _symbol_lc, _company_lc in _SEARCH_ROWS:
+            if symbol == default_symbol:
+                default_choice = f"{symbol}{_DISPLAY_SEPARATOR}{company}"
+                break
 
-    if not raw_value:
-        return ""
-
-    matches = search_nse_stocks(raw_value)
-    if not matches:
-        st.caption("No matches found.")
-        return ""
-
-    options = [""] + matches
-    current_selection = st.session_state.get(select_key, "")
-    if current_selection not in options:
-        st.session_state[select_key] = ""
+    default_index = None
+    if default_choice in _SEARCH_OPTIONS:
+        default_index = _SEARCH_OPTIONS.index(default_choice)
 
     chosen = st.selectbox(
-        "Select stock",
-        options=options,
-        key=select_key,
-        label_visibility="collapsed",
+        label,
+        options=_SEARCH_OPTIONS,
+        index=default_index,
+        placeholder=placeholder,
+        key=key,
+        label_visibility=label_visibility,
     )
 
     if not chosen:

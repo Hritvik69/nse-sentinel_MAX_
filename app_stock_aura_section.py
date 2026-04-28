@@ -39,7 +39,7 @@ import pandas as pd
 import streamlit as st
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
-    search_nse_stocks,
+    render_nse_stock_input,
 )
 
 try:
@@ -66,41 +66,13 @@ def stock_search_widget(
     placeholder: str = "Type symbol or company name...",
     label_visibility: str = "visible",
 ) -> str:
-    """
-    Returns bare symbol string e.g. "RELIANCE" or "" if nothing selected.
-    """
     configure_nse_stock_search(_aura_search_universe())
-    query = st.text_input(
+    return render_nse_stock_input(
         label,
+        key=key_prefix,
         placeholder=placeholder,
-        key=f"{key_prefix}_input",
         label_visibility=label_visibility,
-    ).strip().upper()
-
-    if not query:
-        return ""
-
-    matches = search_nse_stocks(query)
-    if not matches:
-        st.caption("No matches found.")
-        return ""
-
-    select_key = f"{key_prefix}_select"
-    options = [""] + matches
-    if st.session_state.get(select_key, "") not in options:
-        st.session_state[select_key] = ""
-
-    chosen = st.selectbox(
-        "Select stock",
-        options=options,
-        key=select_key,
-        label_visibility="collapsed",
     )
-
-    if not chosen:
-        return ""
-
-    return chosen.split("—", 1)[0].strip()
 
 # ── Internal pipeline helpers ─────────────────────────────────────────
 try:
