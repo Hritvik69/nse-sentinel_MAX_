@@ -25,7 +25,7 @@ Failure reason codes (canonical)
     NO_DATA         preload returned None — ticker not in ALL_DATA and
                     live download also failed
     TOO_SHORT       DataFrame has < MIN_VIABLE_ROWS rows after dropna
-    STALE           Last candle is > 7 calendar days old
+    STALE           Last candle is older than the required market date
     BAD_PRICE       Price outside sanity range (≤ 1 or > 100 000)
     ZERO_VOLUME     Last volume is 0 or negative
     NAN_INDICATORS  EMA/RSI computed as NaN (not enough history)

@@ -67,6 +67,7 @@ from strategy_engines import (
     backtest_with_preloaded,
     get_df_for_ticker,
 )
+from strategy_engines._engine_utils import is_fresh_enough as _is_fresh_enough
 # preload_history_batch removed — use preload_all() directly
 
 try:
@@ -1567,6 +1568,12 @@ def analyse(ticker, mode, retries=2):
         if df is None or df.empty:
             _scan_diag.record_failure(ticker_ns, "NO_DATA")
             return None
+        try:
+            if not _is_fresh_enough(df, strict=True):
+                _scan_diag.record_failure(ticker_ns, "STALE")
+                return None
+        except Exception:
+            pass
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         df = df.dropna(subset=["Open", "Close", "Volume"])
@@ -1827,7 +1834,7 @@ def _finish_stage_feedback(
 _SCAN_REASON_MEANINGS: dict[str, str] = {
     "NO_DATA": "preloaded/cache lookup returned no usable frame",
     "TOO_SHORT": "not enough usable history for the current scan logic",
-    "STALE": "latest candle is older than 7 calendar days",
+    "STALE": "latest candle is older than the required market date for this scan",
     "BAD_PRICE": "closing price is outside the allowed scan range",
     "ZERO_VOLUME": "latest session volume is zero or negative",
     "NAN_INDICATORS": "EMA20 / EMA50 / RSI could not be computed cleanly",
