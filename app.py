@@ -34,6 +34,15 @@ _PARENT = _os.path.dirname(_HERE)
 if _os.path.isdir(_os.path.join(_PARENT, "strategy_engines")) and _PARENT not in _sys.path:
     _sys.path.insert(0, _PARENT)
 
+# ── Compatibility alias: allow `from learning_engine import ...` ─────────
+# (In this project, the learning engine code currently lives in
+# `trade_decision_engine.py`.)
+try:
+    import trade_decision_engine as _learning_engine  # type: ignore[import]
+    _sys.modules.setdefault("learning_engine", _learning_engine)
+except Exception:
+    pass
+
 import io
 import threading
 import time
@@ -48,6 +57,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
+from learning_engine import train_learning_model, predict_success
 
 _VISIBLE_RESULT_LIMIT = 10
 from strategy_engines import (
@@ -56,6 +66,11 @@ from strategy_engines import (
     preload_all,
     backtest_with_preloaded,
     get_df_for_ticker,
+)
+from strategy_engines._engine_utils import is_fresh_enough as _is_fresh_enough
+from strategy_engines.nse_autocomplete import (
+    configure_nse_stock_search,
+    render_nse_stock_input,
 )
 # preload_history_batch removed — use preload_all() directly
 
@@ -90,7 +105,7 @@ except Exception as _sector_explorer_exc:
         _SECTOR_EXPLORER_UI_OK = False
         _SECTOR_EXPLORER_UI_ERR = str(_sector_explorer_exc).strip() or "sector explorer import failed"
 
-        def render_sector_explorer_section() -> None:  # type: ignore[misc]
+        def render_sector_explorer_section(ticker_universe=None) -> None:  # type: ignore[misc]
             return None
 
 try:
@@ -129,6 +144,15 @@ except Exception:
     _LIVE_PULSE_SECTION_OK = False
 
     def render_live_breakout_pulse(live_pulse_clicked: bool, tt_date_val=None):  # type: ignore[misc]
+        return None
+
+try:
+    from nse_animations import inject_animations
+    _NSE_ANIMATIONS_OK = True
+except Exception:
+    _NSE_ANIMATIONS_OK = False
+
+    def inject_animations() -> None:  # type: ignore[misc]
         return None
 
 # AFTER the csv_next_day import block, add:
@@ -615,11 +639,14 @@ def render_stock_aura_panel() -> None:
         )
 
     # Input row
+    configure_nse_stock_search(fetch_nse_tickers())
     c_in, c_btn, c_cls = st.columns([3, 1, 1])
     with c_in:
-        ticker_raw = st.text_input(
-            "Stock Symbol", placeholder="e.g.  RELIANCE  or  TCS  or  HDFCBANK",
-            key="aura_ticker_input", label_visibility="collapsed",
+        ticker_raw = render_nse_stock_input(
+            "Stock Symbol",
+            key="aura_ticker_input",
+            placeholder="e.g. RELIANCE or search company name",
+            label_visibility="collapsed",
         )
     with c_btn:
         analyze_clicked = st.button("🧠 Analyze Aura", key="aura_analyze_btn")
@@ -991,6 +1018,8 @@ components.html(
     width=0,
 )
 
+inject_animations()
+
 
 # ─────────────────────────────────────────────────────────────────────
 # NSE TICKER LOADER
@@ -999,7 +1028,7 @@ components.html(
 # Path where we persist the large ticker list inside the container.
 # /tmp/ is writable on Streamlit Cloud and survives within a single
 # server run (i.e. across Streamlit "reruns" / page refreshes).
-_TMP_TICKER_CACHE_PATH = "/tmp/nse_sentinel_tickers.txt"
+_TMP_TICKER_CACHE_PATH = "/tmp/nse_sentinel_live_tickers_v2.txt"
 _TICKER_GOOD_COUNT     = 2000   # minimum for a "full" list
 
 
@@ -1546,6 +1575,12 @@ def analyse(ticker, mode, retries=2):
         if df is None or df.empty:
             _scan_diag.record_failure(ticker_ns, "NO_DATA")
             return None
+        try:
+            if not _is_fresh_enough(df, strict=True):
+                _scan_diag.record_failure(ticker_ns, "STALE")
+                return None
+        except Exception:
+            pass
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         df = df.dropna(subset=["Open", "Close", "Volume"])
@@ -1806,7 +1841,7 @@ def _finish_stage_feedback(
 _SCAN_REASON_MEANINGS: dict[str, str] = {
     "NO_DATA": "preloaded/cache lookup returned no usable frame",
     "TOO_SHORT": "not enough usable history for the current scan logic",
-    "STALE": "latest candle is older than 7 calendar days",
+    "STALE": "latest candle is older than the required market date for this scan",
     "BAD_PRICE": "closing price is outside the allowed scan range",
     "ZERO_VOLUME": "latest session volume is zero or negative",
     "NAN_INDICATORS": "EMA20 / EMA50 / RSI could not be computed cleanly",
@@ -2803,6 +2838,14 @@ ui_mode_meta = {
     5: {"display_num": 3, "display_name": "Intraday"},
 }
 
+_SIDEBAR_PANEL_KEYS = (
+    "show_sector_screener",
+    "battle_show_panel",
+    "aura_show_panel",
+    "csv_next_day_show_panel",
+    "live_pulse_show_panel",
+)
+
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     try:
@@ -2815,6 +2858,12 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
         return f"rgba({r},{g},{b},{alpha})"
     except Exception:
         return f"rgba(0,212,168,{alpha})"
+
+
+def _activate_sidebar_panel(active_key: str | None = None) -> None:
+    for key in _SIDEBAR_PANEL_KEYS:
+        st.session_state[key] = (key == active_key)
+    st.rerun()
 
 with st.sidebar:
     st.markdown(
@@ -2906,11 +2955,11 @@ with st.sidebar:
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
 
     if sector_screener_clicked:
-        st.session_state["show_sector_screener"] = True
+        _activate_sidebar_panel("show_sector_screener")
     if battle_compare_clicked:
-        st.session_state["battle_show_panel"] = True
+        _activate_sidebar_panel("battle_show_panel")
     if aura_clicked:
-        st.session_state["aura_show_panel"] = True
+        _activate_sidebar_panel("aura_show_panel")
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -2982,10 +3031,11 @@ with st.sidebar:
         )
         csv_scan_clicked = st.button("⚡ Breakout Radar (CSV)", key="csv_next_day_btn")
         if csv_scan_clicked:
-            st.session_state["csv_next_day_show_panel"] = True
+            _activate_sidebar_panel("csv_next_day_show_panel")
         live_pulse_clicked = st.button("📡 Live Breakout Pulse", key="live_pulse_btn")
         if live_pulse_clicked:
-            st.session_state["live_pulse_show_panel"] = True
+            st.session_state["live_pulse_autorun"] = True
+            _activate_sidebar_panel("live_pulse_show_panel")
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
             '⚡ Cached CSV scan for pre-move setups<br>'
@@ -3017,10 +3067,11 @@ with st.sidebar:
         )
         csv_scan_clicked = st.button("⚡ Breakout Radar (CSV)", key="csv_next_day_btn")
         if csv_scan_clicked:
-            st.session_state["csv_next_day_show_panel"] = True
+            _activate_sidebar_panel("csv_next_day_show_panel")
         live_pulse_clicked = st.button("📡 Live Breakout Pulse", key="live_pulse_btn")
         if live_pulse_clicked:
-            st.session_state["live_pulse_show_panel"] = True
+            st.session_state["live_pulse_autorun"] = True
+            _activate_sidebar_panel("live_pulse_show_panel")
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
             '⚡ Uses local CSV data when available<br>'
@@ -3032,7 +3083,7 @@ with st.sidebar:
     st.markdown(
         '<div style="font-size:11px;color:#4a6480;line-height:1.7;">'
         'Data: Yahoo Finance (NSE)<br>Indicators: EMA · RSI · Volume<br>'
-        'Universe: NSE equity archive<br><br>'
+        'Universe: Current NSE listed equities<br><br>'
         '⚠️ Educational use only.<br>Not financial advice.</div>',
         unsafe_allow_html=True)
 
@@ -3050,6 +3101,8 @@ mc = mode_colors[mode]
 _mc_soft = _hex_to_rgba(mc, 0.10)
 _mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
+_show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
+_show_home_scanner = not (_show_sector_screener or _show_live_pulse_panel)
 
 st.markdown(
     f"""
@@ -3079,7 +3132,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not _show_sector_screener:
+if _show_home_scanner:
     st.markdown(
         f'<div class="top-banner">'
         f'<div class="banner-logo"><span class="live-dot"></span>NSE SENTINEL</div>'
@@ -3099,7 +3152,7 @@ with st.spinner("Loading NSE ticker list..."):
     all_tickers = fetch_nse_tickers()
 n = len(all_tickers)
 
-if not _show_sector_screener:
+if _show_home_scanner:
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.metric("📋 NSE Tickers Loaded", f"{n:,}")
     with c2: st.metric("🎯 Active Mode", f"M{mode_display['display_num']} · {mode_display['display_name']}")
@@ -3116,7 +3169,7 @@ if not _show_sector_screener:
     st.markdown("<hr>", unsafe_allow_html=True)
 
 main_scan_clicked = False
-if not _show_sector_screener:
+if _show_home_scanner:
     _scan_cta_cols = st.columns([1.5, 3.2, 1.5])
     with _scan_cta_cols[1]:
         main_scan_clicked = st.button("▶  SCAN MARKET NOW", key="main_panel_scan_btn", width="stretch")
@@ -3125,7 +3178,7 @@ if not _show_sector_screener:
 
 # ── 🕰️ Time-travel banner (shown whenever TT is active) ───────────────
 _tt_banner = _tt.format_banner()
-if _tt_banner:
+if _tt_banner and _show_home_scanner:
     st.markdown(
         f'<div style="background:#1a0a00;border:2px solid #f0b429;border-radius:10px;'
         f'padding:12px 18px;margin-bottom:16px;font-family:\'Space Mono\',monospace;'
@@ -3135,6 +3188,11 @@ if _tt_banner:
     )
 
 if scan_clicked or main_scan_clicked:
+    try:
+        from learning_engine import train_learning_model
+        train_learning_model()
+    except Exception:
+        pass
     st.markdown(
         f'<div class="section-lbl">⏳ Scanning {n:,} NSE Equities — Mode {mode_display["display_num"]}: {mode_display["display_name"]}</div>',
         unsafe_allow_html=True)
@@ -3310,7 +3368,7 @@ if st.session_state.get("show_sector_screener", False):
             )
 
     if _SECTOR_EXPLORER_UI_OK:
-        render_sector_explorer_section()
+        render_sector_explorer_section(fetch_nse_tickers())
     else:
         st.warning(
             "Sector Explorer is unavailable because its UI module could not be imported. "
@@ -3348,19 +3406,20 @@ if st.session_state.get("battle_show_panel", False):
         st.session_state["battle_show_panel"] = False
         st.rerun()
 
+    configure_nse_stock_search(fetch_nse_tickers())
     _battle_input_col1, _battle_input_col2 = st.columns(2)
     with _battle_input_col1:
-        _t1  = st.text_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
-        _t2  = st.text_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
-        _t3  = st.text_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
-        _t4  = st.text_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
-        _t5  = st.text_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
+        _t1  = render_nse_stock_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
+        _t2  = render_nse_stock_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
+        _t3  = render_nse_stock_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
+        _t4  = render_nse_stock_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
+        _t5  = render_nse_stock_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
     with _battle_input_col2:
-        _t6  = st.text_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
-        _t7  = st.text_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
-        _t8  = st.text_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
-        _t9  = st.text_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
-        _t10 = st.text_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
+        _t6  = render_nse_stock_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
+        _t7  = render_nse_stock_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
+        _t8  = render_nse_stock_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
+        _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
+        _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
 
     _battle_main_run = st.button("Run Battle Analysis", key="battle_run_btn", use_container_width=True)
     if _battle_main_run:
@@ -3396,7 +3455,7 @@ if st.session_state.get("show_bias_engine"):
     st.markdown("<hr>", unsafe_allow_html=True)
 
 # ── RESULTS ───────────────────────────────────────────────────────────
-if "results" in st.session_state:
+if _show_home_scanner and "results" in st.session_state:
     results     = st.session_state["results"]
     stored_mode = st.session_state.get("mode", mode)
     stored_mode_display = ui_mode_meta.get(
@@ -3462,6 +3521,19 @@ if "results" in st.session_state:
         # ── Phase 4 Logic Engine (Setup Type, Reason, Risk, Final Signal)
         try:
             df = apply_phase4_logic(df, _mb)
+        except Exception:
+            pass
+
+        try:
+            from trade_decision_simple import apply_trade_decision_simple
+            df = apply_trade_decision_simple(df)
+        except Exception:
+            pass
+
+        # ── Learning prediction (added column only) ───────────────────
+        try:
+            from learning_engine import predict_success
+            df["Learned Prob %"] = df.apply(lambda row: predict_success(row), axis=1)
         except Exception:
             pass
 
@@ -3618,6 +3690,8 @@ if "results" in st.session_state:
         display_cols = [
             "Rank", "Rank Score", "Ticker", "Score", "Backtest %", "ML %",
             "Final Score", "Prediction Score", "Conviction Tier", "Trap", "Next-Day Signal", "TradingView",
+            "Learned Prob %",
+            "Action", "Hold Days",
         ]
         display_cols = [c for c in display_cols if c in table_df.columns]
 
@@ -3636,6 +3710,8 @@ if "results" in st.session_state:
                 "Trap": st.column_config.TextColumn("Trap"),
                 "Next-Day Signal": st.column_config.TextColumn("Signal"),
                 "TradingView": st.column_config.LinkColumn("TradingView Link", display_text="📈 Open Chart"),
+                "Action": st.column_config.TextColumn("Action"),
+                "Hold Days": st.column_config.TextColumn("Hold Days"),
             },
             use_container_width=True,
             hide_index=True,
@@ -3767,6 +3843,11 @@ if "results" in st.session_state:
 
         if isinstance(_tomorrow_df, pd.DataFrame) and not _tomorrow_df.empty:
             _tomorrow_df = _tomorrow_df.copy()
+            try:
+                from trade_decision_simple import apply_trade_decision_simple_any
+                _tomorrow_df = apply_trade_decision_simple_any(_tomorrow_df)
+            except Exception:
+                pass
             _signal_col = "Adjusted Signal" if "Adjusted Signal" in _tomorrow_df.columns else "Next-Day Signal"
             _tomorrow_df["Chart"] = _tomorrow_df["Symbol"].apply(lambda s: tv_chart_url(str(s)))
 
@@ -3777,6 +3858,7 @@ if "results" in st.session_state:
             _tomorrow_cols = [
                 "Symbol", "Tomorrow Pick Score", "Final Score", "Prediction Score",
                 _signal_col, "Conviction Tier", "Trap", "Tomorrow Pick Reason", "Chart",
+                "Action", "Hold Days",
             ]
             _tomorrow_cols = [c for c in _tomorrow_cols if c in _tomorrow_df.columns]
 
@@ -3793,13 +3875,15 @@ if "results" in st.session_state:
                     "Trap": st.column_config.TextColumn("Trap"),
                     "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
                     "Chart": st.column_config.LinkColumn("Chart", display_text="Open Chart"),
+                    "Action": st.column_config.TextColumn("Action"),
+                    "Hold Days": st.column_config.TextColumn("Hold Days"),
                 },
                 use_container_width=True,
                 hide_index=True,
             )
 
     else:
-        if not st.session_state.get("show_sector_screener", False):
+        if _show_home_scanner:
             st.markdown(
                 f'<div style="text-align:center;padding:60px 24px;background:#0f1823;'
                 f'border:1px solid #1a2840;border-radius:12px;">'
@@ -3809,7 +3893,7 @@ if "results" in st.session_state:
                 f'Try <b style="color:#ccd9e8">Mode 1 (Relaxed)</b> for a broader scan.</div></div>',
                 unsafe_allow_html=True)
 else:
-    if not st.session_state.get("show_sector_screener", False):
+    if _show_home_scanner:
         st.markdown(
             f'<div style="text-align:center;padding:64px 24px;background:#0f1823;'
             f'border:1px solid #1a2840;border-radius:12px;">'
@@ -3915,8 +3999,15 @@ else:
                             unsafe_allow_html=True,
                         )
 
+                _csv_display_df = csv_df.copy()
+                try:
+                    from trade_decision_simple import apply_trade_decision_simple_any
+                    _csv_display_df = apply_trade_decision_simple_any(_csv_display_df)
+                except Exception:
+                    pass
+
                 st.dataframe(
-                    csv_df,
+                    _csv_display_df,
                     column_config={
                         "Symbol":           st.column_config.TextColumn("Ticker"),
                         "Price (₹)":        st.column_config.NumberColumn("Close (₹)", format="₹%.2f"),
@@ -3938,6 +4029,8 @@ else:
                         "Bull Trap":        st.column_config.TextColumn("Trap"),
                         "Risk Notes":       st.column_config.TextColumn("Risk Notes", width="large"),
                         "Chart Link":       st.column_config.LinkColumn("Chart", display_text="📈 Open"),
+                        "Action":           st.column_config.TextColumn("Action"),
+                        "Hold Days":        st.column_config.TextColumn("Hold Days"),
                     },
                     use_container_width=True,
                     hide_index=True,

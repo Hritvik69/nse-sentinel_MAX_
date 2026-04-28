@@ -609,20 +609,42 @@ def _analyze_ohlcv(
 # ──────────────────────────────────────────────────────────────────────
 
 def _get_df(ticker_ns: str) -> pd.DataFrame | None:
-    """
-    Fetch OHLCV DataFrame for a ticker.
-    Checks ALL_DATA first (zero-API preloaded store), falls back to CSV.
-    """
+    def _check_fresh(df):
+        # Returns df if fresh enough, None if stale.
+        # Always returns df unchanged if check is unavailable or TT is on.
+        if df is None:
+            return None
+        try:
+            from strategy_engines._engine_utils import (
+                is_fresh_enough as _ife,
+            )
+        except ImportError:
+            return df
+        try:
+            from time_travel_engine import is_active as _tt_on
+            if _tt_on():
+                return df
+        except Exception:
+            pass
+        try:
+            return df if _ife(df, strict=True) else None
+        except Exception:
+            return df
+
     # 1. ALL_DATA (zero API — fastest path)
     if _ALL_DATA_OK and ALL_DATA:
         df = ALL_DATA.get(ticker_ns)
         if df is not None and len(df) >= 45:
-            return df
+            fresh = _check_fresh(df)
+            if fresh is not None:
+                return fresh
 
     # 2. CSV fallback
     if _DOWNLOADER_OK:
         try:
-            return load_csv(ticker_ns)
+            csv_df = load_csv(ticker_ns)
+            if csv_df is not None:
+                return _check_fresh(csv_df)
         except Exception:
             pass
 
