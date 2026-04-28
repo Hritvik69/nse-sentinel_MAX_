@@ -9,6 +9,10 @@
 
 import streamlit as st
 import pandas as pd
+from strategy_engines.nse_autocomplete import (
+    configure_nse_stock_search,
+    search_nse_stocks,
+)
 
 # Safe stubs for lint/static analysis (this file is not imported by app.py).
 try:
@@ -37,6 +41,42 @@ try:
 except ImportError:
     _BATTLE_OK = False
 
+
+def stock_search_widget(label: str, key_prefix: str, placeholder: str) -> str:
+    """
+    Returns bare symbol string e.g. "RELIANCE" or "" if nothing selected.
+    """
+    query = st.text_input(
+        label,
+        placeholder=placeholder,
+        key=f"{key_prefix}_input",
+    ).strip().upper()
+
+    if not query:
+        return ""
+
+    matches = search_nse_stocks(query)
+    if not matches:
+        st.caption("No matches found.")
+        return ""
+
+    select_key = f"{key_prefix}_select"
+    options = [""] + matches
+    if st.session_state.get(select_key, "") not in options:
+        st.session_state[select_key] = ""
+
+    chosen = st.selectbox(
+        "Select stock",
+        options=options,
+        key=select_key,
+        label_visibility="collapsed",
+    )
+
+    if not chosen:
+        return ""
+
+    return chosen.split("—", 1)[0].strip()
+
 st.markdown("<hr>", unsafe_allow_html=True)
 st.markdown('<h2>⚔️ Multi-Stock Battle Mode</h2>', unsafe_allow_html=True)
 st.markdown(
@@ -54,22 +94,23 @@ else:
         'Enter up to 10 stock tickers (e.g. RELIANCE, TCS). Empty boxes are ignored.</div>',
         unsafe_allow_html=True,
     )
+    configure_nse_stock_search(None)
 
     _col_a, _col_b = st.columns(2)
 
     with _col_a:
-        _t1  = st.text_input("Stock 1",  key="bm_t1",  placeholder="e.g. RELIANCE")
-        _t2  = st.text_input("Stock 2",  key="bm_t2",  placeholder="e.g. TCS")
-        _t3  = st.text_input("Stock 3",  key="bm_t3",  placeholder="e.g. INFY")
-        _t4  = st.text_input("Stock 4",  key="bm_t4",  placeholder="e.g. HDFCBANK")
-        _t5  = st.text_input("Stock 5",  key="bm_t5",  placeholder="e.g. SBIN")
+        _t1  = stock_search_widget("Stock 1",  "battle_s1",  "Type symbol or company name...")
+        _t2  = stock_search_widget("Stock 2",  "battle_s2",  "Type symbol or company name...")
+        _t3  = stock_search_widget("Stock 3",  "battle_s3",  "Type symbol or company name...")
+        _t4  = stock_search_widget("Stock 4",  "battle_s4",  "Type symbol or company name...")
+        _t5  = stock_search_widget("Stock 5",  "battle_s5",  "Type symbol or company name...")
 
     with _col_b:
-        _t6  = st.text_input("Stock 6",  key="bm_t6",  placeholder="e.g. ICICIBANK")
-        _t7  = st.text_input("Stock 7",  key="bm_t7",  placeholder="e.g. AXISBANK")
-        _t8  = st.text_input("Stock 8",  key="bm_t8",  placeholder="e.g. BAJFINANCE")
-        _t9  = st.text_input("Stock 9",  key="bm_t9",  placeholder="e.g. TATAMOTORS")
-        _t10 = st.text_input("Stock 10", key="bm_t10", placeholder="e.g. MARUTI")
+        _t6  = stock_search_widget("Stock 6",  "battle_s6",  "Type symbol or company name...")
+        _t7  = stock_search_widget("Stock 7",  "battle_s7",  "Type symbol or company name...")
+        _t8  = stock_search_widget("Stock 8",  "battle_s8",  "Type symbol or company name...")
+        _t9  = stock_search_widget("Stock 9",  "battle_s9",  "Type symbol or company name...")
+        _t10 = stock_search_widget("Stock 10", "battle_s10", "Type symbol or company name...")
 
     _battle_clicked = st.button("⚔️ Run Battle Analysis", key="battle_btn", use_container_width=False)
 

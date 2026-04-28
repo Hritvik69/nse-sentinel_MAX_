@@ -5,7 +5,7 @@ import streamlit as st
 
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
-    render_nse_stock_input,
+    search_nse_stocks,
 )
 
 try:
@@ -36,6 +36,42 @@ except ImportError as exc:
 
     def get_sector_description(sector_name: str) -> str:
         return sector_name
+
+
+def stock_search_widget(label: str, key_prefix: str, placeholder: str) -> str:
+    """
+    Returns bare symbol string e.g. "RELIANCE" or "" if nothing selected.
+    """
+    query = st.text_input(
+        label,
+        placeholder=placeholder,
+        key=f"{key_prefix}_input",
+    ).strip().upper()
+
+    if not query:
+        return ""
+
+    matches = search_nse_stocks(query)
+    if not matches:
+        st.caption("No matches found.")
+        return ""
+
+    select_key = f"{key_prefix}_select"
+    options = [""] + matches
+    if st.session_state.get(select_key, "") not in options:
+        st.session_state[select_key] = ""
+
+    chosen = st.selectbox(
+        "Select stock",
+        options=options,
+        key=select_key,
+        label_visibility="collapsed",
+    )
+
+    if not chosen:
+        return ""
+
+    return chosen.split("—", 1)[0].strip()
 
 
 def render_sector_explorer_section(ticker_universe: list[str] | None = None) -> None:
@@ -70,10 +106,10 @@ def render_sector_explorer_section(ticker_universe: list[str] | None = None) -> 
     configure_nse_stock_search(ticker_universe)
 
     with _lookup_col1:
-        _symbol_input = render_nse_stock_input(
+        _symbol_input = stock_search_widget(
             "Enter stock symbol",
+            "sector_exp_search",
             placeholder="e.g. HDFCBANK or company name: HDFC Bank",
-            key="se_symbol_input",
         ).strip().upper()
 
     with _lookup_col2:

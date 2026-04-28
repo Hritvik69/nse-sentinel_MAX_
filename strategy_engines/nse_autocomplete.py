@@ -6,13 +6,6 @@ from typing import Sequence
 
 import streamlit as st
 
-try:
-    from streamlit_searchbox import st_searchbox
-    _SEARCHBOX_AVAILABLE = True
-except Exception:
-    st_searchbox = None  # type: ignore[assignment]
-    _SEARCHBOX_AVAILABLE = False
-
 _NSE_COMPANY_NAMES: dict[str, str] = {
     "20MICRONS": "20 Microns Limited",
     "21STCENMGM": "21st Century Management Services Limited",
@@ -2429,57 +2422,6 @@ _SEARCH_UNIVERSE_KEY: tuple[str, ...] = ()
 _SEARCH_ROWS: list[tuple[str, str, str, str]] = []
 _DISPLAY_SEPARATOR = " \u2014 "
 
-_STYLE_OVERRIDES = {
-    "wrapper": {"width": "100%"},
-    "clear": {"clearable": "always", "fill": "#9bb2c9", "stroke-width": 1},
-    "dropdown": {"fill": "#9bb2c9", "rotate": True},
-    "searchbox": {
-        "control": {
-            "backgroundColor": "#0d1b2a",
-            "borderColor": "#1e3a5f",
-            "borderRadius": "10px",
-            "boxShadow": "none",
-            "minHeight": "2.85rem",
-        },
-        "input": {"color": "#e0e8f0"},
-        "singleValue": {"color": "#e0e8f0"},
-        "placeholder": {"color": "#7a90aa"},
-        "menuList": {
-            "backgroundColor": "#0d1b2a",
-            "border": "1px solid #1e3a5f",
-            "borderRadius": "10px",
-            "color": "#e0e8f0",
-            "padding": "0.25rem",
-        },
-        "option": {
-            "color": "#e0e8f0",
-            "backgroundColor": "#0d1b2a",
-            "highlightColor": "#13273f",
-        },
-    },
-}
-
-
-def inject_nse_searchbox_css() -> None:
-    """Inject lightweight host-page CSS for the autocomplete shell."""
-    if st.session_state.get("_nse_searchbox_css_injected"):
-        return
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stIFrame"] iframe[title*="streamlit_searchbox"] {
-            border-radius: 10px;
-            background: transparent;
-        }
-        div[data-testid="stIFrame"] {
-            border-radius: 10px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.session_state["_nse_searchbox_css_injected"] = True
-
 
 def _normalize_symbol(value: str | None) -> str:
     return str(value or "").strip().upper().replace(".NS", "")
@@ -2590,32 +2532,40 @@ def render_nse_stock_input(
     default_value: str = "",
     label_visibility: str = "visible",
 ) -> str:
-    """Render a themed NSE autocomplete box, falling back to text_input on failure."""
-    inject_nse_searchbox_css()
+    """Render a pure Streamlit stock finder using text input + selectbox."""
+    query_key = f"{key}_input"
+    select_key = f"{key}_select"
     seed_value = str(default_value or "")
-
-    if _SEARCHBOX_AVAILABLE and st_searchbox is not None:
-        try:
-            raw_value = st_searchbox(
-                search_nse_stocks,
-                label=None if label_visibility == "collapsed" else label,
-                placeholder=placeholder,
-                key=key,
-                default_searchterm=seed_value,
-                default_use_searchterm=True,
-                clear_on_submit=False,
-                edit_after_submit="option",
-                style_overrides=_STYLE_OVERRIDES,
-            )
-            return extract_selected_symbol(raw_value)
-        except Exception:
-            pass
 
     raw_value = st.text_input(
         label,
         value=seed_value,
         placeholder=placeholder,
-        key=key,
+        key=query_key,
         label_visibility=label_visibility,
+    ).strip().upper()
+
+    if not raw_value:
+        return ""
+
+    matches = search_nse_stocks(raw_value)
+    if not matches:
+        st.caption("No matches found.")
+        return ""
+
+    options = [""] + matches
+    current_selection = st.session_state.get(select_key, "")
+    if current_selection not in options:
+        st.session_state[select_key] = ""
+
+    chosen = st.selectbox(
+        "Select stock",
+        options=options,
+        key=select_key,
+        label_visibility="collapsed",
     )
-    return extract_selected_symbol(raw_value)
+
+    if not chosen:
+        return ""
+
+    return extract_selected_symbol(chosen)
