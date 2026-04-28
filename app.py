@@ -44,6 +44,7 @@ except Exception:
     pass
 
 import io
+import html
 import threading
 import time
 import warnings
@@ -58,6 +59,15 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 from learning_engine import train_learning_model, predict_success
+
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    _GOOGLE_SHEETS_IMPORT_OK = True
+except Exception:
+    gspread = None  # type: ignore[assignment]
+    Credentials = None  # type: ignore[assignment]
+    _GOOGLE_SHEETS_IMPORT_OK = False
 
 _VISIBLE_RESULT_LIMIT = 10
 from strategy_engines import (
@@ -176,6 +186,119 @@ except Exception:
         return pd.DataFrame()
 
 warnings.filterwarnings("ignore")
+
+_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+
+@st.cache_resource(ttl=0)
+def _get_sheet():
+    """
+    Returns the gspread worksheet object.
+    Same connection reused across all users.
+    Returns None if credentials not configured.
+    """
+    try:
+        if not _GOOGLE_SHEETS_IMPORT_OK or gspread is None or Credentials is None:
+            return None
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(
+            creds_dict, scopes=_SCOPES
+        )
+        client = gspread.authorize(creds)
+        sheet_id = st.secrets["google_sheets"]["sheet_id"]
+        sh = client.open_by_key(sheet_id)
+        # Use first worksheet
+        return sh.sheet1
+    except Exception:
+        return None
+
+
+def _load_picks() -> dict:
+    """
+    Load picks and notes from Google Sheet.
+    Sheet layout:
+      Row 1: headers — "picks" | "notes"
+      Row 2: JSON list of picks | notes text
+    Returns {"picks": [...], "notes": "..."}
+    """
+    default = {"picks": [], "notes": ""}
+    try:
+        ws = _get_sheet()
+        if ws is None:
+            return default
+        # Read row 2 (data row)
+        picks_json = ws.cell(2, 1).value or "[]"
+        notes_text = ws.cell(2, 2).value or ""
+        import json
+        picks = json.loads(picks_json)
+        return {"picks": picks, "notes": notes_text}
+    except Exception:
+        return default
+
+
+def _save_picks(store: dict) -> None:
+    """
+    Save picks and notes back to Google Sheet.
+    Writes row 2: JSON(picks) | notes
+    """
+    try:
+        ws = _get_sheet()
+        if ws is None:
+            return
+        import json
+        # Write headers if empty
+        if not ws.cell(1, 1).value:
+            ws.update("A1:B1", [["picks", "notes"]])
+        ws.update("A2:B2", [[
+            json.dumps(store["picks"]),
+            store["notes"],
+        ]])
+    except Exception:
+        pass
+
+
+def _normalize_tomorrow_store(store: dict | None) -> dict:
+    default = {"picks": [], "notes": ""}
+    if not isinstance(store, dict):
+        return default.copy()
+
+    raw_picks = store.get("picks", [])
+    if not isinstance(raw_picks, list):
+        raw_picks = []
+
+    picks: list[str] = []
+    for item in raw_picks[:20]:
+        symbol = str(item).strip().upper()
+        if symbol:
+            picks.append(symbol)
+
+    notes_text = store.get("notes", "")
+    return {
+        "picks": picks,
+        "notes": str(notes_text or ""),
+    }
+
+
+def _load_tomorrow_store() -> tuple[dict, bool]:
+    default = _normalize_tomorrow_store(None)
+    sheets_ready = _get_sheet() is not None
+    if sheets_ready:
+        store = _normalize_tomorrow_store(_load_picks())
+    else:
+        store = _normalize_tomorrow_store(
+            st.session_state.get("tomorrow_picks_store", default)
+        )
+    st.session_state["tomorrow_picks_store"] = store
+    return store, sheets_ready
+
+
+def _persist_tomorrow_store(store: dict) -> None:
+    normalized = _normalize_tomorrow_store(store)
+    st.session_state["tomorrow_picks_store"] = normalized
+    _save_picks(normalized)
 
 try:
     import scan_diagnostics as _scan_diag
@@ -784,6 +907,166 @@ def render_stock_aura_panel() -> None:
         '⚠️ Stock Aura is for educational purposes only. Not financial advice.</div>',
         unsafe_allow_html=True,
     )
+
+
+def render_tomorrow_picks_panel() -> None:
+    if not st.session_state.get("tomorrow_picks_show_panel", False):
+        return
+
+    store, sheets_ready = _load_tomorrow_store()
+    if st.session_state.get("tmr_notes_area") != store["notes"]:
+        st.session_state["tmr_notes_area"] = store["notes"]
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) {
+          background:#0d1b2a;
+          border:1px solid #1a2840;
+          border-radius:18px;
+          padding:24px 24px 20px 24px;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor),
+        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) {
+          background:#0d1b2a;
+          border:1px solid #1a2840;
+          border-radius:16px;
+          padding:18px 18px 20px 18px;
+          height:100%;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] input,
+        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
+          background:#0f2033 !important;
+          color:#e0e8f0 !important;
+          border:1px solid #1a2840 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] label p,
+        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] label p {
+          color:#ccd9e8 !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
+          min-height:400px !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-remove-scope) .stButton > button {
+          border-color:#ff4d6d !important;
+          color:#ff4d6d !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-remove-scope) .stButton > button:hover {
+          background:#ff4d6d !important;
+          color:#060a0f !important;
+          box-shadow:0 0 18px rgba(255,77,109,0.35) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container():
+        st.markdown('<div class="tmr-panel-anchor"></div>', unsafe_allow_html=True)
+        st.markdown('<h2>📈 Tomorrow\'s Picks</h2>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:12px;color:#4a6480;margin-bottom:18px;">'
+            'Add tomorrow’s trending ideas and keep notes synced across your devices.</div>',
+            unsafe_allow_html=True,
+        )
+
+        if not sheets_ready:
+            st.warning("⚠️ Google Sheets not configured. Add secrets to enable persistence.")
+
+        left_col, right_col = st.columns([3, 2], gap="large")
+
+        with left_col:
+            with st.container():
+                st.markdown('<div class="tmr-left-panel-anchor"></div>', unsafe_allow_html=True)
+                st.markdown(
+                    '<div style="font-family:\'Syne\',sans-serif;font-size:24px;font-weight:800;'
+                    'color:#ccd9e8;margin-bottom:4px;">📈 Tomorrow\'s Trending Stocks</div>',
+                    unsafe_allow_html=True,
+                )
+                st.caption("📡 Synced live across all devices")
+
+                add_input_col, add_btn_col = st.columns([4, 1], gap="small")
+                with add_input_col:
+                    new_symbol = st.text_input(
+                        "List Your Trending Stocks",
+                        key="tmr_symbol_input",
+                        placeholder="e.g. RELIANCE",
+                    )
+                with add_btn_col:
+                    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                    add_clicked = st.button(
+                        "＋ Add",
+                        key="tmr_add_btn",
+                        use_container_width=True,
+                        disabled=len(store["picks"]) >= 20,
+                    )
+
+                if add_clicked:
+                    symbol = (new_symbol or "").strip().upper()
+                    if symbol and len(store["picks"]) < 20:
+                        store["picks"].append(symbol)
+                        _persist_tomorrow_store(store)
+                        st.session_state["tmr_symbol_input"] = ""
+                        st.rerun()
+
+                if len(store["picks"]) >= 20:
+                    st.caption("Maximum 20 stocks reached.")
+
+                if not store["picks"]:
+                    st.markdown(
+                        '<div style="font-size:13px;color:#4a6480;padding:18px 0 8px 0;">'
+                        'No stocks added yet.</div>',
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    for idx, symbol in enumerate(store["picks"]):
+                        with st.container():
+                            st.markdown('<div class="tmr-remove-scope"></div>', unsafe_allow_html=True)
+                            card_col, remove_col = st.columns([6, 1], gap="small")
+                            with card_col:
+                                st.markdown(
+                                    f'<div style="background:#0f2033;border-left:3px solid #00d4a8;'
+                                    f'border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+                                    f'<div style="color:#00d4a8;font-weight:800;font-size:18px;">'
+                                    f'{html.escape(symbol)}</div></div>',
+                                    unsafe_allow_html=True,
+                                )
+                            with remove_col:
+                                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                                remove_clicked = st.button(
+                                    "✕",
+                                    key=f"tmr_remove_{idx}",
+                                    use_container_width=True,
+                                )
+                            if remove_clicked:
+                                del store["picks"][idx]
+                                _persist_tomorrow_store(store)
+                                st.rerun()
+
+        with right_col:
+            with st.container():
+                st.markdown('<div class="tmr-notes-panel-anchor"></div>', unsafe_allow_html=True)
+                st.markdown(
+                    '<div style="font-family:\'Syne\',sans-serif;font-size:22px;font-weight:800;'
+                    'color:#ccd9e8;margin-bottom:12px;">Notes</div>',
+                    unsafe_allow_html=True,
+                )
+                notes_value = st.text_area(
+                    "Notes",
+                    key="tmr_notes_area",
+                    height=400,
+                    label_visibility="collapsed",
+                )
+                if notes_value != store["notes"]:
+                    store["notes"] = notes_value
+                    _persist_tomorrow_store(store)
+                    st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Close", key="tmr_picks_close_btn", use_container_width=True):
+            st.session_state["tomorrow_picks_show_panel"] = False
+            st.rerun()
 
 _STOCK_AURA_OK = True   # always True — no external dependency
 
@@ -2849,6 +3132,7 @@ _SIDEBAR_PANEL_KEYS = (
     "show_sector_screener",
     "battle_show_panel",
     "aura_show_panel",
+    "tomorrow_picks_show_panel",
     "csv_next_day_show_panel",
     "live_pulse_show_panel",
 )
@@ -2939,27 +3223,14 @@ with st.sidebar:
         f'padding:12px 14px;margin-bottom:16px;">{params_html}</div>',
         unsafe_allow_html=True)
 
-    st.markdown('<div class="section-lbl">Parallel Workers</div>', unsafe_allow_html=True)
-    workers = st.slider(
-        "Parallel workers",
-        min_value=4,
-        max_value=MAX_YF_CONCURRENCY,
-        value=MAX_YF_CONCURRENCY,
-        step=2,
-        label_visibility="collapsed",
-        key="workers",
-    )
-    st.markdown(
-        f'<div style="text-align:center;font-size:11px;color:#4a6480;margin-top:-8px;">'
-        f'<b style="color:{mc};font-size:18px">{workers}</b> worker threads '
-        f'(Yahoo requests internally capped at {MAX_YF_CONCURRENCY})</div>',
-        unsafe_allow_html=True)
+    workers = 12
 
     st.markdown("<br>", unsafe_allow_html=True)
     scan_clicked = False
     sector_screener_clicked = st.button("🔭 Sector Screener Dashboard", key="sector_screener_dashboard_btn")
     battle_compare_clicked = st.button("⚔️ Compare Stocks", key="battle_compare_btn")
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
+    tomorrow_picks_clicked = st.button("📈 Tomorrow's Picks", key="tomorrow_picks_btn")
 
     if sector_screener_clicked:
         _activate_sidebar_panel("show_sector_screener")
@@ -2967,6 +3238,8 @@ with st.sidebar:
         _activate_sidebar_panel("battle_show_panel")
     if aura_clicked:
         _activate_sidebar_panel("aura_show_panel")
+    if tomorrow_picks_clicked:
+        _activate_sidebar_panel("tomorrow_picks_show_panel")
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -3437,6 +3710,8 @@ if st.session_state.get("battle_show_panel", False):
         else:
             st.session_state["battle_mode_request"] = mode
             st.session_state["battle_tickers_request"] = _battle_tickers
+
+render_tomorrow_picks_panel()
 
 if st.session_state.get("show_bias_engine"):
     st.markdown('<div class="section-lbl">📊 Market Bias Engine (Analytics)</div>', unsafe_allow_html=True)
