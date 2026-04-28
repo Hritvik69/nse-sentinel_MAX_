@@ -3,6 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from strategy_engines.nse_autocomplete import (
+    configure_nse_stock_search,
+    render_nse_stock_input,
+)
+
 try:
     from sector_master import (
         get_all_sectors,
@@ -33,7 +38,7 @@ except ImportError as exc:
         return sector_name
 
 
-def render_sector_explorer_section() -> None:
+def render_sector_explorer_section(ticker_universe: list[str] | None = None) -> None:
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(
         '<h2 style="margin-bottom:4px;">Sector Explorer</h2>',
@@ -62,11 +67,12 @@ def render_sector_explorer_section() -> None:
         return
 
     _lookup_col1, _lookup_col2 = st.columns([3, 2])
+    configure_nse_stock_search(ticker_universe)
 
     with _lookup_col1:
-        _symbol_input = st.text_input(
+        _symbol_input = render_nse_stock_input(
             "Enter stock symbol",
-            placeholder="e.g. HDFCBANK or partial: HDFC",
+            placeholder="e.g. HDFCBANK or company name: HDFC Bank",
             key="se_symbol_input",
         ).strip().upper()
 

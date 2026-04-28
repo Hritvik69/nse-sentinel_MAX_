@@ -38,6 +38,17 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+try:
+    from strategy_engines._engine_utils import (
+        is_fresh_enough as _is_fresh_enough,
+    )
+    _FRESH_CHECK_OK = True
+except ImportError:
+    _FRESH_CHECK_OK = False
+
+    def _is_fresh_enough(df, strict=False):
+        return df is not None
+
 # ── Internal pipeline helpers ─────────────────────────────────────────
 try:
     from strategy_engines._engine_utils import ema as _ema, rsi_vec as _rsi_vec
@@ -139,18 +150,27 @@ def _fetch_data(symbol: str) -> pd.DataFrame | None:
         except Exception:
             return df
 
+    _tt_active = cutoff_date is not None
+
     if _GETDF_OK:
         try:
             df = _get_df(ticker_ns)
             if df is not None and len(df) >= 20:
-                return _trunc(df)
+                try:
+                    if not _tt_active and _FRESH_CHECK_OK:
+                        if not _is_fresh_enough(df, strict=True):
+                            df = None
+                except Exception:
+                    pass
+                if df is not None:
+                    return _trunc(df)
         except Exception:
             pass
 
     if _YF_OK:
         try:
             df = yf.download(
-                ticker_ns, period="6mo", interval="1d",
+                ticker_ns, period="3mo", interval="1d",
                 auto_adjust=True, progress=False, timeout=15, threads=False,
             )
             if df is None or df.empty:
@@ -159,6 +179,12 @@ def _fetch_data(symbol: str) -> pd.DataFrame | None:
                 df.columns = df.columns.get_level_values(0)
             df.columns = [c.strip().title() for c in df.columns]
             df = df.dropna(subset=["Close", "Volume"])
+            try:
+                if not _tt_active and _FRESH_CHECK_OK:
+                    if not _is_fresh_enough(df, strict=True):
+                        return None
+            except Exception:
+                pass
             return _trunc(df) if len(df) >= 20 else None
         except Exception:
             return None
