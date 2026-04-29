@@ -88,7 +88,7 @@ def _dsm_fallback_scan_plan() -> dict[str, object]:
     window = _dsm_fallback_current_window()
     return {
         "window": window,
-        "force_live_refresh": window in ("LIVE", "CLOSED"),
+        "force_live_refresh": True,
     }
 
 
@@ -251,6 +251,16 @@ def _should_force_live_refresh(force_live_refresh: bool | None = None) -> bool:
     try:
         plan = _get_scan_data_plan()
         return bool(plan.get("force_live_refresh", False))
+    except Exception:
+        return False
+
+
+def _is_live_sourced_frame(df: pd.DataFrame | None) -> bool:
+    try:
+        if df is None:
+            return False
+        source = str(df.attrs.get("_nse_data_source", "") or "").strip().lower()
+        return source.startswith("live")
     except Exception:
         return False
 
@@ -522,8 +532,12 @@ def preload_all(
         cached = existing.get(ticker_ns)
         if cached is not None and isinstance(cached, pd.DataFrame) and not cached.empty:
             if force_live_refresh:
-                stale_fallbacks[ticker_ns] = cached
-                remaining.append(ticker_ns)
+                if _is_live_sourced_frame(cached) and not _is_stale_live_frame(cached):
+                    done += 1
+                    loaded += 1
+                    cache_hits += 1
+                else:
+                    remaining.append(ticker_ns)
             elif _is_stale_live_frame(cached):
                 stale_fallbacks[ticker_ns] = cached
                 remaining.append(ticker_ns)
@@ -556,7 +570,6 @@ def preload_all(
                 window=_get_current_window(),
             )
             if force_live_refresh:
-                stale_fallbacks.setdefault(ticker_ns, csv_df)
                 download_queue.append(ticker_ns)
             elif _is_stale_live_frame(csv_df):
                 stale_fallbacks.setdefault(ticker_ns, csv_df)
@@ -624,6 +637,9 @@ def preload_all(
                         ALL_DATA[ticker_ns] = frame
                         continue
 
+                    if force_live_refresh:
+                        continue
+
                     fallback = stale_fallbacks.get(ticker_ns)
                     if fallback is None:
                         continue
@@ -646,7 +662,7 @@ def preload_all(
                 if frame is not None:
                     live_downloaded += 1
                     loaded += 1
-                else:
+                elif not force_live_refresh:
                     frame = stale_fallbacks.get(ticker_ns)
                     if frame is not None:
                         fallback_used += 1
@@ -690,27 +706,31 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
         df = ALL_DATA.get(ticker_ns)
     stale_fallback = None
     if df is not None:
-        if not force_live_refresh and not _is_stale_live_frame(df):
+        if force_live_refresh:
+            if _is_live_sourced_frame(df) and not _is_stale_live_frame(df):
+                return df
+        elif not _is_stale_live_frame(df):
             return df
         stale_fallback = df
 
     try:
-        from data_downloader import load_csv
-        csv_df = _prepare_loaded_frame(load_csv(ticker_ns))
-        if csv_df is not None:
-            csv_df = _stamp_frame_metadata(
-                csv_df,
-                source="csv_cache",
-                window=_get_current_window(),
-            )
-            if force_live_refresh or _is_stale_live_frame(csv_df):
-                if stale_fallback is None:
-                    stale_fallback = csv_df
-            else:
-                _clear_no_data(ticker_ns)
-                with _ALL_DATA_LOCK:
-                    ALL_DATA[ticker_ns] = csv_df
-                return csv_df
+        if not force_live_refresh:
+            from data_downloader import load_csv
+            csv_df = _prepare_loaded_frame(load_csv(ticker_ns))
+            if csv_df is not None:
+                csv_df = _stamp_frame_metadata(
+                    csv_df,
+                    source="csv_cache",
+                    window=_get_current_window(),
+                )
+                if _is_stale_live_frame(csv_df):
+                    if stale_fallback is None:
+                        stale_fallback = csv_df
+                else:
+                    _clear_no_data(ticker_ns)
+                    with _ALL_DATA_LOCK:
+                        ALL_DATA[ticker_ns] = csv_df
+                    return csv_df
     except Exception:
         pass
 
@@ -725,10 +745,10 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
             ALL_DATA[ticker_ns] = fetched
         _persist_frame_to_csv(ticker_ns, fetched)
         return fetched
-    if stale_fallback is not None:
+    if stale_fallback is not None and not force_live_refresh:
         with _ALL_DATA_LOCK:
             ALL_DATA[ticker_ns] = stale_fallback
-    return stale_fallback
+    return None if force_live_refresh else stale_fallback
 
 
 def add_rank_score_columns(df: pd.DataFrame) -> pd.DataFrame:

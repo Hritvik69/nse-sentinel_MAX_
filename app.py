@@ -134,62 +134,22 @@ def _fallback_get_scan_data_plan() -> dict:
         "source_label": "",
         "summary": "",
     }
-    if window == "LIVE":
-        plan.update(
-            {
-                "force_live_refresh": True,
-                "source_label": "Live market refresh",
-                "summary": "Live session uses fresh market data before running the scan.",
-            }
-        )
-    elif window == "CLOSED":
-        if has_snapshot:
-            plan.update(
-                {
-                    "use_snapshot": True,
-                    "source_label": "Today's closing snapshot",
-                    "summary": "Closed-market scan uses today's saved close for speed.",
-                }
-            )
-        else:
-            plan.update(
-                {
-                    "force_live_refresh": True,
-                    "save_snapshot_after_scan": True,
-                    "source_label": "Post-close refresh",
-                    "summary": "Closed-market scan refreshes once, then saves a snapshot.",
-                }
-            )
-    elif window == "PRE_MARKET":
-        plan.update(
-            {
-                "use_snapshot": has_snapshot,
-                "source_label": "Previous close snapshot" if has_snapshot else "Previous close fallback",
-                "summary": "Pre-market scan uses the latest available close.",
-            }
-        )
-    else:
-        plan.update(
-            {
-                "use_snapshot": has_snapshot,
-                "source_label": "Last close snapshot" if has_snapshot else "Last close fallback",
-                "summary": "Weekend scan uses the latest available close.",
-            }
-        )
+    plan.update(
+        {
+            "use_snapshot": False,
+            "force_live_refresh": True,
+            "save_snapshot_after_scan": False,
+            "source_label": "Always live refresh",
+            "summary": "Main scanner refreshes live data on every run and skips snapshot startup.",
+        }
+    )
     return plan
 
 
 def _fallback_get_data_status_label() -> str:
     plan = _fallback_get_scan_data_plan()
     day_text = str(plan.get("expected_date"))
-    window = str(plan.get("window", "")).upper()
-    if window == "LIVE":
-        return f"Live Market Refresh - {day_text}"
-    if window == "CLOSED":
-        return f"Closing Snapshot Ready - {day_text}" if plan.get("snapshot_exists") else f"Post-Close Refresh Pending - {day_text}"
-    if window == "PRE_MARKET":
-        return f"Previous Close - {day_text}"
-    return f"Last Close - {day_text}"
+    return f"Always Live Refresh - {day_text}"
 
 
 get_current_window = getattr(_dsm, "get_current_window", _fallback_get_current_window)
@@ -4801,7 +4761,7 @@ if scan_clicked or main_scan_clicked:
 
         preload_stats = preload_all(
             all_tickers,
-            period="3mo",
+            period="6mo",
             workers=workers,
             progress_callback=_update_preload,
             force_live_refresh=force_live_refresh,

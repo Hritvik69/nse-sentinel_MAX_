@@ -188,81 +188,18 @@ def get_scan_data_plan() -> dict[str, object]:
         "source_label": "",
         "summary": "",
     }
-
-    if window == "LIVE":
-        plan.update(
-            {
-                "force_live_refresh": True,
-                "source_label": "Live market refresh",
-                "summary": (
-                    f"Market window is open ({live_window}). "
-                    "Each scan refreshes live data first, then falls back only if a ticker download fails."
-                ),
-            }
-        )
-        return plan
-
-    if window == "CLOSED":
-        if has_snapshot:
-            plan.update(
-                {
-                    "use_snapshot": True,
-                    "source_label": "Today's closing snapshot",
-                    "summary": (
-                        "Market is closed. Scans start from today's saved post-close snapshot for fast results."
-                    ),
-                }
-            )
-        else:
-            plan.update(
-                {
-                    "force_live_refresh": True,
-                    "save_snapshot_after_scan": True,
-                    "source_label": "Post-close refresh",
-                    "summary": (
-                        "Market is closed and no snapshot exists yet. The first scan refreshes the latest data and "
-                        "then saves today's snapshot for the next runs."
-                    ),
-                }
-            )
-        return plan
-
-    if window == "PRE_MARKET":
-        if has_snapshot:
-            plan.update(
-                {
-                    "use_snapshot": True,
-                    "source_label": "Previous close snapshot",
-                    "summary": "Pre-market scan uses the latest saved close so results are fast and stable.",
-                }
-            )
-        else:
-            plan.update(
-                {
-                    "source_label": "Previous close fallback",
-                    "summary": (
-                        "Pre-market scan uses the last available trading-day data. A saved snapshot will be used "
-                        "automatically once it exists."
-                    ),
-                }
-            )
-        return plan
-
-    if has_snapshot:
-        plan.update(
-            {
-                "use_snapshot": True,
-                "source_label": "Last close snapshot",
-                "summary": "Weekend scan uses the latest saved close for speed.",
-            }
-        )
-    else:
-        plan.update(
-            {
-                "source_label": "Last close fallback",
-                "summary": "Weekend scan uses the most recent available close data.",
-            }
-        )
+    plan.update(
+        {
+            "use_snapshot": False,
+            "force_live_refresh": True,
+            "save_snapshot_after_scan": False,
+            "source_label": "Always live refresh",
+            "summary": (
+                f"Main scanner now refreshes live data on every run and ignores saved snapshots at startup. "
+                f"Market window reference: {live_window}."
+            ),
+        }
+    )
     return plan
 
 
@@ -422,9 +359,7 @@ def get_data_status_label() -> str:
     if window == "LIVE":
         return f"🟢 Live Market Refresh — {day_text}"
     if window == "CLOSED":
-        if has_snapshot:
-            return f"🔵 Closing Snapshot Ready — {day_text}"
-        return f"🟠 Post-Close Refresh Pending — {day_text}"
+        return f"🟢 Always Live Refresh — {day_text}"
     if window == "PRE_MARKET":
-        return f"🟡 Previous Close — {day_text}"
-    return f"🟡 Last Close — {day_text}"
+        return f"🟢 Always Live Refresh — {day_text}"
+    return f"🟢 Always Live Refresh — {day_text}"
