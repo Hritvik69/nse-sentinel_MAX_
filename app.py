@@ -46,6 +46,7 @@ except Exception:
 import io
 import html
 import json
+import re
 import threading
 import time
 import warnings
@@ -1641,6 +1642,19 @@ inject_animations()
 
 _TICKER_GOOD_COUNT = 2000
 _TICKER_FALLBACK_MIN_COUNT = 500
+_TICKER_SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9&\-]{0,20}\.NS$")
+_STALE_TICKER_ALIASES = {
+    "ADANITRANS",
+    "AMARARAJA",
+    "ANDHRPAPMILL",
+    "BANKMAHA",
+    "BAYER",
+    "BLUESTAR",
+    "BURGERKING",
+    "CANFIN",
+    "CHAMBAL",
+    "CITYUNIONB",
+}
 _HARDCODED_TICKER_FALLBACK = [
     "20MICRONS.NS",
     "21STCENMGM.NS",
@@ -2145,6 +2159,32 @@ _HARDCODED_TICKER_FALLBACK = [
 ]
 
 
+def _sanitize_ticker_list(tickers) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+
+    try:
+        iterable = tickers or []
+    except Exception:
+        iterable = []
+
+    for raw in iterable:
+        bare = str(raw or "").strip().upper().replace(".NS", "")
+        if not bare or bare in _STALE_TICKER_ALIASES:
+            continue
+
+        formatted = f"{bare}.NS"
+        if not _TICKER_SYMBOL_RE.fullmatch(formatted):
+            continue
+        if formatted in seen:
+            continue
+
+        seen.add(formatted)
+        cleaned.append(formatted)
+
+    return cleaned
+
+
 def _save_tickers_to_gsheets(tickers: list) -> None:
     """
     Save full ticker list to Google Sheets tickers tab.
@@ -2200,7 +2240,8 @@ def fetch_nse_tickers() -> list:
     # even after cache TTL expires — survives indefinitely
     try:
         cached = st.session_state.get("_ticker_master_list", [])
-        if isinstance(cached, list) and len(cached) >= _TICKER_GOOD_COUNT:
+        cached = _sanitize_ticker_list(cached if isinstance(cached, list) else [])
+        if len(cached) >= _TICKER_GOOD_COUNT:
             return cached
     except Exception:
         pass
@@ -2239,7 +2280,7 @@ def fetch_nse_tickers() -> list:
             ticker if ticker.endswith(".NS") else f"{ticker}.NS"
             for ticker in gs_tickers
         ]
-        gs_tickers = sorted(set(gs_tickers))
+        gs_tickers = _sanitize_ticker_list(gs_tickers)
         if len(gs_tickers) >= _TICKER_GOOD_COUNT:
             st.session_state["_ticker_master_list"] = gs_tickers
             return gs_tickers
@@ -2253,14 +2294,14 @@ def fetch_nse_tickers() -> list:
             invalidate_cache,
         )
 
-        tickers = sorted(set(get_all_tickers(live=True) or []))
+        tickers = _sanitize_ticker_list(get_all_tickers(live=True) or [])
         if len(tickers) >= _TICKER_GOOD_COUNT:
             st.session_state["_ticker_master_list"] = tickers
             _save_tickers_to_gsheets(tickers)
             return tickers
 
         invalidate_cache()
-        tickers = sorted(set(get_all_tickers(live=False) or []))
+        tickers = _sanitize_ticker_list(get_all_tickers(live=False) or [])
         if len(tickers) >= 1000:
             if len(tickers) >= _TICKER_GOOD_COUNT:
                 st.session_state["_ticker_master_list"] = tickers
@@ -2274,13 +2315,13 @@ def fetch_nse_tickers() -> list:
 
         f = pathlib.Path(__file__).with_name("nse_tickers.txt")
         if f.exists():
-            symbols = sorted(set([
+            symbols = _sanitize_ticker_list([
                 f"{line.strip().upper().replace('.NS', '')}.NS"
                 for line in f.read_text(
                     encoding="utf-8", errors="ignore"
                 ).splitlines()
                 if line.strip()
-            ]))
+            ])
             if len(symbols) >= _TICKER_FALLBACK_MIN_COUNT:
                 if len(symbols) >= _TICKER_GOOD_COUNT:
                     st.session_state["_ticker_master_list"] = symbols
@@ -2291,7 +2332,7 @@ def fetch_nse_tickers() -> list:
     # ── LAYER 5: hardcoded Nifty 500 top stocks ───────────────
     # This is NOT 50 stocks — expanded so even total failure
     # still leaves the app with a large scan universe.
-    return list(_HARDCODED_TICKER_FALLBACK)
+    return _sanitize_ticker_list(_HARDCODED_TICKER_FALLBACK)
 
 
 # ─────────────────────────────────────────────────────────────────────
