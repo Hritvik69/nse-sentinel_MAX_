@@ -14,13 +14,10 @@ from datetime import date, datetime, time as dtime, timedelta
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from data_session_manager import (
-    get_current_window as _get_current_window,
-    get_expected_data_date as _get_expected_data_date,
-    get_scan_data_plan as _get_scan_data_plan,
-    is_data_fresh as _is_data_fresh,
-    stamp_frame_metadata as _stamp_frame_metadata,
-)
+try:
+    import data_session_manager as _dsm
+except Exception:
+    _dsm = None  # type: ignore[assignment]
 
 try:
     from zoneinfo import ZoneInfo
@@ -31,7 +28,7 @@ _MAX_CONC = 12                              # aligned with app worker cap
 _SEM      = threading.BoundedSemaphore(_MAX_CONC)
 _PRELOAD_BATCH_SIZE = 60
 _MAX_PRELOAD_BATCH_CONC = 4
-_MARKET_OPEN_IST = dtime(9, 15)
+_MARKET_OPEN_IST = dtime(9, 30)
 _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else None
 
 # ── Central data store (zero-API scan) ───────────────────────────────
@@ -51,6 +48,79 @@ try:
     SKLEARN_OK = True
 except ImportError:
     SKLEARN_OK = False
+
+
+def _dsm_fallback_current_window() -> str:
+    now_ist = _now_ist()
+    today = now_ist.date()
+    current_time = now_ist.time()
+    if today.weekday() >= 5:
+        return "WEEKEND"
+    if dtime(9, 30) <= current_time <= dtime(16, 0):
+        return "LIVE"
+    if current_time > dtime(16, 0):
+        return "CLOSED"
+    return "PRE_MARKET"
+
+
+def _dsm_fallback_expected_data_date() -> date:
+    now_ist = _now_ist()
+    today = now_ist.date()
+    window = _dsm_fallback_current_window()
+    if window in ("LIVE", "CLOSED"):
+        return today
+    if window == "PRE_MARKET":
+        return _previous_market_day(today - timedelta(days=1))
+    return _previous_market_day(today)
+
+
+def _dsm_fallback_is_data_fresh(df: pd.DataFrame | None) -> bool:
+    if df is None or df.empty:
+        return False
+    try:
+        last_seen = pd.to_datetime(df.index[-1]).date()
+    except Exception:
+        return False
+    return last_seen == _dsm_fallback_expected_data_date()
+
+
+def _dsm_fallback_scan_plan() -> dict[str, object]:
+    window = _dsm_fallback_current_window()
+    return {
+        "window": window,
+        "force_live_refresh": window in ("LIVE", "CLOSED"),
+    }
+
+
+def _dsm_fallback_stamp_frame_metadata(
+    df: pd.DataFrame | None,
+    *,
+    source: str,
+    market_date: date | None = None,
+    window: str | None = None,
+    captured_at: str | None = None,
+) -> pd.DataFrame | None:
+    if df is None:
+        return None
+    try:
+        out = df.copy()
+        out.attrs["_nse_data_source"] = str(source or "").strip()
+        if market_date is not None:
+            out.attrs["_nse_market_date"] = market_date.isoformat()
+        if window:
+            out.attrs["_nse_window"] = str(window).strip()
+        if captured_at:
+            out.attrs["_nse_captured_at"] = str(captured_at).strip()
+        return out
+    except Exception:
+        return df
+
+
+_get_current_window = getattr(_dsm, "get_current_window", _dsm_fallback_current_window)
+_get_expected_data_date = getattr(_dsm, "get_expected_data_date", _dsm_fallback_expected_data_date)
+_get_scan_data_plan = getattr(_dsm, "get_scan_data_plan", _dsm_fallback_scan_plan)
+_is_data_fresh = getattr(_dsm, "is_data_fresh", _dsm_fallback_is_data_fresh)
+_stamp_frame_metadata = getattr(_dsm, "stamp_frame_metadata", _dsm_fallback_stamp_frame_metadata)
 
 
 def safe(v: object, default: float = 0.0) -> float:

@@ -62,17 +62,145 @@ import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
 from learning_engine import train_learning_model, predict_success
-from data_session_manager import (
-    get_current_window,
-    get_expected_data_date,
-    get_data_status_label,
-    get_scan_data_plan,
-    snapshot_exists,
-    save_closing_snapshot,
-    load_snapshot_into_ALL_DATA,
-    get_snapshot_path,
-    read_snapshot_metadata,
-)
+try:
+    import data_session_manager as _dsm
+except Exception:
+    _dsm = None  # type: ignore[assignment]
+
+
+def _fallback_get_current_window() -> str:
+    now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    today = now_ist.date()
+    current_time = now_ist.time()
+    market_open = datetime.strptime("09:30", "%H:%M").time()
+    market_close = datetime.strptime("16:00", "%H:%M").time()
+    if today.weekday() >= 5:
+        return "WEEKEND"
+    if market_open <= current_time <= market_close:
+        return "LIVE"
+    if current_time > market_close:
+        return "CLOSED"
+    return "PRE_MARKET"
+
+
+def _fallback_previous_weekday(day):
+    cur = day
+    while cur.weekday() >= 5:
+        cur -= timedelta(days=1)
+    return cur
+
+
+def _fallback_get_expected_data_date():
+    now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    today = now_ist.date()
+    window = _fallback_get_current_window()
+    if window in ("LIVE", "CLOSED"):
+        return today
+    if window == "PRE_MARKET":
+        return _fallback_previous_weekday(today - timedelta(days=1))
+    return _fallback_previous_weekday(today)
+
+
+def _fallback_get_snapshot_path(market_date):
+    try:
+        snap_day = pd.to_datetime(market_date).date()
+    except Exception:
+        snap_day = _fallback_get_expected_data_date()
+    return Path(_HERE) / "data" / "snapshots" / snap_day.isoformat()
+
+
+def _fallback_snapshot_exists(market_date) -> bool:
+    try:
+        snap_dir = _fallback_get_snapshot_path(market_date)
+        return snap_dir.exists() and len(list(snap_dir.glob("*.csv"))) >= 100
+    except Exception:
+        return False
+
+
+def _fallback_get_scan_data_plan() -> dict:
+    window = _fallback_get_current_window()
+    expected_date = _fallback_get_expected_data_date()
+    has_snapshot = _fallback_snapshot_exists(expected_date)
+    live_window = "09:30 AM - 04:00 PM IST"
+    plan = {
+        "window": window,
+        "expected_date": expected_date,
+        "snapshot_exists": has_snapshot,
+        "snapshot_path": _fallback_get_snapshot_path(expected_date),
+        "live_window_label": live_window,
+        "use_snapshot": False,
+        "force_live_refresh": False,
+        "save_snapshot_after_scan": False,
+        "source_label": "",
+        "summary": "",
+    }
+    if window == "LIVE":
+        plan.update(
+            {
+                "force_live_refresh": True,
+                "source_label": "Live market refresh",
+                "summary": "Live session uses fresh market data before running the scan.",
+            }
+        )
+    elif window == "CLOSED":
+        if has_snapshot:
+            plan.update(
+                {
+                    "use_snapshot": True,
+                    "source_label": "Today's closing snapshot",
+                    "summary": "Closed-market scan uses today's saved close for speed.",
+                }
+            )
+        else:
+            plan.update(
+                {
+                    "force_live_refresh": True,
+                    "save_snapshot_after_scan": True,
+                    "source_label": "Post-close refresh",
+                    "summary": "Closed-market scan refreshes once, then saves a snapshot.",
+                }
+            )
+    elif window == "PRE_MARKET":
+        plan.update(
+            {
+                "use_snapshot": has_snapshot,
+                "source_label": "Previous close snapshot" if has_snapshot else "Previous close fallback",
+                "summary": "Pre-market scan uses the latest available close.",
+            }
+        )
+    else:
+        plan.update(
+            {
+                "use_snapshot": has_snapshot,
+                "source_label": "Last close snapshot" if has_snapshot else "Last close fallback",
+                "summary": "Weekend scan uses the latest available close.",
+            }
+        )
+    return plan
+
+
+def _fallback_get_data_status_label() -> str:
+    plan = _fallback_get_scan_data_plan()
+    day_text = str(plan.get("expected_date"))
+    window = str(plan.get("window", "")).upper()
+    if window == "LIVE":
+        return f"Live Market Refresh - {day_text}"
+    if window == "CLOSED":
+        return f"Closing Snapshot Ready - {day_text}" if plan.get("snapshot_exists") else f"Post-Close Refresh Pending - {day_text}"
+    if window == "PRE_MARKET":
+        return f"Previous Close - {day_text}"
+    return f"Last Close - {day_text}"
+
+
+get_current_window = getattr(_dsm, "get_current_window", _fallback_get_current_window)
+get_expected_data_date = getattr(_dsm, "get_expected_data_date", _fallback_get_expected_data_date)
+get_data_status_label = getattr(_dsm, "get_data_status_label", _fallback_get_data_status_label)
+get_scan_data_plan = getattr(_dsm, "get_scan_data_plan", _fallback_get_scan_data_plan)
+snapshot_exists = getattr(_dsm, "snapshot_exists", _fallback_snapshot_exists)
+save_closing_snapshot = getattr(_dsm, "save_closing_snapshot", lambda *_args, **_kwargs: 0)
+load_snapshot_into_ALL_DATA = getattr(_dsm, "load_snapshot_into_ALL_DATA", lambda *_args, **_kwargs: 0)
+get_snapshot_path = getattr(_dsm, "get_snapshot_path", _fallback_get_snapshot_path)
+read_snapshot_metadata = getattr(_dsm, "read_snapshot_metadata", lambda *_args, **_kwargs: {})
 
 try:
     import gspread
