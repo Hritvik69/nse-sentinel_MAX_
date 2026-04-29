@@ -17,7 +17,9 @@ import yfinance as yf
 from data_session_manager import (
     get_current_window as _get_current_window,
     get_expected_data_date as _get_expected_data_date,
+    get_scan_data_plan as _get_scan_data_plan,
     is_data_fresh as _is_data_fresh,
+    stamp_frame_metadata as _stamp_frame_metadata,
 )
 
 try:
@@ -164,6 +166,25 @@ def _is_fresh_live_frame(df: pd.DataFrame | None) -> bool:
     return df is not None and not _is_stale_live_frame(df)
 
 
+def _should_force_live_refresh(force_live_refresh: bool | None = None) -> bool:
+    if force_live_refresh is not None:
+        return bool(force_live_refresh)
+
+    try:
+        import time_travel_engine as _tt
+
+        if _tt.is_active():
+            return False
+    except Exception:
+        pass
+
+    try:
+        plan = _get_scan_data_plan()
+        return bool(plan.get("force_live_refresh", False))
+    except Exception:
+        return False
+
+
 def is_fresh_enough(df: pd.DataFrame | None, strict: bool = False) -> bool:
     if df is None or df.empty:
         return False
@@ -265,9 +286,15 @@ def _clear_no_data(ticker_ns: str) -> None:
         _coerce_no_data_tickers().discard(ticker_ns)
 
 
-def download_history(ticker_ns: str, period: str = "6mo") -> pd.DataFrame | None:
+def download_history(
+    ticker_ns: str,
+    period: str = "6mo",
+    *,
+    ignore_no_data_cache: bool = False,
+    suppress_no_data_mark: bool = False,
+) -> pd.DataFrame | None:
     """Download daily OHLCV; returns None on failure or if < 30 rows."""
-    if _has_recent_no_data(ticker_ns):
+    if not ignore_no_data_cache and _has_recent_no_data(ticker_ns):
         return None
 
     try:
@@ -277,14 +304,21 @@ def download_history(ticker_ns: str, period: str = "6mo") -> pd.DataFrame | None
                 auto_adjust=True, progress=False, timeout=12, threads=False,
             )
         if df is None or df.empty:
-            _mark_no_data(ticker_ns)
+            if not suppress_no_data_mark:
+                _mark_no_data(ticker_ns)
             return None
         prepared = _prepare_loaded_frame(df)
         if prepared is None:
-            _mark_no_data(ticker_ns)
+            if not suppress_no_data_mark:
+                _mark_no_data(ticker_ns)
             return None
         if _is_stale_live_frame(prepared):
             return None
+        prepared = _stamp_frame_metadata(
+            prepared,
+            source="live_single",
+            window=_get_current_window(),
+        )
         _clear_no_data(ticker_ns)
         return prepared
     except Exception:
@@ -297,6 +331,11 @@ def _fetch_one(ticker_ns: str, period: str) -> tuple[str, pd.DataFrame | None]:
         from data_downloader import load_csv
         df = _prepare_loaded_frame(load_csv(ticker_ns))
         if df is not None:
+            df = _stamp_frame_metadata(
+                df,
+                source="csv_cache",
+                window=_get_current_window(),
+            )
             _clear_no_data(ticker_ns)
             return ticker_ns, df
     except Exception:
@@ -334,7 +373,15 @@ def _download_batch(
 
     if len(tickers_ns) == 1 and not isinstance(batch_df.columns, pd.MultiIndex):
         prepared = _prepare_loaded_frame(batch_df)
-        out[tickers_ns[0]] = prepared if _is_fresh_live_frame(prepared) else None
+        if prepared is not None and _is_fresh_live_frame(prepared):
+            prepared = _stamp_frame_metadata(
+                prepared,
+                source="live_batch",
+                window=_get_current_window(),
+            )
+            out[tickers_ns[0]] = prepared
+        else:
+            out[tickers_ns[0]] = None
         return out, True
 
     if not isinstance(batch_df.columns, pd.MultiIndex):
@@ -351,7 +398,15 @@ def _download_batch(
             out[ticker_ns] = None
             continue
         prepared = _prepare_loaded_frame(one_df)
-        out[ticker_ns] = prepared if _is_fresh_live_frame(prepared) else None
+        if prepared is not None and _is_fresh_live_frame(prepared):
+            prepared = _stamp_frame_metadata(
+                prepared,
+                source="live_batch",
+                window=_get_current_window(),
+            )
+            out[ticker_ns] = prepared
+        else:
+            out[ticker_ns] = None
 
     return out, True
 
@@ -361,17 +416,22 @@ def preload_all(
     period: str = "6mo",
     workers: int = 12,
     progress_callback=None,
-) -> None:
+    force_live_refresh: bool | None = None,
+) -> dict[str, int | bool]:
     """
     Fill ALL_DATA with OHLCV DataFrames for every ticker in parallel.
     Called once before run_scan() so analyse() can use get_df_for_ticker().
     """
     _reset_live_caches_if_market_day_changed()
+    force_live_refresh = _should_force_live_refresh(force_live_refresh)
 
     tickers_ns = [t if t.endswith(".NS") else f"{t}.NS" for t in tickers]
     total = len(tickers_ns)
     done = 0
     loaded = 0
+    live_downloaded = 0
+    fallback_used = 0
+    cache_hits = 0
 
     def _emit_progress() -> None:
         if progress_callback is None:
@@ -391,14 +451,21 @@ def preload_all(
     for ticker_ns in tickers_ns:
         cached = existing.get(ticker_ns)
         if cached is not None and isinstance(cached, pd.DataFrame) and not cached.empty:
-            if _is_stale_live_frame(cached):
+            if force_live_refresh:
+                stale_fallbacks[ticker_ns] = cached
+                remaining.append(ticker_ns)
+            elif _is_stale_live_frame(cached):
                 stale_fallbacks[ticker_ns] = cached
                 remaining.append(ticker_ns)
             else:
                 done += 1
                 loaded += 1
+                cache_hits += 1
         elif ticker_ns in known_no_data:
-            done += 1
+            if force_live_refresh:
+                remaining.append(ticker_ns)
+            else:
+                done += 1
         else:
             remaining.append(ticker_ns)
     _emit_progress()
@@ -413,7 +480,15 @@ def preload_all(
             csv_df = None
 
         if csv_df is not None:
-            if _is_stale_live_frame(csv_df):
+            csv_df = _stamp_frame_metadata(
+                csv_df,
+                source="csv_cache",
+                window=_get_current_window(),
+            )
+            if force_live_refresh:
+                stale_fallbacks.setdefault(ticker_ns, csv_df)
+                download_queue.append(ticker_ns)
+            elif _is_stale_live_frame(csv_df):
                 stale_fallbacks.setdefault(ticker_ns, csv_df)
                 download_queue.append(ticker_ns)
             else:
@@ -422,12 +497,20 @@ def preload_all(
                 _clear_no_data(ticker_ns)
                 done += 1
                 loaded += 1
+                cache_hits += 1
                 _emit_progress()
         else:
             download_queue.append(ticker_ns)
 
     if not download_queue:
-        return
+        return {
+            "total": total,
+            "loaded": loaded,
+            "downloaded": live_downloaded,
+            "fallback_used": fallback_used,
+            "cache_hits": cache_hits,
+            "force_live_refresh": force_live_refresh,
+        }
 
     batches = [
         download_queue[i:i + _PRELOAD_BATCH_SIZE]
@@ -442,8 +525,17 @@ def preload_all(
     def _fetch_batch(batch: list[str]) -> dict[str, pd.DataFrame | None]:
         frames, batch_ok = _download_batch(batch, period)
         if not batch_ok:
-            for ticker_ns in batch:
-                frames[ticker_ns] = download_history(ticker_ns, period=period)
+            retry_list = batch
+        else:
+            retry_list = [ticker_ns for ticker_ns in batch if frames.get(ticker_ns) is None]
+        for ticker_ns in retry_list:
+            if frames.get(ticker_ns) is None:
+                frames[ticker_ns] = download_history(
+                    ticker_ns,
+                    period=period,
+                    ignore_no_data_cache=force_live_refresh,
+                    suppress_no_data_mark=force_live_refresh,
+                )
         return frames
 
     with ThreadPoolExecutor(max_workers=batch_workers) as ex:
@@ -472,7 +564,8 @@ def preload_all(
             for ticker_ns in batch:
                 frame = batch_frames.get(ticker_ns)
                 if frame is None:
-                    _mark_no_data(ticker_ns)
+                    if not force_live_refresh:
+                        _mark_no_data(ticker_ns)
                 else:
                     _clear_no_data(ticker_ns)
                     _persist_frame_to_csv(ticker_ns, frame)
@@ -480,11 +573,24 @@ def preload_all(
             for ticker_ns in batch:
                 done += 1
                 frame = batch_frames.get(ticker_ns)
-                if frame is None:
-                    frame = stale_fallbacks.get(ticker_ns)
                 if frame is not None:
+                    live_downloaded += 1
                     loaded += 1
+                else:
+                    frame = stale_fallbacks.get(ticker_ns)
+                    if frame is not None:
+                        fallback_used += 1
+                        loaded += 1
                 _emit_progress()
+
+    return {
+        "total": total,
+        "loaded": loaded,
+        "downloaded": live_downloaded,
+        "fallback_used": fallback_used,
+        "cache_hits": cache_hits,
+        "force_live_refresh": force_live_refresh,
+    }
 
 
 def preload_history_batch(
@@ -492,13 +598,15 @@ def preload_history_batch(
     period: str = "6mo",
     workers: int = 12,
     progress_callback=None,
-) -> None:
+    force_live_refresh: bool | None = None,
+) -> dict[str, int | bool]:
     """Back-compat alias for preload_all()."""
-    preload_all(
+    return preload_all(
         tickers,
         period=period,
         workers=workers,
         progress_callback=progress_callback,
+        force_live_refresh=force_live_refresh,
     )
 
 
@@ -507,11 +615,12 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     Caches the fallback result in ALL_DATA to prevent repeated API calls.
     """
     ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+    force_live_refresh = _should_force_live_refresh()
     with _ALL_DATA_LOCK:
         df = ALL_DATA.get(ticker_ns)
     stale_fallback = None
     if df is not None:
-        if not _is_stale_live_frame(df):
+        if not force_live_refresh and not _is_stale_live_frame(df):
             return df
         stale_fallback = df
 
@@ -519,7 +628,12 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
         from data_downloader import load_csv
         csv_df = _prepare_loaded_frame(load_csv(ticker_ns))
         if csv_df is not None:
-            if _is_stale_live_frame(csv_df):
+            csv_df = _stamp_frame_metadata(
+                csv_df,
+                source="csv_cache",
+                window=_get_current_window(),
+            )
+            if force_live_refresh or _is_stale_live_frame(csv_df):
                 if stale_fallback is None:
                     stale_fallback = csv_df
             else:
@@ -530,12 +644,20 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     except Exception:
         pass
 
-    fetched = download_history(ticker_ns, period="6mo")
+    fetched = download_history(
+        ticker_ns,
+        period="6mo",
+        ignore_no_data_cache=force_live_refresh,
+        suppress_no_data_mark=force_live_refresh,
+    )
     if fetched is not None:
         with _ALL_DATA_LOCK:
             ALL_DATA[ticker_ns] = fetched
         _persist_frame_to_csv(ticker_ns, fetched)
         return fetched
+    if stale_fallback is not None:
+        with _ALL_DATA_LOCK:
+            ALL_DATA[ticker_ns] = stale_fallback
     return stale_fallback
 
 
@@ -675,6 +797,13 @@ def _series_num(df: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
 def _series_text(df: pd.DataFrame, col: str) -> pd.Series:
     if col in df.columns:
         return df[col].fillna("").astype(str)
+    return pd.Series("", index=df.index, dtype="object")
+
+
+def _first_text_series(df: pd.DataFrame, *cols: str) -> pd.Series:
+    for col in cols:
+        if col in df.columns:
+            return df[col].fillna("").astype(str)
     return pd.Series("", index=df.index, dtype="object")
 
 
@@ -819,16 +948,37 @@ def get_tomorrow_top_picks(
         reason_fn = _pick_reason_breakout
 
     else:
+        try:
+            from trade_decision_simple import apply_trade_decision_simple_any
+
+            out = apply_trade_decision_simple_any(out.copy())
+        except Exception:
+            out = out.copy()
+
         final = _series_num(out, "Final Score", 0.0)
         pred = _series_num(out, "Prediction Score", _series_num(out, "ML %", 0.0))
         backtest = _series_num(out, "Backtest %")
         ml = _series_num(out, "ML %")
-        next_day = _series_text(out, "Next-Day Signal")
-        adjusted = _series_text(out, "Adjusted Signal")
-        conviction = _series_text(out, "Conviction Tier")
-        trap = _series_text(out, "Trap")
+        next_day = _first_text_series(out, "Next-Day Signal")
+        adjusted = _first_text_series(out, "Adjusted Signal", "Final Signal", "Signal")
+        signal = _first_text_series(out, "Signal", "Final Signal")
+        conviction = _first_text_series(out, "Conviction Tier").str.upper().str.strip()
+        grade = _first_text_series(out, "Grade").str.upper().str.strip()
+        setup = _first_text_series(out, "Setup Quality").str.upper().str.strip()
+        entry = _first_text_series(out, "Entry Timing").str.upper().str.strip()
+        action = _first_text_series(out, "Action").str.upper().str.strip()
+        trap = _first_text_series(out, "Trap Check", "Trap Risk", "Trap", "Bull Trap", "Trap Flags")
+        trap_text = trap.str.lower().str.strip()
         signal_text = (
-            adjusted.fillna("") + " " + next_day.fillna("") + " " + conviction.fillna("")
+            adjusted.fillna("")
+            + " "
+            + signal.fillna("")
+            + " "
+            + next_day.fillna("")
+            + " "
+            + conviction.fillna("")
+            + " "
+            + action.fillna("")
         ).str.lower()
 
         signal_bonus = np.select(
@@ -841,30 +991,96 @@ def get_tomorrow_top_picks(
             [12.0, 7.0, -3.0, -15.0],
             default=2.0,
         )
-        conviction_bonus = np.select(
+        grade_bonus = np.select(
             [
-                conviction.str.contains(r"A\+", case=False, regex=True, na=False),
-                conviction.str.contains(r"\bA\b", case=False, regex=True, na=False),
-                conviction.str.contains(r"\bB\b", case=False, regex=True, na=False),
-                conviction.str.contains(r"\bD\b", case=False, regex=True, na=False),
+                grade.eq("A+"),
+                grade.eq("A"),
+                grade.eq("B"),
+                grade.eq("C"),
+                grade.eq("D"),
             ],
-            [8.0, 6.0, 3.0, -5.0],
+            [8.0, 6.0, 3.0, -1.0, -6.0],
             default=0.0,
         )
-        trap_penalty = trap.apply(lambda x: 12.0 if _has_flag(x) else 0.0).astype(float)
+        conviction_bonus = np.select(
+            [
+                conviction.eq("HIGH"),
+                conviction.eq("MEDIUM"),
+                conviction.eq("LOW"),
+            ],
+            [5.0, 1.0, -5.0],
+            default=0.0,
+        )
+        setup_bonus = np.select(
+            [
+                setup.eq("HIGH"),
+                setup.eq("MEDIUM"),
+                setup.eq("LOW"),
+            ],
+            [5.0, 1.5, -6.0],
+            default=0.0,
+        )
+        entry_bonus = np.select(
+            [
+                entry.eq("EARLY"),
+                entry.eq("GOOD"),
+                entry.eq("NEUTRAL"),
+                entry.eq("LATE"),
+            ],
+            [3.0, 1.0, 0.0, -5.0],
+            default=0.0,
+        )
+        action_bonus = np.select(
+            [
+                action.str.contains("BUY TOMORROW", regex=False, na=False),
+                action.str.contains("WATCH", regex=False, na=False),
+                action.str.contains("WAIT", regex=False, na=False),
+                action.str.contains("AVOID", regex=False, na=False),
+            ],
+            [10.0, 2.0, -4.0, -14.0],
+            default=0.0,
+        )
+        trap_penalty = pd.Series(
+            np.select(
+                [
+                    trap_text.str.contains("high|trap|risky|yes", regex=True, na=False),
+                    trap_text.str.contains("medium|caution", regex=True, na=False),
+                    trap_text.str.contains("low|safe|clean|no trap", regex=True, na=False),
+                ],
+                [18.0, 8.0, 0.0],
+                default=np.where(trap_text.eq(""), 0.0, 10.0),
+            ),
+            index=out.index,
+            dtype="float64",
+        )
         out["Tomorrow Pick Score"] = (
-            0.42 * final
+            0.38 * final
             + 0.24 * pred
-            + 0.17 * backtest
-            + 0.17 * ml
+            + 0.16 * backtest
+            + 0.12 * ml
             + signal_bonus
+            + grade_bonus
             + conviction_bonus
+            + setup_bonus
+            + entry_bonus
+            + action_bonus
             - trap_penalty
         ).clip(0.0, 100.0).round(1)
 
-        strict_mask = ~signal_text.str.contains("weak|avoid|trap|sell|late entry|risky", regex=True, na=False) & trap_penalty.eq(0.0)
-        soft_mask = ~signal_text.str.contains("weak|avoid|trap|sell", regex=True, na=False)
-        sort_cols = ["Tomorrow Pick Score", "Final Score", "Prediction Score", "ML %"]
+        strict_mask = (
+            action.str.contains("BUY TOMORROW", regex=False, na=False)
+            & ~signal_text.str.contains("weak|avoid|trap|sell|late entry|risky", regex=True, na=False)
+            & trap_penalty.le(0.0)
+            & ~conviction.eq("LOW")
+            & ~setup.eq("LOW")
+            & ~grade.eq("D")
+        )
+        soft_mask = (
+            ~action.str.contains("AVOID", regex=False, na=False)
+            & ~signal_text.str.contains("weak|avoid|trap|sell", regex=True, na=False)
+            & trap_penalty.le(8.0)
+        )
+        sort_cols = ["Tomorrow Pick Score", "Final Score", "Prediction Score", "Backtest %", "ML %"]
         reason_fn = _pick_reason_main
 
     if strict_mask.sum() >= top_n:

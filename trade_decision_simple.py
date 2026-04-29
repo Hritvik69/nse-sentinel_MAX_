@@ -112,7 +112,7 @@ def apply_trade_decision_simple_any(df):
             ),
             0,
         )
-        trap = _first_present(row, ["Trap Risk", "Trap Flags", "Bull Trap", "Trap"], "")
+        trap = _first_present(row, ["Trap Check", "Trap Risk", "Trap Flags", "Bull Trap", "Trap"], "")
 
         action = "🟡 Watch"
         hold = "—"

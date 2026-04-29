@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
@@ -12,10 +13,18 @@ except ImportError:
     ZoneInfo = None  # type: ignore[assignment]
 
 _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedelta(hours=5, minutes=30))
-_MARKET_OPEN = dtime(9, 15)
-_MARKET_CLOSE = dtime(15, 30)
+_MARKET_OPEN = dtime(9, 30)
+_MARKET_CLOSE = dtime(16, 0)
 _ROOT = Path(__file__).resolve().parent
 _SNAPSHOT_ROOT = _ROOT / "data" / "snapshots"
+_FRAME_SOURCE_ATTR = "_nse_data_source"
+_FRAME_DATE_ATTR = "_nse_market_date"
+_FRAME_WINDOW_ATTR = "_nse_window"
+_FRAME_CAPTURED_AT_ATTR = "_nse_captured_at"
+
+
+def _snapshot_meta_path(market_date) -> Path:
+    return get_snapshot_path(market_date) / "_meta.json"
 
 
 def _now_ist() -> datetime:
@@ -91,6 +100,10 @@ def get_current_window() -> str:
     return "PRE_MARKET"
 
 
+def get_market_hours_label() -> str:
+    return f"{_MARKET_OPEN.strftime('%I:%M %p')} - {_MARKET_CLOSE.strftime('%I:%M %p')} IST"
+
+
 def get_expected_data_date() -> date:
     now_ist = _now_ist()
     today = now_ist.date()
@@ -106,6 +119,151 @@ def get_expected_data_date() -> date:
 
     fallback = _latest_snapshot_on_or_before(baseline)
     return fallback or baseline
+
+
+def stamp_frame_metadata(
+    df: pd.DataFrame | None,
+    *,
+    source: str,
+    market_date: date | None = None,
+    window: str | None = None,
+    captured_at: str | None = None,
+) -> pd.DataFrame | None:
+    if df is None:
+        return None
+    try:
+        out = df.copy()
+        out.attrs[_FRAME_SOURCE_ATTR] = str(source or "").strip()
+        if market_date is None:
+            try:
+                market_date = pd.to_datetime(out.index[-1]).date()
+            except Exception:
+                market_date = None
+        if market_date is not None:
+            out.attrs[_FRAME_DATE_ATTR] = market_date.isoformat()
+        if window:
+            out.attrs[_FRAME_WINDOW_ATTR] = str(window).strip()
+        if captured_at:
+            out.attrs[_FRAME_CAPTURED_AT_ATTR] = str(captured_at).strip()
+        return out
+    except Exception:
+        return df
+
+
+def get_frame_source(df: pd.DataFrame | None) -> str:
+    try:
+        if df is None:
+            return ""
+        return str(df.attrs.get(_FRAME_SOURCE_ATTR, "") or "").strip()
+    except Exception:
+        return ""
+
+
+def read_snapshot_metadata(market_date) -> dict[str, object]:
+    try:
+        meta_path = _snapshot_meta_path(market_date)
+        if not meta_path.exists():
+            return {}
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def get_scan_data_plan() -> dict[str, object]:
+    window = get_current_window()
+    expected_date = get_expected_data_date()
+    snap_path = get_snapshot_path(expected_date)
+    has_snapshot = snapshot_exists(expected_date)
+    live_window = get_market_hours_label()
+
+    plan: dict[str, object] = {
+        "window": window,
+        "expected_date": expected_date,
+        "snapshot_exists": has_snapshot,
+        "snapshot_path": snap_path,
+        "live_window_label": live_window,
+        "use_snapshot": False,
+        "force_live_refresh": False,
+        "save_snapshot_after_scan": False,
+        "source_label": "",
+        "summary": "",
+    }
+
+    if window == "LIVE":
+        plan.update(
+            {
+                "force_live_refresh": True,
+                "source_label": "Live market refresh",
+                "summary": (
+                    f"Market window is open ({live_window}). "
+                    "Each scan refreshes live data first, then falls back only if a ticker download fails."
+                ),
+            }
+        )
+        return plan
+
+    if window == "CLOSED":
+        if has_snapshot:
+            plan.update(
+                {
+                    "use_snapshot": True,
+                    "source_label": "Today's closing snapshot",
+                    "summary": (
+                        "Market is closed. Scans start from today's saved post-close snapshot for fast results."
+                    ),
+                }
+            )
+        else:
+            plan.update(
+                {
+                    "force_live_refresh": True,
+                    "save_snapshot_after_scan": True,
+                    "source_label": "Post-close refresh",
+                    "summary": (
+                        "Market is closed and no snapshot exists yet. The first scan refreshes the latest data and "
+                        "then saves today's snapshot for the next runs."
+                    ),
+                }
+            )
+        return plan
+
+    if window == "PRE_MARKET":
+        if has_snapshot:
+            plan.update(
+                {
+                    "use_snapshot": True,
+                    "source_label": "Previous close snapshot",
+                    "summary": "Pre-market scan uses the latest saved close so results are fast and stable.",
+                }
+            )
+        else:
+            plan.update(
+                {
+                    "source_label": "Previous close fallback",
+                    "summary": (
+                        "Pre-market scan uses the last available trading-day data. A saved snapshot will be used "
+                        "automatically once it exists."
+                    ),
+                }
+            )
+        return plan
+
+    if has_snapshot:
+        plan.update(
+            {
+                "use_snapshot": True,
+                "source_label": "Last close snapshot",
+                "summary": "Weekend scan uses the latest saved close for speed.",
+            }
+        )
+    else:
+        plan.update(
+            {
+                "source_label": "Last close fallback",
+                "summary": "Weekend scan uses the most recent available close data.",
+            }
+        )
+    return plan
 
 
 def is_data_fresh(df: pd.DataFrame) -> bool:
@@ -161,7 +319,7 @@ def _cleanup_old_snapshots(reference_date: date) -> None:
         pass
 
 
-def save_closing_snapshot(ALL_DATA: dict, market_date) -> int:
+def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool = False) -> int:
     try:
         snap_day = _coerce_date(market_date)
         if get_current_window() != "CLOSED":
@@ -179,6 +337,8 @@ def save_closing_snapshot(ALL_DATA: dict, market_date) -> int:
             try:
                 if df is None or df.empty or not isinstance(df, pd.DataFrame):
                     continue
+                if require_live_source and not get_frame_source(df).startswith("live"):
+                    continue
                 last_seen = pd.to_datetime(df.index[-1]).date()
                 if last_seen != snap_day:
                     continue
@@ -188,6 +348,18 @@ def save_closing_snapshot(ALL_DATA: dict, market_date) -> int:
                 saved += 1
             except Exception:
                 continue
+
+        if saved > 0:
+            meta = {
+                "market_date": snap_day.isoformat(),
+                "captured_at": _now_ist().isoformat(),
+                "window": get_current_window(),
+                "saved": saved,
+            }
+            _snapshot_meta_path(snap_day).write_text(
+                json.dumps(meta, indent=2),
+                encoding="utf-8",
+            )
 
         _cleanup_old_snapshots(snap_day)
         return saved
@@ -209,12 +381,21 @@ def load_snapshot_into_ALL_DATA(market_date) -> int:
         )
 
         loaded_frames: dict[str, pd.DataFrame] = {}
+        snapshot_meta = read_snapshot_metadata(market_date)
+        captured_at = str(snapshot_meta.get("captured_at", "") or "").strip() or None
         for csv_path in snap_dir.glob("*.csv"):
             try:
                 df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
                 if df is None or df.empty:
                     continue
                 df = df.sort_index()
+                df = stamp_frame_metadata(
+                    df,
+                    source="snapshot",
+                    market_date=_coerce_date(market_date),
+                    window="CLOSED",
+                    captured_at=captured_at,
+                )
                 loaded_frames[csv_path.stem] = df
             except Exception:
                 continue
@@ -232,14 +413,18 @@ def load_snapshot_into_ALL_DATA(market_date) -> int:
 
 
 def get_data_status_label() -> str:
-    window = get_current_window()
-    snap_day = get_expected_data_date()
-    day_text = snap_day.isoformat()
+    plan = get_scan_data_plan()
+    snap_day = plan.get("expected_date")
+    day_text = snap_day.isoformat() if isinstance(snap_day, date) else str(snap_day)
+    window = str(plan.get("window", "") or "").upper()
+    has_snapshot = bool(plan.get("snapshot_exists", False))
 
     if window == "LIVE":
-        return f"🟢 Live Market Data — {day_text}"
+        return f"🟢 Live Market Refresh — {day_text}"
     if window == "CLOSED":
-        return f"🔵 Closing Snapshot — {day_text} 3:30 PM"
+        if has_snapshot:
+            return f"🔵 Closing Snapshot Ready — {day_text}"
+        return f"🟠 Post-Close Refresh Pending — {day_text}"
     if window == "PRE_MARKET":
         return f"🟡 Previous Close — {day_text}"
     return f"🟡 Last Close — {day_text}"

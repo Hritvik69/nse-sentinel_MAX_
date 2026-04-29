@@ -66,10 +66,12 @@ from data_session_manager import (
     get_current_window,
     get_expected_data_date,
     get_data_status_label,
+    get_scan_data_plan,
     snapshot_exists,
     save_closing_snapshot,
     load_snapshot_into_ALL_DATA,
     get_snapshot_path,
+    read_snapshot_metadata,
 )
 
 try:
@@ -4247,6 +4249,81 @@ with st.sidebar:
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
+    st.markdown('<div class="section-lbl">📡 Data Session</div>', unsafe_allow_html=True)
+    if _tt_toggle:
+        st.markdown(
+            '<div style="font-size:11px;color:#f0b429;line-height:1.7;">'
+            'Time Travel is active, so the normal live/close routing is paused until simulation is turned off.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        _session_plan = get_scan_data_plan()
+        _session_window = str(_session_plan.get("window", "") or "").upper()
+        _session_date = _session_plan.get("expected_date")
+        _session_date_text = (
+            _session_date.strftime("%d %b %Y")
+            if hasattr(_session_date, "strftime")
+            else str(_session_date)
+        )
+        _session_source = html.escape(str(_session_plan.get("source_label", "Auto")).upper())
+        _session_summary = html.escape(str(_session_plan.get("summary", "")).strip())
+        _live_window_label = html.escape(str(_session_plan.get("live_window_label", "")).strip())
+        _has_snapshot = bool(_session_plan.get("snapshot_exists", False))
+        _snapshot_state = "READY" if _has_snapshot else "PENDING"
+        _snapshot_color = "#00d4a8" if _has_snapshot else "#f0b429"
+        _window_color = {
+            "LIVE": "#00d4a8",
+            "CLOSED": "#4da3ff",
+            "PRE_MARKET": "#f0b429",
+            "WEEKEND": "#f0b429",
+        }.get(_session_window, "#4da3ff")
+        _snapshot_meta = read_snapshot_metadata(_session_date) if _has_snapshot else {}
+        _captured_raw = str(_snapshot_meta.get("captured_at", "") or "").strip()
+        _captured_text = ""
+        if _captured_raw:
+            _captured_text = (
+                _captured_raw.replace("T", " ")
+                .replace("+05:30", " IST")
+                .replace("+0530", " IST")
+            )
+        _captured_row = ""
+        if _captured_text:
+            _captured_row = (
+                '<div style="display:flex;justify-content:space-between;gap:12px;padding-top:8px;'
+                'border-top:1px solid #1a2840;margin-top:8px;">'
+                '<span style="font-size:10px;color:#4a6480;">Captured</span>'
+                f'<span style="font-size:10px;color:#ccd9e8;text-align:right;">{html.escape(_captured_text)}</span>'
+                '</div>'
+            )
+        st.markdown(
+            f'<div style="background:#0f1823;border:1px solid #1a2840;border-radius:10px;'
+            f'padding:12px 14px;margin-bottom:4px;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">'
+            f'<span style="font-size:10px;letter-spacing:1.2px;color:#4a6480;">SESSION</span>'
+            f'<span style="font-size:10px;font-weight:700;color:{_window_color};">{_session_window}</span>'
+            f'</div>'
+            f'<div style="margin-top:8px;font-size:12px;font-weight:700;color:{_window_color};">{_session_source}</div>'
+            f'<div style="display:flex;justify-content:space-between;gap:12px;padding-top:10px;">'
+            f'<span style="font-size:10px;color:#4a6480;">Live Window</span>'
+            f'<span style="font-size:10px;color:#ccd9e8;text-align:right;">{_live_window_label}</span>'
+            f'</div>'
+            f'<div style="display:flex;justify-content:space-between;gap:12px;padding-top:8px;">'
+            f'<span style="font-size:10px;color:#4a6480;">Scan Date</span>'
+            f'<span style="font-size:10px;color:#ccd9e8;text-align:right;">{html.escape(_session_date_text)}</span>'
+            f'</div>'
+            f'<div style="display:flex;justify-content:space-between;gap:12px;padding-top:8px;">'
+            f'<span style="font-size:10px;color:#4a6480;">Snapshot</span>'
+            f'<span style="font-size:10px;font-weight:700;color:{_snapshot_color};text-align:right;">{_snapshot_state}</span>'
+            f'</div>'
+            f'{_captured_row}'
+            f'<div style="margin-top:10px;font-size:10px;line-height:1.7;color:#4a6480;">{_session_summary}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+
     # ── Data Management Panel ─────────────────────────────────────
     st.markdown('<div class="section-lbl">📦 Local Data Cache</div>', unsafe_allow_html=True)
     st.markdown(
@@ -4472,8 +4549,31 @@ if scan_clicked or main_scan_clicked:
     _snapshot_hint_path = get_snapshot_path(expected_date)
     skip_preload = False
     do_snapshot = False
+    force_live_refresh = False
 
     if _tt_active_date is None:
+        _session_plan = get_scan_data_plan()
+        window = str(_session_plan.get("window", window) or window)
+        expected_date = _session_plan.get("expected_date", expected_date)
+        _snapshot_hint_path = _session_plan.get("snapshot_path", _snapshot_hint_path)
+        do_snapshot = bool(_session_plan.get("save_snapshot_after_scan", False))
+        force_live_refresh = bool(_session_plan.get("force_live_refresh", False))
+        if bool(_session_plan.get("use_snapshot", False)) and snapshot_exists(expected_date):
+            loaded = load_snapshot_into_ALL_DATA(expected_date)
+            if loaded > 0:
+                st.info(
+                    f"ðŸ“‚ Loaded {loaded} tickers from "
+                    f"{expected_date} snapshot. "
+                    f"No live refresh needed."
+                )
+                skip_preload = True
+            else:
+                st.warning(
+                    f"âš ï¸ Snapshot found at {_snapshot_hint_path} "
+                    "but could not be loaded. Falling back to live/cache preload."
+                )
+
+    if False and _tt_active_date is None:
         if window in ("PRE_MARKET", "WEEKEND"):
             if snapshot_exists(expected_date):
                 loaded = load_snapshot_into_ALL_DATA(expected_date)
@@ -4513,9 +4613,25 @@ if scan_clicked or main_scan_clicked:
             skip_preload = False
             do_snapshot = False
 
+    preload_stats = {
+        "total": len(all_tickers),
+        "loaded": 0,
+        "downloaded": 0,
+        "fallback_used": 0,
+        "cache_hits": 0,
+        "force_live_refresh": force_live_refresh,
+    }
+
     if not skip_preload:
+        preload_message = "Preparing price-history preload..."
+        if force_live_refresh and window == "LIVE":
+            preload_message = "Refreshing live market data..."
+        elif force_live_refresh and window == "CLOSED":
+            preload_message = "Refreshing latest post-close data..."
+        elif window in ("PRE_MARKET", "WEEKEND"):
+            preload_message = "Preparing latest close data..."
         preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
-            "Preparing price-history preload..."
+            preload_message
         )
         _preload_state = {
             "done": 0,
@@ -4555,11 +4671,12 @@ if scan_clicked or main_scan_clicked:
                 "Ready",
             )
 
-        preload_all(
+        preload_stats = preload_all(
             all_tickers,
             period="3mo",
             workers=workers,
             progress_callback=_update_preload,
+            force_live_refresh=force_live_refresh,
         )
         _finish_stage_feedback(
             preload_bar,
@@ -4575,7 +4692,7 @@ if scan_clicked or main_scan_clicked:
         try:
             from strategy_engines._engine_utils import ALL_DATA
 
-            saved = save_closing_snapshot(ALL_DATA, expected_date)
+            saved = save_closing_snapshot(ALL_DATA, expected_date, require_live_source=True)
             if saved > 0:
                 st.success(f"💾 Closing snapshot saved: {saved} tickers for {expected_date}")
         except Exception:
