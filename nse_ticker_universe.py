@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import io
 import re
+import tempfile
 import threading
 import zipfile
 from datetime import datetime, timedelta
@@ -387,13 +388,15 @@ _DROP_SYMBOLS = {
     "AARTIINDALKEM","AIRPORT","CAREGIVING","INDUIND","RBKL",
     "WABAGGOO","ORDNANCE","MCDONALDS","NATIONAL","PATANJALIFO",
     "TVSTOUCHSCR","TORRENTP",
+    "ADANITRANS","AMARARAJA","ANDHRPAPMILL","BANKMAHA","BAYER",
+    "BLUESTAR","BURGERKING","CANFIN","CHAMBAL","CITYUNIONB",
 }
 
 # ══════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ══════════════════════════════════════════════════════════════════════
 
-_TMP_TICKER_FILE = "/tmp/nse_sentinel_live_tickers_v2.txt"
+_TMP_TICKER_FILE = str(Path(tempfile.gettempdir()) / "nse_sentinel_live_tickers_v3.txt")
 
 
 def get_all_tickers(live: bool = True) -> list[str]:
