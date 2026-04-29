@@ -204,6 +204,7 @@ _SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 _TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
+_TICKER_MASTER_STORE_PATH = Path(_HERE) / "data" / "ticker_master_list.json"
 
 
 @st.cache_resource(ttl=0)
@@ -1643,18 +1644,6 @@ inject_animations()
 _TICKER_GOOD_COUNT = 2000
 _TICKER_FALLBACK_MIN_COUNT = 500
 _TICKER_SYMBOL_RE = re.compile(r"^[A-Z0-9][A-Z0-9&\-]{0,20}\.NS$")
-_STALE_TICKER_ALIASES = {
-    "ADANITRANS",
-    "AMARARAJA",
-    "ANDHRPAPMILL",
-    "BANKMAHA",
-    "BAYER",
-    "BLUESTAR",
-    "BURGERKING",
-    "CANFIN",
-    "CHAMBAL",
-    "CITYUNIONB",
-}
 _HARDCODED_TICKER_FALLBACK = [
     "20MICRONS.NS",
     "21STCENMGM.NS",
@@ -2170,7 +2159,7 @@ def _sanitize_ticker_list(tickers) -> list[str]:
 
     for raw in iterable:
         bare = str(raw or "").strip().upper().replace(".NS", "")
-        if not bare or bare in _STALE_TICKER_ALIASES:
+        if not bare:
             continue
 
         formatted = f"{bare}.NS"
@@ -2183,6 +2172,55 @@ def _sanitize_ticker_list(tickers) -> list[str]:
         cleaned.append(formatted)
 
     return cleaned
+
+
+def _merge_ticker_lists(*sources) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+
+    for source in sources:
+        for ticker in _sanitize_ticker_list(source):
+            if ticker in seen:
+                continue
+            seen.add(ticker)
+            merged.append(ticker)
+
+    return merged
+
+
+def _load_local_ticker_master() -> list[str]:
+    try:
+        if not _TICKER_MASTER_STORE_PATH.exists():
+            return []
+        payload = json.loads(_TICKER_MASTER_STORE_PATH.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            tickers = payload.get("tickers", [])
+        else:
+            tickers = payload
+        return _sanitize_ticker_list(tickers)
+    except Exception:
+        return []
+
+
+def _save_local_ticker_master(tickers: list[str]) -> bool:
+    normalized = _sanitize_ticker_list(tickers)
+    if not normalized:
+        return False
+
+    try:
+        _TICKER_MASTER_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "count": len(normalized),
+            "tickers": normalized,
+        }
+        _TICKER_MASTER_STORE_PATH.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
 
 
 def _save_tickers_to_gsheets(tickers: list) -> None:
@@ -2234,22 +2272,14 @@ def _save_tickers_to_gsheets(tickers: list) -> None:
 
 @st.cache_data(ttl=43200, show_spinner=False)
 def fetch_nse_tickers() -> list:
+    # Keep the biggest known universe instead of letting a later
+    # partial fetch shrink the scan list after cache/session expiry.
+    best_known = _merge_ticker_lists(
+        _load_local_ticker_master(),
+        st.session_state.get("_ticker_master_list", []),
+    )
 
-    # ── LAYER 1: session_state permanent backup ───────────────
-    # If we already loaded a full list this session keep it
-    # even after cache TTL expires — survives indefinitely
-    try:
-        cached = st.session_state.get("_ticker_master_list", [])
-        cached = _sanitize_ticker_list(cached if isinstance(cached, list) else [])
-        if len(cached) >= _TICKER_GOOD_COUNT:
-            return cached
-    except Exception:
-        pass
-
-    # ── LAYER 2: Google Sheets backup (permanent storage) ─────
-    # The full ticker list is saved to Google Sheets once on
-    # first successful load. Every subsequent wake reads from
-    # there — not from GitHub or NSE.
+    # ── LAYER 1: Google Sheets backup (optional permanent storage) ────
     try:
         import gspread
         from google.oauth2.service_account import Credentials
@@ -2269,70 +2299,64 @@ def fetch_nse_tickers() -> list:
         try:
             ws = sh.worksheet("tickers")
         except Exception:
-            ws = sh.add_worksheet("tickers", rows=3500, cols=1)
+            ws = sh.add_worksheet("tickers", rows=5000, cols=1)
 
         values = ws.col_values(1)
         gs_tickers = [
             value.strip().upper() for value in values
             if value.strip() and not value.strip().startswith("#")
         ]
-        gs_tickers = [
-            ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-            for ticker in gs_tickers
-        ]
-        gs_tickers = _sanitize_ticker_list(gs_tickers)
-        if len(gs_tickers) >= _TICKER_GOOD_COUNT:
-            st.session_state["_ticker_master_list"] = gs_tickers
-            return gs_tickers
+        best_known = _merge_ticker_lists(best_known, gs_tickers)
     except Exception:
         pass
 
-    # ── LAYER 3: nse_ticker_universe module ───────────────────
+    # ── LAYER 2: nse_ticker_universe module ───────────────────────────
     try:
         from nse_ticker_universe import (
             get_all_tickers,
             invalidate_cache,
         )
 
-        tickers = _sanitize_ticker_list(get_all_tickers(live=True) or [])
-        if len(tickers) >= _TICKER_GOOD_COUNT:
-            st.session_state["_ticker_master_list"] = tickers
-            _save_tickers_to_gsheets(tickers)
-            return tickers
+        live_tickers = _sanitize_ticker_list(get_all_tickers(live=True) or [])
+        best_known = _merge_ticker_lists(best_known, live_tickers)
 
-        invalidate_cache()
-        tickers = _sanitize_ticker_list(get_all_tickers(live=False) or [])
-        if len(tickers) >= 1000:
-            if len(tickers) >= _TICKER_GOOD_COUNT:
-                st.session_state["_ticker_master_list"] = tickers
-            return tickers
+        if len(live_tickers) < _TICKER_GOOD_COUNT:
+            invalidate_cache()
+            fallback_tickers = _sanitize_ticker_list(get_all_tickers(live=False) or [])
+            best_known = _merge_ticker_lists(best_known, fallback_tickers)
     except Exception:
         pass
 
-    # ── LAYER 4: nse_tickers.txt in repo ─────────────────────
+    # ── LAYER 3: nse_tickers.txt in repo ──────────────────────────────
     try:
-        import pathlib
-
-        f = pathlib.Path(__file__).with_name("nse_tickers.txt")
+        f = Path(__file__).with_name("nse_tickers.txt")
         if f.exists():
-            symbols = _sanitize_ticker_list([
+            repo_symbols = [
                 f"{line.strip().upper().replace('.NS', '')}.NS"
                 for line in f.read_text(
                     encoding="utf-8", errors="ignore"
                 ).splitlines()
                 if line.strip()
-            ])
-            if len(symbols) >= _TICKER_FALLBACK_MIN_COUNT:
-                if len(symbols) >= _TICKER_GOOD_COUNT:
-                    st.session_state["_ticker_master_list"] = symbols
-                return symbols
+            ]
+            best_known = _merge_ticker_lists(best_known, repo_symbols)
     except Exception:
         pass
 
-    # ── LAYER 5: hardcoded Nifty 500 top stocks ───────────────
-    # This is NOT 50 stocks — expanded so even total failure
-    # still leaves the app with a large scan universe.
-    return _sanitize_ticker_list(_HARDCODED_TICKER_FALLBACK)
+    # ── LAYER 4: hardcoded emergency fallback ─────────────────────────
+    # This layer ensures we still have a usable universe if every other
+    # source is unavailable, but it should never suppress a larger list.
+    best_known = _merge_ticker_lists(best_known, _HARDCODED_TICKER_FALLBACK)
+
+    if len(best_known) < _TICKER_FALLBACK_MIN_COUNT:
+        best_known = _sanitize_ticker_list(_HARDCODED_TICKER_FALLBACK)
+
+    if best_known:
+        st.session_state["_ticker_master_list"] = best_known
+        _save_local_ticker_master(best_known)
+        if len(best_known) >= _TICKER_GOOD_COUNT:
+            _save_tickers_to_gsheets(best_known)
+
+    return best_known
 
 
 # ─────────────────────────────────────────────────────────────────────
