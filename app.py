@@ -1240,6 +1240,52 @@ def render_tomorrow_picks_panel() -> None:
             on_click=_close_tomorrow_picks_panel,
         )
 
+
+def render_tomorrow_picks_ticker_strip() -> None:
+    """Render a news-style rolling ticker using Tomorrow's Picks symbols."""
+    store, _storage_mode = _load_tomorrow_store()
+    picks = [
+        str(symbol).strip().upper()
+        for symbol in store.get("picks", [])
+        if str(symbol).strip()
+    ]
+
+    if not picks:
+        picks = ["ADD STOCKS IN TOMORROW'S PICKS PANEL TO START THE LIVE TICKER"]
+
+    if len(picks) == 1:
+        ticker_items = picks * 6
+    elif len(picks) == 2:
+        ticker_items = picks * 4
+    elif len(picks) == 3:
+        ticker_items = picks * 3
+    else:
+        ticker_items = picks
+
+    sequence_html = "".join(
+        (
+            f'<span class="tmr-roll-item">{html.escape(symbol)}</span>'
+            '<span class="tmr-roll-sep">•</span>'
+        )
+        for symbol in ticker_items
+    )
+    duration_s = max(18, min(48, int(len(" ".join(ticker_items)) * 0.42) + 8))
+
+    st.markdown(
+        (
+            '<div class="tmr-roll-shell">'
+            '<div class="tmr-roll-label">Tomorrow&apos;s Picks</div>'
+            '<div class="tmr-roll-viewport">'
+            f'<div class="tmr-roll-track" style="--tmr-roll-duration:{duration_s}s;">'
+            f'<div class="tmr-roll-sequence">{sequence_html}</div>'
+            f'<div class="tmr-roll-sequence" aria-hidden="true">{sequence_html}</div>'
+            '</div>'
+            '</div>'
+            '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
 _STOCK_AURA_OK = True   # always True — no external dependency
 
 # ── optional sklearn (graceful fallback if missing) ───────────────────
@@ -1444,6 +1490,119 @@ hr { border-color:var(--border) !important; }
 .breakdown-box {
   background:#060a0f;border:1px solid #1a2840;border-radius:8px;
   padding:10px 14px;font-size:11px;line-height:1.9;color:#4a6480;
+}
+.tmr-roll-shell {
+  display:flex;align-items:center;gap:16px;
+  margin:8px 0 18px 0;padding:12px 16px;
+  border:1px solid rgba(240,180,41,0.22);
+  border-radius:14px;
+  background:linear-gradient(90deg, rgba(10,20,32,0.96), rgba(12,28,46,0.88));
+  box-shadow:inset 0 0 0 1px rgba(27,47,72,0.42), 0 12px 28px rgba(0,0,0,0.16);
+  overflow:hidden;
+}
+.tmr-roll-label {
+  flex:0 0 auto;
+  font-family:var(--sans);
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:1.9px;
+  text-transform:uppercase;
+  color:var(--accent3);
+  white-space:nowrap;
+}
+.tmr-roll-viewport {
+  position:relative;
+  flex:1 1 auto;
+  min-width:0;
+  overflow:hidden;
+}
+.tmr-roll-viewport::before,
+.tmr-roll-viewport::after {
+  content:"";
+  position:absolute;
+  top:0;
+  bottom:0;
+  width:42px;
+  pointer-events:none;
+  z-index:2;
+}
+.tmr-roll-viewport::before {
+  left:0;
+  background:linear-gradient(90deg, rgba(10,20,32,0.98), rgba(10,20,32,0));
+}
+.tmr-roll-viewport::after {
+  right:0;
+  background:linear-gradient(270deg, rgba(12,28,46,0.96), rgba(12,28,46,0));
+}
+.tmr-roll-track {
+  display:flex;
+  width:max-content;
+  min-width:100%;
+  animation:tmr-roll-scroll var(--tmr-roll-duration, 28s) linear infinite;
+  will-change:transform;
+}
+.tmr-roll-shell:hover .tmr-roll-track {
+  animation-play-state:paused;
+}
+.tmr-roll-sequence {
+  display:flex;
+  align-items:center;
+  flex:0 0 auto;
+}
+.tmr-roll-item {
+  display:inline-flex;
+  align-items:center;
+  font-size:13px;
+  font-weight:700;
+  color:#dfe9f5;
+  white-space:nowrap;
+}
+.tmr-roll-item::before {
+  content:"NSE";
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-right:10px;
+  padding:2px 7px;
+  border-radius:999px;
+  border:1px solid rgba(0,212,168,0.26);
+  background:rgba(0,212,168,0.08);
+  color:var(--accent);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:1px;
+}
+.tmr-roll-sep {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin:0 18px;
+  color:rgba(240,180,41,0.72);
+  font-size:16px;
+}
+
+@keyframes tmr-roll-scroll {
+  0% { transform:translateX(0); }
+  100% { transform:translateX(-50%); }
+}
+
+@media (max-width: 780px) {
+  .tmr-roll-shell {
+    align-items:flex-start;
+    flex-direction:column;
+    gap:10px;
+    padding:12px 14px;
+  }
+  .tmr-roll-label {
+    font-size:10px;
+    letter-spacing:1.5px;
+  }
+  .tmr-roll-item {
+    font-size:12px;
+  }
+  .tmr-roll-sep {
+    margin:0 14px;
+  }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -3648,6 +3807,32 @@ def check_bull_trap(row: dict) -> str:
     return "⚠️ Bull Trap" if len(traps) >= 2 else ""
 
 
+def _trap_check_label(row: pd.Series | dict) -> str:
+    """Collapse all trap layers into one user-facing status label."""
+    try:
+        trap_risk = str(row.get("Trap Risk", "") or "").strip().upper()
+        advanced_trap = str(row.get("Advanced Trap", "") or "").strip().upper()
+        legacy_trap = str(row.get("Trap", "") or "").strip().upper()
+        final_signal = str(
+            row.get("Adjusted Signal", row.get("Final Signal", "")) or ""
+        ).strip().upper()
+    except Exception:
+        return "✅ Clean"
+
+    if (
+        trap_risk == "HIGH"
+        or "BULL TRAP" in legacy_trap
+        or final_signal == "TRAP"
+        or advanced_trap in {"FAKE BREAKOUT", "EXHAUSTION"}
+    ):
+        return "⚠️ Trap"
+
+    if trap_risk == "MEDIUM" or advanced_trap == "WEAK VOLUME":
+        return "🟡 Caution"
+
+    return "✅ Clean"
+
+
 def enhance_results(results: list[dict], mode: int) -> pd.DataFrame:
     """
     Given raw scan results, attach Score / Backtest% / ML% / FinalRank.
@@ -4127,6 +4312,7 @@ st.markdown(
 )
 
 if _show_home_scanner:
+    render_tomorrow_picks_ticker_strip()
     st.markdown(
         f'<div class="top-banner">'
         f'<div class="banner-logo"><span class="live-dot"></span>NSE SENTINEL</div>'
@@ -4612,6 +4798,11 @@ if _show_home_scanner and "results" in st.session_state:
         except Exception:
             pass
 
+        try:
+            df["Trap Check"] = df.apply(_trap_check_label, axis=1)
+        except Exception:
+            pass
+
         # ── Phase 4.3/4.4 (Dynamic Intelligence + Feedback Tracking) ─
         try:
             df = apply_phase43_logic(df)
@@ -4685,7 +4876,7 @@ if _show_home_scanner and "results" in st.session_state:
             ml    = row.get("ML %", 50)
             rsi_v = float(row.get("RSI", 0))
             vol   = row.get("Vol / Avg", 0)
-            trap  = row.get("Trap", "")
+            trap_status = row.get("Trap Check", _trap_check_label(row))
             tv_link = tv_chart_url(sym)
             nd_sig  = row.get("Next-Day Signal", "❌ No Data")
 
@@ -4714,11 +4905,20 @@ if _show_home_scanner and "results" in st.session_state:
                 _sl_tgt_html = ""
 
             with col:
+                if "Trap" in str(trap_status):
+                    _trap_bg = "rgba(255,77,109,0.12)"
+                    _trap_fg = "#ff4d6d"
+                elif "Caution" in str(trap_status):
+                    _trap_bg = "rgba(240,180,41,0.12)"
+                    _trap_fg = "#f0b429"
+                else:
+                    _trap_bg = "rgba(0,212,168,0.10)"
+                    _trap_fg = "#00d4a8"
                 trap_html = (
-                    f'<div style="margin-top:8px;color:#ff4d6d;font-size:12px;'
-                    f'font-weight:bold;background:rgba(255,77,109,0.1);'
-                    f'padding:4px 8px;border-radius:4px;display:inline-block;">⚠️ {trap}</div>'
-                    if trap else ""
+                    f'<div style="margin-top:8px;color:{_trap_fg};font-size:12px;'
+                    f'font-weight:bold;background:{_trap_bg};'
+                    f'padding:4px 8px;border-radius:4px;display:inline-block;">'
+                    f'{trap_status}</div>'
                 )
                 st.markdown(
                     f'<div style="border:1px solid #1a2840;padding:16px;border-radius:8px;'
@@ -4758,7 +4958,7 @@ if _show_home_scanner and "results" in st.session_state:
 
         display_cols = [
             "Rank", "Rank Score", "Ticker", "Score", "Backtest %", "ML %",
-            "Final Score", "Prediction Score", "Conviction Tier", "Trap", "Next-Day Signal", "TradingView",
+            "Final Score", "Prediction Score", "Conviction Tier", "Trap Check", "Next-Day Signal", "TradingView",
             "Learned Prob %",
             "Action", "Hold Days",
         ]
@@ -4776,7 +4976,7 @@ if _show_home_scanner and "results" in st.session_state:
                 "Final Score": st.column_config.NumberColumn("Final Score", format="%.2f"),
                 "Prediction Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
                 "Conviction Tier": st.column_config.TextColumn("Conviction"),
-                "Trap": st.column_config.TextColumn("Trap"),
+                "Trap Check": st.column_config.TextColumn("Trap Check"),
                 "Next-Day Signal": st.column_config.TextColumn("Signal"),
                 "TradingView": st.column_config.LinkColumn("TradingView Link", display_text="📈 Open Chart"),
                 "Action": st.column_config.TextColumn("Action"),
@@ -4828,7 +5028,7 @@ if _show_home_scanner and "results" in st.session_state:
             _EXPORT_COLS = [
                 "Rank", "Rank Score", "Ticker", "Score",
                 "Backtest %", "ML %", "Final Score",
-                "Prediction Score", "Conviction Tier", "Trap", "Next-Day Signal",
+                "Prediction Score", "Conviction Tier", "Trap Check", "Next-Day Signal",
             ]
 
             def _strip_emoji(val):
@@ -4926,7 +5126,7 @@ if _show_home_scanner and "results" in st.session_state:
 
             _tomorrow_cols = [
                 "Symbol", "Tomorrow Pick Score", "Final Score", "Prediction Score",
-                _signal_col, "Conviction Tier", "Trap", "Tomorrow Pick Reason", "Chart",
+                _signal_col, "Conviction Tier", "Trap Check", "Chart",
                 "Action", "Hold Days",
             ]
             _tomorrow_cols = [c for c in _tomorrow_cols if c in _tomorrow_df.columns]
@@ -4941,8 +5141,7 @@ if _show_home_scanner and "results" in st.session_state:
                     "Adjusted Signal": st.column_config.TextColumn("Signal", width="medium"),
                     "Next-Day Signal": st.column_config.TextColumn("Signal", width="medium"),
                     "Conviction Tier": st.column_config.TextColumn("Conviction"),
-                    "Trap": st.column_config.TextColumn("Trap"),
-                    "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
+                    "Trap Check": st.column_config.TextColumn("Trap Check"),
                     "Chart": st.column_config.LinkColumn("Chart", display_text="Open Chart"),
                     "Action": st.column_config.TextColumn("Action"),
                     "Hold Days": st.column_config.TextColumn("Hold Days"),

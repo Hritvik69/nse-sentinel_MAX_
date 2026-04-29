@@ -479,7 +479,7 @@ def _render_breakout_radar_tab(
 
         _radar_cols = [
             "Symbol", "Tomorrow Pick Score", "Final Score", "Signal",
-            "Risk Score", "Trap Flags", "Tomorrow Pick Reason", "Chart Link",
+            "Risk Score", "Trap Flags", "Chart Link",
             "Action", "Hold Days",
         ]
         _radar_cols = [c for c in _radar_cols if c in _radar_top3.columns]
@@ -493,7 +493,6 @@ def _render_breakout_radar_tab(
                 "Signal": st.column_config.TextColumn("Signal", width="medium"),
                 "Risk Score": st.column_config.NumberColumn("Risk", format="%.0f"),
                 "Trap Flags": st.column_config.TextColumn("Traps"),
-                "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
                 "Chart Link": st.column_config.LinkColumn("Chart", display_text="Open"),
                 "Action": st.column_config.TextColumn("Action"),
                 "Hold Days": st.column_config.TextColumn("Hold Days"),
@@ -724,7 +723,7 @@ def _render_csv_next_day_tab(
 
         _csv_cols = [
             "Symbol", "Tomorrow Pick Score", "Next Day Prob", "Confidence",
-            "Grade", "Signal", "Tomorrow Pick Reason", "Chart Link",
+            "Grade", "Signal", "Chart Link",
             "Action", "Hold Days",
         ]
         _csv_cols = [c for c in _csv_cols if c in _csv_top3.columns]
@@ -738,7 +737,6 @@ def _render_csv_next_day_tab(
                 "Confidence": st.column_config.NumberColumn("Confidence %", format="%.1f%%"),
                 "Grade": st.column_config.TextColumn("Grade"),
                 "Signal": st.column_config.TextColumn("Signal", width="medium"),
-                "Tomorrow Pick Reason": st.column_config.TextColumn("Why Buy Tomorrow", width="large"),
                 "Chart Link": st.column_config.LinkColumn("Chart", display_text="Open"),
                 "Action": st.column_config.TextColumn("Action"),
                 "Hold Days": st.column_config.TextColumn("Hold Days"),
