@@ -571,9 +571,32 @@ def _read_tomorrow_store_source() -> tuple[dict, str]:
     return _normalize_tomorrow_store(_load_local_tomorrow_store()), "local"
 
 
-def _load_tomorrow_store() -> tuple[dict, str]:
+def _cache_tomorrow_store_session(store: dict, storage_mode: str) -> tuple[dict, str]:
+    normalized = _normalize_tomorrow_store(store)
+    mode = "cloud" if str(storage_mode or "").strip().lower() == "cloud" else "local"
+    st.session_state["tomorrow_picks_store"] = normalized
+    st.session_state["tomorrow_picks_storage_mode"] = mode
+    st.session_state["tomorrow_picks_store_loaded"] = True
+    return normalized, mode
+
+
+def _get_cached_tomorrow_store() -> tuple[dict | None, str]:
+    if not bool(st.session_state.get("tomorrow_picks_store_loaded", False)):
+        return None, ""
+    cached = st.session_state.get("tomorrow_picks_store")
+    if not isinstance(cached, dict):
+        return None, ""
+    mode = str(st.session_state.get("tomorrow_picks_storage_mode", "local") or "local")
+    return _normalize_tomorrow_store(cached), ("cloud" if mode == "cloud" else "local")
+
+
+def _load_tomorrow_store(force_refresh: bool = False) -> tuple[dict, str]:
+    cached_store, cached_mode = _get_cached_tomorrow_store()
+    if cached_store is not None and not force_refresh:
+        return cached_store, cached_mode or "local"
+
     default = _normalize_tomorrow_store(None)
-    session_store = _normalize_tomorrow_store(
+    session_store = cached_store or _normalize_tomorrow_store(
         st.session_state.get("tomorrow_picks_store", default)
     )
     sheets_ready = _get_sheet() is not None
@@ -593,14 +616,14 @@ def _load_tomorrow_store() -> tuple[dict, str]:
             storage_mode = "local"
             if store["picks"] or store["notes"]:
                 _save_local_tomorrow_store(store)
-    st.session_state["tomorrow_picks_store"] = store
-    return store, storage_mode
+    return _cache_tomorrow_store_session(store, storage_mode)
 
 
 def _persist_tomorrow_store(store: dict) -> None:
     normalized = _normalize_tomorrow_store(store)
-    st.session_state["tomorrow_picks_store"] = normalized
-    if _get_sheet() is not None:
+    storage_mode = "cloud" if _get_sheet() is not None else "local"
+    _cache_tomorrow_store_session(normalized, storage_mode)
+    if storage_mode == "cloud":
         _save_picks(normalized)
     else:
         _save_local_tomorrow_store(normalized)
@@ -7016,13 +7039,23 @@ else:
 
 # ── BREAKOUT / CSV RADAR SECTION ──────────────────────────────────────
 if _BREAKOUT_SECTION_OK:
-    render_breakout_radar_section(
-        csv_scan_clicked=csv_scan_clicked,
-        _CSV_NEXT_DAY_ENGINE_OK=_CSV_NEXT_DAY_ENGINE_OK,
-        _DATA_DOWNLOADER_OK=_DATA_DOWNLOADER_OK,
-        _BREAKOUT_RADAR_OK=_BREAKOUT_RADAR_OK,
-        render_add_in_picks_actions=_render_add_in_picks_actions,
-    )
+    try:
+        render_breakout_radar_section(
+            csv_scan_clicked=csv_scan_clicked,
+            _CSV_NEXT_DAY_ENGINE_OK=_CSV_NEXT_DAY_ENGINE_OK,
+            _DATA_DOWNLOADER_OK=_DATA_DOWNLOADER_OK,
+            _BREAKOUT_RADAR_OK=_BREAKOUT_RADAR_OK,
+            render_add_in_picks_actions=_render_add_in_picks_actions,
+        )
+    except TypeError as _breakout_call_exc:
+        if "render_add_in_picks_actions" not in str(_breakout_call_exc):
+            raise
+        render_breakout_radar_section(
+            csv_scan_clicked=csv_scan_clicked,
+            _CSV_NEXT_DAY_ENGINE_OK=_CSV_NEXT_DAY_ENGINE_OK,
+            _DATA_DOWNLOADER_OK=_DATA_DOWNLOADER_OK,
+            _BREAKOUT_RADAR_OK=_BREAKOUT_RADAR_OK,
+        )
 else:
     _csv_panel_open = bool(st.session_state.get("csv_next_day_show_panel", False))
     if csv_scan_clicked or _csv_panel_open:
