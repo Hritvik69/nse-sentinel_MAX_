@@ -40,6 +40,19 @@ _LAST_LIVE_CACHE_DATE: date | None = None
 _LIVE_CACHE_LOCK = threading.Lock()
 
 
+def _apply_time_travel_cutoff_if_needed(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    """Apply the active Time Travel cutoff to frames entering ALL_DATA."""
+    if df is None or df.empty:
+        return df
+    try:
+        import time_travel_engine as _tt
+        if hasattr(_tt, "apply_time_travel_cutoff"):
+            return _tt.apply_time_travel_cutoff(df)
+    except Exception:
+        pass
+    return df
+
+
 # ── optional sklearn ──────────────────────────────────────────────────
 try:
     from sklearn.linear_model import LogisticRegression
@@ -421,6 +434,7 @@ def download_history(
             source="live_single",
             window=_get_current_window(),
         )
+        prepared = _apply_time_travel_cutoff_if_needed(prepared)
         _clear_no_data(ticker_ns)
         return prepared
     except Exception:
@@ -438,6 +452,7 @@ def _fetch_one(ticker_ns: str, period: str) -> tuple[str, pd.DataFrame | None]:
                 source="csv_cache",
                 window=_get_current_window(),
             )
+            df = _apply_time_travel_cutoff_if_needed(df)
             _clear_no_data(ticker_ns)
             return ticker_ns, df
     except Exception:
@@ -481,6 +496,7 @@ def _download_batch(
                 source="live_batch",
                 window=_get_current_window(),
             )
+            prepared = _apply_time_travel_cutoff_if_needed(prepared)
             out[tickers_ns[0]] = prepared
         else:
             out[tickers_ns[0]] = None
@@ -506,6 +522,7 @@ def _download_batch(
                 source="live_batch",
                 window=_get_current_window(),
             )
+            prepared = _apply_time_travel_cutoff_if_needed(prepared)
             out[ticker_ns] = prepared
         else:
             out[ticker_ns] = None
@@ -591,6 +608,7 @@ def preload_all(
                 source="csv_cache",
                 window=_get_current_window(),
             )
+            csv_df = _apply_time_travel_cutoff_if_needed(csv_df)
             if force_live_refresh:
                 download_queue.append(ticker_ns)
             elif _is_stale_live_frame(csv_df):
@@ -654,7 +672,8 @@ def preload_all(
 
             with _ALL_DATA_LOCK:
                 for ticker_ns in batch:
-                    frame = batch_frames.get(ticker_ns)
+                    frame = _apply_time_travel_cutoff_if_needed(batch_frames.get(ticker_ns))
+                    batch_frames[ticker_ns] = frame
                     if frame is not None:
                         ALL_DATA[ticker_ns] = frame
                         continue
@@ -745,6 +764,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
                     source="csv_cache",
                     window=_get_current_window(),
                 )
+                csv_df = _apply_time_travel_cutoff_if_needed(csv_df)
                 if _is_stale_live_frame(csv_df):
                     if stale_fallback is None:
                         stale_fallback = csv_df
@@ -762,6 +782,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
         ignore_no_data_cache=force_live_refresh,
         suppress_no_data_mark=force_live_refresh,
     )
+    fetched = _apply_time_travel_cutoff_if_needed(fetched)
     if fetched is not None:
         with _ALL_DATA_LOCK:
             ALL_DATA[ticker_ns] = fetched

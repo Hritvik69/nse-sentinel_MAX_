@@ -4,7 +4,8 @@ Dark terminal aesthetic | Multi-strategy scanner | 1000+ NSE stocks
 
 Run from the APP3 root folder (the folder that contains app.py):
     cd C:\Users\HP\Downloads\app3
-    .\.venv\Scripts\python.exe -m streamlit run app.py
+    
+.\.venv\Scripts\python.exe -m streamlit run app.py
 
 CHANGES vs original:
   • Scoring layer  (compute_score)         — added AFTER scan, never touches filters
@@ -913,6 +914,38 @@ except ImportError:
         def activate(d) -> int:           return 0
         @staticmethod
         def restore() -> None:            pass
+
+
+def _get_pending_time_travel_date():
+    """Return the sidebar-selected TT date even before a scan activates the engine."""
+    try:
+        pending = st.session_state.get("tt_date_val") or st.session_state.get("tt_date_picker")
+    except Exception:
+        return None
+    return pending if pending not in (None, "") else None
+
+
+def _get_dashboard_reference_datetime() -> datetime:
+    """Use the selected TT date for dashboard labels before scan-time activation."""
+    pending = _get_pending_time_travel_date()
+    if pending is not None:
+        try:
+            return datetime(pending.year, pending.month, pending.day, 16, 0, 0)
+        except Exception:
+            pass
+    return _tt.get_reference_datetime()
+
+
+def _get_dashboard_status_label() -> str:
+    """Show TT-selected status instead of a misleading live-refresh caption."""
+    pending = _get_pending_time_travel_date()
+    if pending is None:
+        return get_data_status_label()
+    try:
+        day_text = pending.isoformat()
+    except Exception:
+        day_text = str(pending)
+    return f"🕰️ Time Travel Selected — {day_text}"
 
 # ── Stock Aura — fully inlined (no external file dependency) ─────────
 
@@ -2897,6 +2930,10 @@ def render_tomorrow_picks_ticker_strip() -> None:
     st.markdown(
         """
         <style>
+        div[data-testid="stElementContainer"]:has(.tmr-board-shell) {
+          margin-top:-66px !important;
+          margin-bottom:2px !important;
+        }
         .tmr-board-shell {
           border:1px solid rgba(86,118,150,0.34);
           border-radius:18px;
@@ -2907,7 +2944,7 @@ def render_tomorrow_picks_ticker_strip() -> None:
           box-shadow:
             0 14px 28px rgba(0,0,0,0.16),
             inset 0 0 0 1px rgba(255,255,255,0.02);
-          margin:2px 0 4px 0;
+          margin:-18px 0 8px 0;
         }
         .tmr-board-header {
           display:flex;
@@ -3018,6 +3055,12 @@ def render_tomorrow_picks_ticker_strip() -> None:
           font-weight:700;
         }
         @media (max-width: 900px) {
+          div[data-testid="stElementContainer"]:has(.tmr-board-shell) {
+            margin-top:-18px !important;
+          }
+          .tmr-board-shell {
+            margin:-8px 0 8px 0;
+          }
           .tmr-board-row {
             grid-template-columns:1fr;
             gap:6px;
@@ -3109,7 +3152,30 @@ html, body, .stApp { background-color: var(--bg) !important; color: var(--text) 
   background-size:40px 40px; }
 [data-testid="stSidebar"] { background-color:var(--bg2) !important; border-right:1px solid var(--border) !important; font-family:var(--mono) !important; }
 [data-testid="stSidebar"] * { color:var(--text) !important; }
-section[data-testid="stSidebar"] > div { padding-top:20px !important; }
+section[data-testid="stSidebar"] > div { padding-top:4px !important; }
+@media (min-width: 781px) {
+  [data-testid="stHeader"],
+  .stApp > header {
+    display: block !important;
+    height: auto !important;
+    min-height: 3.75rem !important;
+    background: transparent !important;
+    border: 0 !important;
+    overflow: visible !important;
+  }
+  section[data-testid="stSidebar"][aria-expanded="true"] {
+    width: 26rem !important;
+    min-width: 26rem !important;
+    max-width: 26rem !important;
+  }
+  section[data-testid="stSidebar"][aria-expanded="true"] > div {
+    width: 26rem !important;
+    min-width: 26rem !important;
+  }
+  section[data-testid="stMain"] {
+    padding-top: 0.5rem !important;
+  }
+}
 [data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div { background:var(--bg3) !important; border:1px solid var(--border2) !important; border-radius:8px !important; color:var(--text) !important; font-family:var(--mono) !important; }
 [data-testid="stSlider"] [data-baseweb="slider"] [role="slider"] { background:var(--accent) !important; box-shadow:0 0 8px var(--accent) !important; }
 [data-testid="stMetric"] { background:var(--bg2) !important; border:1px solid var(--border) !important; border-radius:12px !important; padding:18px 20px !important; }
@@ -3350,650 +3416,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-# ─────────────────────────────────────────────────────────────────────
-# INCREDIBLE MOBILE-FRIENDLY UI UPGRADE OVERRIDE
-# ─────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* Premium Aesthetic Overrides */
-:root {
-  --bg: #030508 !important; 
-  --bg2: #080c14 !important; 
-  --bg3: rgba(15, 24, 35, 0.6) !important;
-  --border: #1a2436 !important; 
-  --border2: #243550 !important;
-  --accent: #00e6b8 !important; /* Neon cyan-green */
-  --accent2: #00a3ff !important; /* Deep neon blue */
-  --accent3: #ffc233 !important; /* Golden yellow */
-  --red: #ff3355 !important;
-  --text: #e2e8f0 !important; 
-  --muted: #64748b !important;
-  --sans: 'Inter', 'Syne', sans-serif !important;
-}
-
-/* Base Body & App */
-html, body, .stApp { 
-  background-color: var(--bg) !important; 
-  color: var(--text) !important; 
-  font-family: var(--sans) !important; 
-}
-.stApp::before {
-  background: radial-gradient(circle at 50% 0%, rgba(0, 163, 255, 0.08), transparent 60%) !important;
-}
-
-/* Typography Overrides */
-h1, h2, h3, h4, h5, h6, p, div, span, label {
-  font-family: var(--sans) !important;
-}
-h1 {
-  font-size: clamp(2rem, 5vw, 3rem) !important;
-  background: linear-gradient(to right, var(--accent), var(--accent2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-weight: 900 !important;
-  letter-spacing: -1px;
-}
-
-/* Glassmorphism Cards & Metrics */
-[data-testid="stMetric"], .pick-card, .breakdown-box { 
-  background: rgba(11, 16, 23, 0.4) !important; 
-  backdrop-filter: blur(16px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.05) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 16px !important; 
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease !important;
-}
-[data-testid="stMetric"]:hover, .pick-card:hover {
-  transform: translateY(-6px) !important;
-  box-shadow: 0 12px 40px rgba(0, 230, 184, 0.15) !important;
-  border-color: rgba(0, 230, 184, 0.3) !important;
-}
-
-/* Buttons */
-.stButton > button, .stDownloadButton > button { 
-  background: rgba(0, 230, 184, 0.05) !important; 
-  backdrop-filter: blur(4px) !important;
-  border: 1px solid rgba(0, 230, 184, 0.3) !important;
-  border-radius: 12px !important; 
-  font-family: var(--sans) !important;
-  text-transform: uppercase;
-  letter-spacing: 1.5px !important;
-}
-.stButton > button:hover { 
-  background: linear-gradient(135deg, var(--accent), var(--accent2)) !important; 
-  border-color: transparent !important;
-  box-shadow: 0 0 20px rgba(0, 230, 184, 0.4) !important; 
-}
-
-/* Mobile Web Friendly Overrides */
-/* 1. Remove aggressive padding on mobile */
-@media (max-width: 768px) {
-  .block-container, [data-testid="stMainBlockContainer"] {
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
-    padding-top: 1rem !important;
-    max-width: 100vw !important;
-  }
-  
-  /* 2. Stack elements properly */
-  [data-testid="column"] {
-    min-width: 100% !important;
-    margin-bottom: 1rem !important;
-  }
-  
-  /* 3. Adjust typography for small screens */
-  h1 { font-size: 2rem !important; }
-  h2 { font-size: 1.5rem !important; }
-  
-  /* 4. Fix table overflows */
-  .stDataFrame {
-    display: block !important;
-    overflow-x: auto !important;
-    white-space: nowrap !important;
-  }
-  
-  /* 5. Metrics styling for mobile */
-  [data-testid="stMetric"] {
-    padding: 14px 16px !important;
-  }
-  [data-testid="stMetricValue"] {
-    font-size: 1.75rem !important;
-  }
-
-  /* 6. Sidebar toggler enhancement */
-  [data-testid="collapsedControl"] {
-    background: rgba(0, 0, 0, 0.5) !important;
-    backdrop-filter: blur(10px) !important;
-    border-radius: 50% !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-  }
-}
-</style>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────────────────────────────
-# UI BUG FIXES + PERFORMANCE-SAFE ANIMATIONS
-# ─────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* ════════════════════════════════════════════════════════════
-   FIX 1: Hide Streamlit's internal toolbar icon text
-   (The "keyboard_double" / raw icon text appearing in sidebar)
-   ════════════════════════════════════════════════════════════ */
-[data-testid="stToolbar"],
-[data-testid="stDecoration"],
-[data-testid="stHeader"] { display: none !important; }
-
-/* Hide any raw material icon text leaking into the UI */
-.stApp > header { display: none !important; }
-
-/* ════════════════════════════════════════════════════════════
-   FIX 2: Metric cards — stop text truncation
-   ════════════════════════════════════════════════════════════ */
-[data-testid="stMetric"] {
-  overflow: visible !important;
-  min-width: 0 !important;
-}
-[data-testid="stMetricLabel"] {
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: unset !important;
-  font-size: 10px !important;
-  line-height: 1.4 !important;
-  word-break: break-word !important;
-}
-[data-testid="stMetricValue"] {
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  font-size: clamp(1.4rem, 3vw, 2rem) !important;
-}
-
-/* ════════════════════════════════════════════════════════════
-   FIX 3: Smooth scan loading panel (no jarring white flash)
-   ════════════════════════════════════════════════════════════ */
-[data-testid="stSpinner"] > div {
-  background: rgba(8, 12, 20, 0.9) !important;
-  border: 1px solid var(--border2) !important;
-  border-radius: 12px !important;
-  padding: 12px 16px !important;
-  backdrop-filter: blur(10px) !important;
-}
-/* Progress bar — styled neon sweep */
-[data-testid="stProgressBar"] > div {
-  background: rgba(26, 36, 54, 0.8) !important;
-  border-radius: 6px !important;
-  height: 8px !important;
-  overflow: hidden !important;
-}
-[data-testid="stProgressBar"] > div > div {
-  background: linear-gradient(90deg, #00e6b8, #00a3ff, #00e6b8) !important;
-  background-size: 200% 100% !important;
-  border-radius: 6px !important;
-  animation: _sentProgressFlow 1.8s linear infinite !important;
-  will-change: background-position !important;
-}
-@keyframes _sentProgressFlow {
-  0%   { background-position: 0%   50%; }
-  100% { background-position: 200% 50%; }
-}
-
-/* ════════════════════════════════════════════════════════════
-   FIX 4: No stutter — remove animation from stMain entirely
-   (page-in animation was causing full-flash on every scan click)
-   ════════════════════════════════════════════════════════════ */
-[data-testid="stMain"],
-[data-testid="stAppViewContainer"],
-[data-testid="stMainBlockContainer"] {
-  animation: none !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
-
-/* ════════════════════════════════════════════════════════════
-   FIX 5: Sidebar — no stutter animation on rerun
-   ════════════════════════════════════════════════════════════ */
-[data-testid="stSidebar"],
-[data-testid="stSidebar"] *,
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
-  animation: none !important;
-  opacity: 1 !important;
-  transform: none !important;
-}
-
-/* ════════════════════════════════════════════════════════════
-   KEYFRAMES — GPU-only (transform + opacity only)
-   ════════════════════════════════════════════════════════════ */
-
-@keyframes _sentFadeUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0);    }
-}
-@keyframes _sentNeonPulse {
-  0%,100% { opacity: 1;    }
-  50%      { opacity: 0.5; }
-}
-@keyframes _sentLiveDot {
-  0%,100% { transform: scale(1);    opacity: 1;    }
-  50%      { transform: scale(1.55); opacity: 0.4; }
-}
-@keyframes _sentTicker {
-  from { transform: translateX(0);    }
-  to   { transform: translateX(-50%); }
-}
-@keyframes _sentFloat {
-  0%,100% { transform: translateY(0);    }
-  50%      { transform: translateY(-5px); }
-}
-@keyframes _sentSweep {
-  0%   { transform: translateX(-100%); opacity: 0.6; }
-  100% { transform: translateX(400%);  opacity: 0;   }
-}
-
-/* ════════════════════════════════════════════════════════════
-   APPLY ANIMATIONS
-   ════════════════════════════════════════════════════════════ */
-
-/* Cards fade in — only on FIRST paint (one-shot, no infinite) */
-.pick-card, .breakdown-box {
-  animation: _sentFadeUp 0.42s cubic-bezier(0.22, 0.68, 0, 1.2) both;
-  will-change: transform, opacity;
-}
-.pick-card:nth-child(1) { animation-delay: 0.00s; }
-.pick-card:nth-child(2) { animation-delay: 0.06s; }
-.pick-card:nth-child(3) { animation-delay: 0.12s; }
-.pick-card:nth-child(4) { animation-delay: 0.18s; }
-.pick-card:nth-child(5) { animation-delay: 0.24s; }
-.pick-card:nth-child(6) { animation-delay: 0.30s; }
-
-/* Neon badge pulse — infinite but opacity-only */
-.sig-buy, .count-pill {
-  animation: _sentNeonPulse 2.8s ease-in-out infinite;
-  will-change: opacity;
-}
-
-/* Live dot breathes */
-.live-dot {
-  animation: _sentLiveDot 2s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-
-/* Ticker strip */
-.ticker-strip-inner {
-  animation: _sentTicker 32s linear infinite;
-  will-change: transform;
-}
-.ticker-strip:hover .ticker-strip-inner {
-  animation-play-state: paused;
-}
-
-/* Winner/top-pick float */
-.winner-card {
-  animation: _sentFloat 6s ease-in-out infinite;
-  will-change: transform;
-}
-
-/* Scanner header sweep */
-.scan-header-wrap { position: relative; overflow: hidden; }
-.scan-header-wrap::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 28%;
-  background: linear-gradient(90deg, transparent, rgba(0,230,184,0.1), transparent);
-  animation: _sentSweep 2.8s ease-in-out infinite;
-  will-change: transform, opacity;
-  pointer-events: none;
-}
-
-/* Button hover shimmer — pure CSS, no JS */
-.stButton > button { overflow: hidden; position: relative; }
-.stButton > button::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
-  transform: translateX(-110%);
-  will-change: transform;
-}
-.stButton > button:hover::after {
-  transform: translateX(110%);
-  transition: transform 0.5s ease;
-}
-
-/* Accessibility */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-</style>
-""", unsafe_allow_html=True)
-
-# JS: Scroll-reveal via IntersectionObserver
-# KEY FIX: uses sessionStorage to track which elements have already been
-# revealed, so Streamlit reruns (on scan click etc.) do NOT re-hide them.
-components.html("""
-<script>
-(function(){
-  "use strict";
-  const STORE_KEY = "sent_revealed";
-  const CSS = `
-    .sent-hidden {
-      opacity: 0;
-      transform: translateY(16px);
-      will-change: transform, opacity;
-      transition: opacity 0.42s ease, transform 0.42s cubic-bezier(0.22,0.68,0,1.18);
-    }
-    .sent-visible {
-      opacity: 1 !important;
-      transform: translateY(0) !important;
-    }
-  `;
-  const s = document.createElement("style");
-  s.textContent = CSS;
-  document.head.appendChild(s);
-
-  // Build a set of already-revealed element signatures from sessionStorage
-  let revealed;
-  try { revealed = new Set(JSON.parse(sessionStorage.getItem(STORE_KEY) || "[]")); }
-  catch(e) { revealed = new Set(); }
-
-  function sig(el) {
-    // Unique-enough signature: tag + class + text snippet
-    return el.tagName + ":" + (el.dataset.testid||"") + ":" + (el.innerText||"").slice(0,30);
-  }
-
-  function saveRevealed() {
-    try { sessionStorage.setItem(STORE_KEY, JSON.stringify([...revealed].slice(-200))); }
-    catch(e){}
-  }
-
-  const TARGETS = [
-    "[data-testid='stMetric']",
-    ".pick-card",
-    ".breakdown-box",
-    "[data-testid='stDataFrame']",
-    "[data-testid='stAlert']",
-    "[data-testid='stExpander']",
-  ].join(",");
-
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(e => {
-      if (!e.isIntersecting) return;
-      e.target.classList.remove("sent-hidden");
-      e.target.classList.add("sent-visible");
-      revealed.add(sig(e.target));
-      saveRevealed();
-      io.unobserve(e.target);
-    });
-  }, { threshold: 0.06 });
-
-  function observe() {
-    document.querySelectorAll(TARGETS).forEach(el => {
-      if (el.dataset.sentObs) return;
-      el.dataset.sentObs = "1";
-      // If this element was already revealed in this session → show instantly
-      if (revealed.has(sig(el))) {
-        el.classList.add("sent-visible");
-      } else {
-        el.classList.add("sent-hidden");
-        io.observe(el);
-      }
-    });
-  }
-
-  const mo = new MutationObserver(observe);
-
-  function boot() {
-    observe();
-    const root = document.querySelector(".stApp") || document.body;
-    mo.observe(root, { childList: true, subtree: true });
-  }
-
-  document.readyState === "loading"
-    ? document.addEventListener("DOMContentLoaded", boot)
-    : boot();
-})();
-</script>
-""", height=0, width=0)
-
-
-st.markdown("""
-<style>
-/* ════════════════════════════════════════════════
-   KEYFRAMES  — only transform & opacity = GPU-only
-   ════════════════════════════════════════════════ */
-
-/* Fade + slide up (cards, sections) */
-@keyframes _sentFadeUp {
-  from { opacity: 0; transform: translateY(22px); }
-  to   { opacity: 1; transform: translateY(0);    }
-}
-
-/* Subtle neon pulse — uses opacity, NOT box-shadow change */
-@keyframes _sentNeonPulse {
-  0%,100% { opacity: 1; }
-  50%      { opacity: 0.55; }
-}
-
-/* Breathing scale for live dot */
-@keyframes _sentLiveDot {
-  0%,100% { transform: scale(1);   opacity: 1;    }
-  50%      { transform: scale(1.6); opacity: 0.45; }
-}
-
-/* Horizontal ticker scroll (translateX only) */
-@keyframes _sentTicker {
-  from { transform: translateX(0);    }
-  to   { transform: translateX(-50%); }
-}
-
-/* Gentle continuous float for top pick cards */
-@keyframes _sentFloat {
-  0%,100% { transform: translateY(0);    }
-  50%      { transform: translateY(-5px); }
-}
-
-/* Shimmer scan line sweep (translateX only) */
-@keyframes _sentSweep {
-  0%   { transform: translateX(-100%); opacity: 0.7; }
-  100% { transform: translateX(400%);  opacity: 0;   }
-}
-
-/* Page entrance — entire main block */
-@keyframes _sentPageIn {
-  from { opacity: 0; transform: translateY(10px) scale(0.992); }
-  to   { opacity: 1; transform: translateY(0)    scale(1);     }
-}
-
-/* ════════════════════════════════════════════════
-   APPLY — all use will-change for GPU promotion
-   ════════════════════════════════════════════════ */
-
-/* Page entrance */
-[data-testid="stMain"] {
-  animation: _sentPageIn 0.55s cubic-bezier(0.22, 0.68, 0, 1.1) both;
-  will-change: transform, opacity;
-}
-
-/* Cards fade in from below */
-.pick-card, .breakdown-box,
-[data-testid="stMetric"],
-[data-testid="stHorizontalBlock"] > div > div {
-  animation: _sentFadeUp 0.42s cubic-bezier(0.22, 0.68, 0, 1.2) both;
-  will-change: transform, opacity;
-}
-
-/* Stagger siblings (nth-child up to 10) */
-.pick-card:nth-child(1) { animation-delay: 0.00s; }
-.pick-card:nth-child(2) { animation-delay: 0.06s; }
-.pick-card:nth-child(3) { animation-delay: 0.12s; }
-.pick-card:nth-child(4) { animation-delay: 0.18s; }
-.pick-card:nth-child(5) { animation-delay: 0.24s; }
-.pick-card:nth-child(6) { animation-delay: 0.30s; }
-
-[data-testid="stMetric"]:nth-child(1) { animation-delay: 0.05s; }
-[data-testid="stMetric"]:nth-child(2) { animation-delay: 0.12s; }
-[data-testid="stMetric"]:nth-child(3) { animation-delay: 0.19s; }
-[data-testid="stMetric"]:nth-child(4) { animation-delay: 0.26s; }
-
-/* Neon badge pulse */
-.sig-buy, .mode-pill, .count-pill {
-  animation: _sentNeonPulse 2.8s ease-in-out infinite;
-  will-change: opacity;
-}
-
-/* Live status dot breathes */
-.live-dot {
-  animation: _sentLiveDot 2s ease-in-out infinite;
-  will-change: transform, opacity;
-}
-
-/* Ticker strip seamless scroll */
-.ticker-strip-inner {
-  animation: _sentTicker 32s linear infinite;
-  will-change: transform;
-}
-.ticker-strip:hover .ticker-strip-inner {
-  animation-play-state: paused;
-}
-
-/* Top-pick card gentle float */
-.winner-card {
-  animation: _sentFloat 6s ease-in-out infinite;
-  will-change: transform;
-}
-
-/* Scan sweep shimmer — decorative overlay on scanner headers */
-.scan-header-wrap {
-  position: relative;
-  overflow: hidden;
-}
-.scan-header-wrap::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 30%;
-  background: linear-gradient(90deg, transparent, rgba(0,230,184,0.12), transparent);
-  animation: _sentSweep 2.6s ease-in-out infinite;
-  will-change: transform, opacity;
-  pointer-events: none;
-}
-
-/* Sidebar links: slide in from left on load */
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
-  animation: _sentFadeUp 0.5s cubic-bezier(0.22, 0.68, 0, 1.2) both;
-  will-change: transform, opacity;
-}
-
-/* Button hover shimmer (pure CSS, no JS) */
-.stButton > button {
-  overflow: hidden;
-  position: relative;
-}
-.stButton > button::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%);
-  transform: translateX(-100%);
-  will-change: transform;
-  transition: transform 0s; /* overridden by hover */
-}
-.stButton > button:hover::after {
-  transform: translateX(100%);
-  transition: transform 0.55s ease;
-}
-
-/* Progress bar animated gradient */
-[data-testid="stProgressBar"] > div > div,
-.stProgress > div > div {
-  background: linear-gradient(90deg, #00e6b8, #00a3ff, #00e6b8) !important;
-  background-size: 200% 100% !important;
-  animation: _sentTicker 2s linear infinite !important;
-  will-change: transform !important;
-}
-
-/* Reduce motion — respect accessibility setting */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Lightweight JS: GPU-safe scroll-triggered fade-in using IntersectionObserver
-# No DOM style polling, no setInterval — zero performance tax
-components.html("""
-<script>
-(function(){
-  "use strict";
-  const CSS = `
-    .sent-hidden { opacity:0; transform:translateY(18px); will-change:transform,opacity; }
-    .sent-visible {
-      opacity:1 !important; transform:translateY(0) !important;
-      transition: opacity 0.44s ease, transform 0.44s cubic-bezier(0.22,0.68,0,1.18);
-    }
-  `;
-  const s = document.createElement("style");
-  s.textContent = CSS;
-  document.head.appendChild(s);
-
-  const TARGETS = [
-    "[data-testid='stMetric']",
-    ".pick-card",
-    ".breakdown-box",
-    "[data-testid='stDataFrame']",
-    "[data-testid='stAlert']",
-    "[data-testid='stExpander']",
-    "section[data-testid]",
-  ].join(",");
-
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(e => {
-      if (e.isIntersecting) {
-        e.target.classList.remove("sent-hidden");
-        e.target.classList.add("sent-visible");
-        io.unobserve(e.target);
-      }
-    });
-  }, { threshold: 0.08 });
-
-  function observe() {
-    document.querySelectorAll(TARGETS).forEach(el => {
-      if (!el.dataset.sentObs) {
-        el.dataset.sentObs = "1";
-        el.classList.add("sent-hidden");
-        io.observe(el);
-      }
-    });
-  }
-
-  // MutationObserver to catch Streamlit re-renders
-  const mo = new MutationObserver(observe);
-
-  function boot() {
-    observe();
-    const root = document.querySelector(".stApp") || document.body;
-    mo.observe(root, { childList:true, subtree:true });
-  }
-
-  document.readyState === "loading"
-    ? document.addEventListener("DOMContentLoaded", boot)
-    : boot();
-})();
-</script>
-""", height=0, width=0)
 
 # ─────────────────────────────────────────────────────────────────────
 # NSE TICKER LOADER
@@ -6594,6 +6016,7 @@ with st.sidebar:
         )
     else:
         st.session_state["tt_date_val"] = None
+        st.session_state["tt_date_picker"] = None
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;">Live mode — using current market data</div>',
             unsafe_allow_html=True,
@@ -6810,6 +6233,31 @@ st.markdown(
 )
 
 if _show_home_scanner:
+    _dashboard_tt_date = _get_pending_time_travel_date()
+    if _dashboard_tt_date is not None:
+        try:
+            _dashboard_ref_dt = datetime(
+                _dashboard_tt_date.year,
+                _dashboard_tt_date.month,
+                _dashboard_tt_date.day,
+                16,
+                0,
+                0,
+            )
+        except Exception:
+            _dashboard_ref_dt = _get_dashboard_reference_datetime()
+        try:
+            _dashboard_status_label = f"🕰️ Time Travel Selected — {_dashboard_tt_date.isoformat()}"
+        except Exception:
+            _dashboard_status_label = f"🕰️ Time Travel Selected — {_dashboard_tt_date}"
+    else:
+        _dashboard_ref_dt = _get_dashboard_reference_datetime()
+        _dashboard_status_label = get_data_status_label()
+    _dashboard_tt_badge = (
+        "  🕰️ TIME TRAVEL SELECTED"
+        if _dashboard_tt_date is not None
+        else ("  🕰️ TIME TRAVEL" if _tt.is_active() else "")
+    )
     render_tomorrow_picks_ticker_strip()
     st.markdown(
         f'<div class="top-banner">'
@@ -6822,10 +6270,10 @@ if _show_home_scanner:
         f'<p style="color:#4a6480;font-size:12px;font-family:\'Space Mono\',monospace;'
         f'margin-top:-8px;margin-bottom:20px;">'
         f'Automated multi-strategy scanner for NSE equities · '
-        f'{(_tt.get_reference_datetime()).strftime("%d %b %Y, %H:%M")}'
-        f'{"  🕰️ TIME TRAVEL" if _tt.is_active() else ""}</p>',
+        f'{_dashboard_ref_dt.strftime("%d %b %Y, %H:%M")}'
+        f'{_dashboard_tt_badge}</p>',
         unsafe_allow_html=True)
-    st.caption(get_data_status_label())
+    st.caption(_dashboard_status_label)
 
 _ui_cached_tickers = st.session_state.get("_ui_all_tickers", [])
 if isinstance(_ui_cached_tickers, list) and _ui_cached_tickers:
