@@ -2899,29 +2899,29 @@ def render_tomorrow_picks_ticker_strip() -> None:
         <style>
         .tmr-board-shell {
           border:1px solid rgba(86,118,150,0.34);
-          border-radius:22px;
-          padding:18px 18px 14px 18px;
+          border-radius:18px;
+          padding:12px 14px 10px 14px;
           background:
             radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 26%),
             linear-gradient(180deg, rgba(10,17,27,0.97), rgba(6,10,17,0.99));
           box-shadow:
-            0 18px 36px rgba(0,0,0,0.18),
+            0 14px 28px rgba(0,0,0,0.16),
             inset 0 0 0 1px rgba(255,255,255,0.02);
-          margin:10px 0 4px 0;
+          margin:2px 0 4px 0;
         }
         .tmr-board-header {
           display:flex;
           align-items:center;
           justify-content:space-between;
-          gap:14px;
+          gap:10px;
           flex-wrap:wrap;
-          margin-bottom:12px;
+          margin-bottom:8px;
         }
         .tmr-board-title {
           font-family:'Syne',sans-serif;
-          font-size:18px;
+          font-size:16px;
           font-weight:800;
-          letter-spacing:1px;
+          letter-spacing:0.8px;
           text-transform:uppercase;
           color:#f0b429;
         }
@@ -2931,10 +2931,10 @@ def render_tomorrow_picks_ticker_strip() -> None:
         }
         .tmr-board-row {
           display:grid;
-          grid-template-columns:minmax(140px, 180px) 1fr;
-          gap:14px;
-          align-items:flex-start;
-          padding:12px 0;
+          grid-template-columns:minmax(120px, 150px) 1fr;
+          gap:10px;
+          align-items:center;
+          padding:8px 0;
           border-top:1px solid rgba(42,61,86,0.46);
         }
         .tmr-board-row:first-of-type {
@@ -2943,70 +2943,88 @@ def render_tomorrow_picks_ticker_strip() -> None:
         }
         .tmr-board-label-wrap {
           display:flex;
-          flex-direction:column;
-          gap:5px;
+          align-items:center;
+          gap:8px;
+          flex-wrap:wrap;
         }
         .tmr-board-label {
           display:inline-flex;
           align-items:center;
           gap:8px;
           width:max-content;
-          padding:8px 12px;
+          padding:6px 10px;
           border-radius:999px;
           border:1px solid color-mix(in srgb, var(--tmr-accent) 34%, rgba(255,255,255,0.12));
           background:rgba(9,15,24,0.88);
           color:#f4f8ff;
-          font-size:12px;
+          font-size:11px;
           font-weight:800;
-          letter-spacing:0.5px;
+          letter-spacing:0.4px;
           text-transform:uppercase;
         }
         .tmr-board-label-count {
           color:var(--tmr-accent);
         }
-        .tmr-board-caption {
-          font-size:11px;
-          line-height:1.45;
-          color:#7f9cbc;
-        }
         .tmr-board-items {
           display:flex;
           flex-wrap:wrap;
-          gap:8px;
+          gap:6px;
+          align-items:center;
         }
         .tmr-board-chip {
           display:inline-flex;
           align-items:center;
           gap:8px;
-          padding:9px 12px;
+          padding:7px 10px;
           border-radius:999px;
           border:1px solid color-mix(in srgb, var(--tmr-accent) 28%, rgba(72,102,134,0.30));
           background:linear-gradient(180deg, rgba(13,22,33,0.94), rgba(9,15,24,0.98));
           color:#dce7f4;
-          font-size:12px;
+          font-size:11px;
           font-weight:700;
         }
         .tmr-board-chip-badge {
           display:inline-flex;
           align-items:center;
           justify-content:center;
-          min-width:34px;
-          padding:4px 8px;
+          min-width:30px;
+          padding:3px 7px;
           border-radius:999px;
           background:rgba(9,28,36,0.92);
           color:var(--tmr-accent);
           border:1px solid color-mix(in srgb, var(--tmr-accent) 32%, rgba(255,255,255,0.10));
-          font-size:10px;
-          letter-spacing:0.8px;
+          font-size:9px;
+          letter-spacing:0.7px;
           text-transform:uppercase;
         }
         .tmr-board-empty {
           display:inline-flex;
           align-items:center;
-          min-height:40px;
+          min-height:28px;
           padding:0 2px;
           color:#6f8ba8;
-          font-size:12px;
+          font-size:11px;
+        }
+        .tmr-board-overflow {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:36px;
+          padding:7px 10px;
+          border-radius:999px;
+          border:1px dashed rgba(106,130,158,0.38);
+          color:#8fb0cf;
+          font-size:11px;
+          font-weight:700;
+        }
+        @media (max-width: 900px) {
+          .tmr-board-row {
+            grid-template-columns:1fr;
+            gap:6px;
+          }
+          .tmr-board-label-wrap {
+            justify-content:flex-start;
+          }
         }
         </style>
         """,
@@ -3017,10 +3035,11 @@ def render_tomorrow_picks_ticker_strip() -> None:
     for bucket in _TOMORROW_SECTION_ORDER:
         meta = dict(_TOMORROW_SECTION_META.get(bucket, {}))
         label = html.escape(str(meta.get("label", bucket.title()) or bucket.title()))
-        caption = html.escape(str(meta.get("caption", "") or ""))
         accent = str(meta.get("accent", "#00d4a8") or "#00d4a8")
         bucket_symbols = list(sections.get(bucket, []))
         if bucket_symbols:
+            visible_symbols = bucket_symbols[:4]
+            hidden_count = max(0, len(bucket_symbols) - len(visible_symbols))
             items_html = "".join(
                 (
                     '<span class="tmr-board-chip">'
@@ -3028,17 +3047,18 @@ def render_tomorrow_picks_ticker_strip() -> None:
                     f'{html.escape(symbol)}'
                     '</span>'
                 )
-                for symbol in bucket_symbols
+                for symbol in visible_symbols
             )
+            if hidden_count:
+                items_html += f'<span class="tmr-board-overflow">+{hidden_count}</span>'
         else:
-            items_html = f'<span class="tmr-board-empty">No picks saved in the {label} strip yet.</span>'
+            items_html = '<span class="tmr-board-empty">Empty strip</span>'
 
         rows_html.append(
             (
                 f'<div class="tmr-board-row" style="--tmr-accent:{accent};">'
                 '<div class="tmr-board-label-wrap">'
                 f'<div class="tmr-board-label">{label} <span class="tmr-board-label-count">{len(bucket_symbols)}</span></div>'
-                f'<div class="tmr-board-caption">{caption}</div>'
                 '</div>'
                 f'<div class="tmr-board-items">{items_html}</div>'
                 '</div>'
@@ -3049,8 +3069,8 @@ def render_tomorrow_picks_ticker_strip() -> None:
         (
             '<div class="tmr-board-shell">'
             '<div class="tmr-board-header">'
-            '<div class="tmr-board-title">Tomorrow\'s Picks Board</div>'
-            '<div class="tmr-board-copy">Grouped live by strategy strip: Relax, Swing, Intraday, and Breakout.</div>'
+            '<div class="tmr-board-title">Tomorrow\'s Picks</div>'
+            '<div class="tmr-board-copy">Compact 4-lane view: Relax, Swing, Intraday, Breakout.</div>'
             '</div>'
             + "".join(rows_html)
             + '</div>'
@@ -3307,6 +3327,29 @@ components.html(
 )
 
 inject_animations()
+
+st.markdown(
+    """
+    <style>
+    [data-testid="stAppViewContainer"],
+    [data-testid="stSidebar"],
+    [data-testid="stSidebarContent"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"] {
+      transition: none !important;
+      filter: none !important;
+    }
+    [data-testid="stMainBlockContainer"] {
+      padding-top: 1.1rem !important;
+    }
+    [data-testid="stAppViewContainer"],
+    [data-testid="stSidebar"] {
+      opacity: 1 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -6141,8 +6184,13 @@ if _show_home_scanner:
         unsafe_allow_html=True)
     st.caption(get_data_status_label())
 
-with st.spinner("Loading NSE ticker list..."):
-    all_tickers = fetch_nse_tickers()
+_ui_cached_tickers = st.session_state.get("_ui_all_tickers", [])
+if isinstance(_ui_cached_tickers, list) and _ui_cached_tickers:
+    all_tickers = list(_ui_cached_tickers)
+else:
+    with st.spinner("Loading NSE ticker list..."):
+        all_tickers = fetch_nse_tickers()
+    st.session_state["_ui_all_tickers"] = list(all_tickers)
 n = len(all_tickers)
 
 with st.sidebar:
@@ -6155,6 +6203,7 @@ with st.sidebar:
         if st.button("🔄 Restore Full Ticker List", key="restore_full_ticker_list_btn"):
             st.cache_data.clear()
             st.session_state.pop("_ticker_master_list", None)
+            st.session_state.pop("_ui_all_tickers", None)
             st.rerun()
     else:
         st.caption(f"✅ {ticker_count:,} tickers loaded")
