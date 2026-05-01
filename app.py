@@ -3351,6 +3351,363 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ─────────────────────────────────────────────────────────────────────
+# INCREDIBLE MOBILE-FRIENDLY UI UPGRADE OVERRIDE
+# ─────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Premium Aesthetic Overrides */
+:root {
+  --bg: #030508 !important; 
+  --bg2: #080c14 !important; 
+  --bg3: rgba(15, 24, 35, 0.6) !important;
+  --border: #1a2436 !important; 
+  --border2: #243550 !important;
+  --accent: #00e6b8 !important; /* Neon cyan-green */
+  --accent2: #00a3ff !important; /* Deep neon blue */
+  --accent3: #ffc233 !important; /* Golden yellow */
+  --red: #ff3355 !important;
+  --text: #e2e8f0 !important; 
+  --muted: #64748b !important;
+  --sans: 'Inter', 'Syne', sans-serif !important;
+}
+
+/* Base Body & App */
+html, body, .stApp { 
+  background-color: var(--bg) !important; 
+  color: var(--text) !important; 
+  font-family: var(--sans) !important; 
+}
+.stApp::before {
+  background: radial-gradient(circle at 50% 0%, rgba(0, 163, 255, 0.08), transparent 60%) !important;
+}
+
+/* Typography Overrides */
+h1, h2, h3, h4, h5, h6, p, div, span, label {
+  font-family: var(--sans) !important;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 3rem) !important;
+  background: linear-gradient(to right, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900 !important;
+  letter-spacing: -1px;
+}
+
+/* Glassmorphism Cards & Metrics */
+[data-testid="stMetric"], .pick-card, .breakdown-box { 
+  background: rgba(11, 16, 23, 0.4) !important; 
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px !important; 
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2) !important;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease !important;
+}
+[data-testid="stMetric"]:hover, .pick-card:hover {
+  transform: translateY(-6px) !important;
+  box-shadow: 0 12px 40px rgba(0, 230, 184, 0.15) !important;
+  border-color: rgba(0, 230, 184, 0.3) !important;
+}
+
+/* Buttons */
+.stButton > button, .stDownloadButton > button { 
+  background: rgba(0, 230, 184, 0.05) !important; 
+  backdrop-filter: blur(4px) !important;
+  border: 1px solid rgba(0, 230, 184, 0.3) !important;
+  border-radius: 12px !important; 
+  font-family: var(--sans) !important;
+  text-transform: uppercase;
+  letter-spacing: 1.5px !important;
+}
+.stButton > button:hover { 
+  background: linear-gradient(135deg, var(--accent), var(--accent2)) !important; 
+  border-color: transparent !important;
+  box-shadow: 0 0 20px rgba(0, 230, 184, 0.4) !important; 
+}
+
+/* Mobile Web Friendly Overrides */
+/* 1. Remove aggressive padding on mobile */
+@media (max-width: 768px) {
+  .block-container, [data-testid="stMainBlockContainer"] {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-top: 1rem !important;
+    max-width: 100vw !important;
+  }
+  
+  /* 2. Stack elements properly */
+  [data-testid="column"] {
+    min-width: 100% !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  /* 3. Adjust typography for small screens */
+  h1 { font-size: 2rem !important; }
+  h2 { font-size: 1.5rem !important; }
+  
+  /* 4. Fix table overflows */
+  .stDataFrame {
+    display: block !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+  }
+  
+  /* 5. Metrics styling for mobile */
+  [data-testid="stMetric"] {
+    padding: 14px 16px !important;
+  }
+  [data-testid="stMetricValue"] {
+    font-size: 1.75rem !important;
+  }
+
+  /* 6. Sidebar toggler enhancement */
+  [data-testid="collapsedControl"] {
+    background: rgba(0, 0, 0, 0.5) !important;
+    backdrop-filter: blur(10px) !important;
+    border-radius: 50% !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  }
+}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────
+# PERFORMANCE-SAFE ANIMATIONS  (GPU-only: transform + opacity)
+# Uses will-change to stay on compositor thread → zero repaints
+# ─────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* ════════════════════════════════════════════════
+   KEYFRAMES  — only transform & opacity = GPU-only
+   ════════════════════════════════════════════════ */
+
+/* Fade + slide up (cards, sections) */
+@keyframes _sentFadeUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Subtle neon pulse — uses opacity, NOT box-shadow change */
+@keyframes _sentNeonPulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* Breathing scale for live dot */
+@keyframes _sentLiveDot {
+  0%,100% { transform: scale(1);   opacity: 1;    }
+  50%      { transform: scale(1.6); opacity: 0.45; }
+}
+
+/* Horizontal ticker scroll (translateX only) */
+@keyframes _sentTicker {
+  from { transform: translateX(0);    }
+  to   { transform: translateX(-50%); }
+}
+
+/* Gentle continuous float for top pick cards */
+@keyframes _sentFloat {
+  0%,100% { transform: translateY(0);    }
+  50%      { transform: translateY(-5px); }
+}
+
+/* Shimmer scan line sweep (translateX only) */
+@keyframes _sentSweep {
+  0%   { transform: translateX(-100%); opacity: 0.7; }
+  100% { transform: translateX(400%);  opacity: 0;   }
+}
+
+/* Page entrance — entire main block */
+@keyframes _sentPageIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.992); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);     }
+}
+
+/* ════════════════════════════════════════════════
+   APPLY — all use will-change for GPU promotion
+   ════════════════════════════════════════════════ */
+
+/* Page entrance */
+[data-testid="stMain"] {
+  animation: _sentPageIn 0.55s cubic-bezier(0.22, 0.68, 0, 1.1) both;
+  will-change: transform, opacity;
+}
+
+/* Cards fade in from below */
+.pick-card, .breakdown-box,
+[data-testid="stMetric"],
+[data-testid="stHorizontalBlock"] > div > div {
+  animation: _sentFadeUp 0.42s cubic-bezier(0.22, 0.68, 0, 1.2) both;
+  will-change: transform, opacity;
+}
+
+/* Stagger siblings (nth-child up to 10) */
+.pick-card:nth-child(1) { animation-delay: 0.00s; }
+.pick-card:nth-child(2) { animation-delay: 0.06s; }
+.pick-card:nth-child(3) { animation-delay: 0.12s; }
+.pick-card:nth-child(4) { animation-delay: 0.18s; }
+.pick-card:nth-child(5) { animation-delay: 0.24s; }
+.pick-card:nth-child(6) { animation-delay: 0.30s; }
+
+[data-testid="stMetric"]:nth-child(1) { animation-delay: 0.05s; }
+[data-testid="stMetric"]:nth-child(2) { animation-delay: 0.12s; }
+[data-testid="stMetric"]:nth-child(3) { animation-delay: 0.19s; }
+[data-testid="stMetric"]:nth-child(4) { animation-delay: 0.26s; }
+
+/* Neon badge pulse */
+.sig-buy, .mode-pill, .count-pill {
+  animation: _sentNeonPulse 2.8s ease-in-out infinite;
+  will-change: opacity;
+}
+
+/* Live status dot breathes */
+.live-dot {
+  animation: _sentLiveDot 2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Ticker strip seamless scroll */
+.ticker-strip-inner {
+  animation: _sentTicker 32s linear infinite;
+  will-change: transform;
+}
+.ticker-strip:hover .ticker-strip-inner {
+  animation-play-state: paused;
+}
+
+/* Top-pick card gentle float */
+.winner-card {
+  animation: _sentFloat 6s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Scan sweep shimmer — decorative overlay on scanner headers */
+.scan-header-wrap {
+  position: relative;
+  overflow: hidden;
+}
+.scan-header-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(0,230,184,0.12), transparent);
+  animation: _sentSweep 2.6s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* Sidebar links: slide in from left on load */
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
+  animation: _sentFadeUp 0.5s cubic-bezier(0.22, 0.68, 0, 1.2) both;
+  will-change: transform, opacity;
+}
+
+/* Button hover shimmer (pure CSS, no JS) */
+.stButton > button {
+  overflow: hidden;
+  position: relative;
+}
+.stButton > button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.12) 50%, transparent 70%);
+  transform: translateX(-100%);
+  will-change: transform;
+  transition: transform 0s; /* overridden by hover */
+}
+.stButton > button:hover::after {
+  transform: translateX(100%);
+  transition: transform 0.55s ease;
+}
+
+/* Progress bar animated gradient */
+[data-testid="stProgressBar"] > div > div,
+.stProgress > div > div {
+  background: linear-gradient(90deg, #00e6b8, #00a3ff, #00e6b8) !important;
+  background-size: 200% 100% !important;
+  animation: _sentTicker 2s linear infinite !important;
+  will-change: transform !important;
+}
+
+/* Reduce motion — respect accessibility setting */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Lightweight JS: GPU-safe scroll-triggered fade-in using IntersectionObserver
+# No DOM style polling, no setInterval — zero performance tax
+components.html("""
+<script>
+(function(){
+  "use strict";
+  const CSS = `
+    .sent-hidden { opacity:0; transform:translateY(18px); will-change:transform,opacity; }
+    .sent-visible {
+      opacity:1 !important; transform:translateY(0) !important;
+      transition: opacity 0.44s ease, transform 0.44s cubic-bezier(0.22,0.68,0,1.18);
+    }
+  `;
+  const s = document.createElement("style");
+  s.textContent = CSS;
+  document.head.appendChild(s);
+
+  const TARGETS = [
+    "[data-testid='stMetric']",
+    ".pick-card",
+    ".breakdown-box",
+    "[data-testid='stDataFrame']",
+    "[data-testid='stAlert']",
+    "[data-testid='stExpander']",
+    "section[data-testid]",
+  ].join(",");
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.remove("sent-hidden");
+        e.target.classList.add("sent-visible");
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.08 });
+
+  function observe() {
+    document.querySelectorAll(TARGETS).forEach(el => {
+      if (!el.dataset.sentObs) {
+        el.dataset.sentObs = "1";
+        el.classList.add("sent-hidden");
+        io.observe(el);
+      }
+    });
+  }
+
+  // MutationObserver to catch Streamlit re-renders
+  const mo = new MutationObserver(observe);
+
+  function boot() {
+    observe();
+    const root = document.querySelector(".stApp") || document.body;
+    mo.observe(root, { childList:true, subtree:true });
+  }
+
+  document.readyState === "loading"
+    ? document.addEventListener("DOMContentLoaded", boot)
+    : boot();
+})();
+</script>
+""", height=0, width=0)
 
 # ─────────────────────────────────────────────────────────────────────
 # NSE TICKER LOADER
