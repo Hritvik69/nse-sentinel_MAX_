@@ -405,6 +405,7 @@ def render_live_breakout_pulse(
                 top_pulse_symbols,
                 key_prefix=f"live_pulse_top3_{top_pulse_key}",
                 scope_label="Live Breakout Pulse",
+                bucket="breakout",
                 helper_text="Add these top breakout stocks into Tomorrow's Picks and keep them saved until you remove them.",
             )
         st.markdown("<br>", unsafe_allow_html=True)

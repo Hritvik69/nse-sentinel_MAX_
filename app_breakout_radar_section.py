@@ -204,6 +204,7 @@ def _render_breakout_radar_tab(
     scan_clicked: bool,
     breakout_radar_ok: bool,
     tt_date,
+    render_add_in_picks_actions=None,
 ) -> None:
     """Render the ⚡ Breakout Radar sub-tab."""
 
@@ -500,6 +501,14 @@ def _render_breakout_radar_tab(
             width="stretch",
             hide_index=True,
         )
+        if callable(render_add_in_picks_actions):
+            render_add_in_picks_actions(
+                _radar_top3.get("Symbol", pd.Series(dtype=object)).tolist(),
+                key_prefix=f"breakout_radar_top3_{radar_scanned_at or 'latest'}",
+                scope_label="Breakout Radar",
+                bucket="breakout",
+                helper_text="Add these radar breakout picks into the Breakout strip in Tomorrow's Picks.",
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -511,6 +520,7 @@ def _render_csv_next_day_tab(
     csv_next_day_engine_ok: bool,
     data_downloader_ok: bool,
     tt_date,
+    render_add_in_picks_actions=None,
 ) -> None:
     """Render the original CSV Next-Day Potential sub-tab — zero changes to logic."""
 
@@ -744,6 +754,14 @@ def _render_csv_next_day_tab(
             width="stretch",
             hide_index=True,
         )
+        if callable(render_add_in_picks_actions):
+            render_add_in_picks_actions(
+                _csv_top3.get("Symbol", pd.Series(dtype=object)).tolist(),
+                key_prefix=f"breakout_csv_top3_{csv_last_scan_at or 'latest'}",
+                scope_label="Breakout Radar CSV",
+                bucket="breakout",
+                helper_text="Add these breakout-probability picks into the Breakout strip in Tomorrow's Picks.",
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -755,6 +773,7 @@ def render_breakout_radar_section(
     _CSV_NEXT_DAY_ENGINE_OK: bool = True,
     _DATA_DOWNLOADER_OK: bool = True,
     _BREAKOUT_RADAR_OK: bool = True,
+    render_add_in_picks_actions=None,
 ) -> None:
     """
     Render the combined ⚡ Next-Day Breakout Radar section.
@@ -805,6 +824,7 @@ def render_breakout_radar_section(
             scan_clicked=csv_scan_clicked,
             breakout_radar_ok=_BREAKOUT_RADAR_OK and _RADAR_OK,
             tt_date=tt_date,
+            render_add_in_picks_actions=render_add_in_picks_actions,
         )
 
     with tab_csv:
@@ -813,4 +833,5 @@ def render_breakout_radar_section(
             csv_next_day_engine_ok=_CSV_NEXT_DAY_ENGINE_OK and _CSV_OK,
             data_downloader_ok=_DATA_DOWNLOADER_OK,
             tt_date=tt_date,
+            render_add_in_picks_actions=render_add_in_picks_actions,
         )

@@ -296,6 +296,30 @@ _SCOPES = [
 _TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
 _TICKER_MASTER_STORE_PATH = Path(_HERE) / "data" / "ticker_master_list.json"
 
+_TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "breakout")
+_TOMORROW_SECTION_META = {
+    "relax": {
+        "label": "Relax",
+        "accent": "#22c55e",
+        "caption": "Wide-scan continuation and easier entries",
+    },
+    "swing": {
+        "label": "Swing",
+        "accent": "#f0b429",
+        "caption": "Multi-day momentum and cleaner swing structure",
+    },
+    "intraday": {
+        "label": "Intraday",
+        "accent": "#00d4a8",
+        "caption": "Fast tactical setups and tighter timing",
+    },
+    "breakout": {
+        "label": "Breakout",
+        "accent": "#ff6b6b",
+        "caption": "Radar and live-breakout momentum names",
+    },
+}
+
 
 @st.cache_resource(ttl=0)
 def _get_sheet():
@@ -328,7 +352,7 @@ def _load_picks() -> dict:
       Row 2: JSON list of picks | notes text
     Returns {"picks": [...], "notes": "..."}
     """
-    default = {"picks": [], "notes": ""}
+    default = _normalize_tomorrow_store(None)
     try:
         ws = _get_sheet()
         if ws is None:
@@ -336,8 +360,12 @@ def _load_picks() -> dict:
         # Read row 2 (data row)
         picks_json = ws.cell(2, 1).value or "[]"
         notes_text = ws.cell(2, 2).value or ""
-        picks = json.loads(picks_json)
-        return {"picks": picks, "notes": notes_text}
+        payload = json.loads(picks_json)
+        if isinstance(payload, dict):
+            if not str(payload.get("notes", "") or "").strip() and notes_text:
+                payload["notes"] = notes_text
+            return _normalize_tomorrow_store(payload)
+        return _normalize_tomorrow_store({"picks": payload, "notes": notes_text})
     except Exception:
         return default
 
@@ -351,12 +379,13 @@ def _save_picks(store: dict) -> None:
         ws = _get_sheet()
         if ws is None:
             return
+        normalized = _normalize_tomorrow_store(store)
         # Write headers if empty
         if not ws.cell(1, 1).value:
             ws.update("A1:B1", [["picks", "notes"]])
         ws.update("A2:B2", [[
-            json.dumps(store["picks"]),
-            store["notes"],
+            json.dumps(normalized, ensure_ascii=False),
+            normalized["notes"],
         ]])
     except Exception:
         pass
@@ -382,8 +411,78 @@ def _normalize_tomorrow_symbols(values: list[object] | tuple[object, ...] | None
     return symbols
 
 
+def _tomorrow_section_defaults() -> dict[str, list[str]]:
+    return {bucket: [] for bucket in _TOMORROW_SECTION_ORDER}
+
+
+def _normalize_tomorrow_bucket(bucket: object) -> str:
+    raw = str(bucket or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if raw in _TOMORROW_SECTION_META:
+        return raw
+    return "relax"
+
+
+def _tomorrow_bucket_for_mode(mode_value: object) -> str:
+    try:
+        mode_int = int(mode_value)
+    except Exception:
+        mode_int = 3
+    return {
+        3: "relax",
+        6: "swing",
+        5: "intraday",
+    }.get(mode_int, "relax")
+
+
+def _tomorrow_section_label(bucket: object) -> str:
+    bucket_key = _normalize_tomorrow_bucket(bucket)
+    return str(_TOMORROW_SECTION_META.get(bucket_key, {}).get("label", "Relax"))
+
+
+def _tomorrow_flatten_sections(sections: dict[str, list[object]] | None, limit: int = 20) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    bucket_map = sections if isinstance(sections, dict) else {}
+    for bucket in _TOMORROW_SECTION_ORDER:
+        for raw in list(bucket_map.get(bucket, [])):
+            symbol = _normalize_tomorrow_symbol(raw)
+            if symbol and symbol not in seen:
+                merged.append(symbol)
+                seen.add(symbol)
+            if len(merged) >= limit:
+                return merged
+    return merged
+
+
+def _apply_tomorrow_sections_limit(sections: dict[str, list[object]] | None, limit: int = 20) -> dict[str, list[str]]:
+    limited = _tomorrow_section_defaults()
+    seen: set[str] = set()
+    bucket_map = sections if isinstance(sections, dict) else {}
+    total = 0
+    for bucket in _TOMORROW_SECTION_ORDER:
+        for raw in list(bucket_map.get(bucket, [])):
+            symbol = _normalize_tomorrow_symbol(raw)
+            if not symbol or symbol in seen:
+                continue
+            if total >= limit:
+                return limited
+            limited[bucket].append(symbol)
+            seen.add(symbol)
+            total += 1
+    return limited
+
+
+def _tomorrow_section_membership(sections: dict[str, list[object]] | None) -> dict[str, str]:
+    membership: dict[str, str] = {}
+    bucket_map = sections if isinstance(sections, dict) else {}
+    for bucket in _TOMORROW_SECTION_ORDER:
+        for symbol in _normalize_tomorrow_symbols(bucket_map.get(bucket, []), limit=20):
+            membership[symbol] = bucket
+    return membership
+
+
 def _normalize_tomorrow_store(store: dict | None) -> dict:
-    default = {"picks": [], "notes": ""}
+    default = {"picks": [], "notes": "", "sections": _tomorrow_section_defaults()}
     if not isinstance(store, dict):
         return default.copy()
 
@@ -391,18 +490,28 @@ def _normalize_tomorrow_store(store: dict | None) -> dict:
     if not isinstance(raw_picks, list):
         raw_picks = []
 
-    picks: list[str] = []
-    seen: set[str] = set()
-    for item in raw_picks[:20]:
-        symbol = _normalize_tomorrow_symbol(item)
-        if symbol and symbol not in seen:
-            picks.append(symbol)
-            seen.add(symbol)
+    raw_sections = store.get("sections", {})
+    section_seed = _tomorrow_section_defaults()
+    if isinstance(raw_sections, dict):
+        for bucket in _TOMORROW_SECTION_ORDER:
+            raw_values = raw_sections.get(bucket, [])
+            if isinstance(raw_values, (list, tuple)):
+                section_seed[bucket] = list(raw_values)
+
+    known_symbols = set(_tomorrow_flatten_sections(section_seed, limit=20))
+    for item in _normalize_tomorrow_symbols(raw_picks, limit=20):
+        if item not in known_symbols:
+            section_seed["relax"].append(item)
+            known_symbols.add(item)
+
+    sections = _apply_tomorrow_sections_limit(section_seed, limit=20)
+    picks = _tomorrow_flatten_sections(sections, limit=20)
 
     notes_text = store.get("notes", "")
     return {
         "picks": picks,
         "notes": str(notes_text or ""),
+        "sections": sections,
     }
 
 
@@ -497,19 +606,81 @@ def _persist_tomorrow_store(store: dict) -> None:
         _save_local_tomorrow_store(normalized)
 
 
-def _save_symbols_to_tomorrow_store(symbols: list[object]) -> dict[str, object]:
+def _assign_symbols_to_tomorrow_bucket(
+    sections: dict[str, list[object]] | None,
+    incoming_symbols: list[object] | tuple[object, ...] | None,
+    *,
+    bucket: str,
+    limit: int = 20,
+) -> tuple[dict[str, list[str]], int, int, int]:
+    target_bucket = _normalize_tomorrow_bucket(bucket)
+    current_sections = _apply_tomorrow_sections_limit(sections, limit=limit)
+    membership_before = _tomorrow_section_membership(current_sections)
+    normalized_incoming = _normalize_tomorrow_symbols(incoming_symbols, limit=limit)
+    if not normalized_incoming:
+        return current_sections, 0, 0, 0
+
+    working_sections = {name: list(values) for name, values in current_sections.items()}
+    for name in _TOMORROW_SECTION_ORDER:
+        working_sections[name] = [
+            symbol
+            for symbol in working_sections.get(name, [])
+            if symbol not in normalized_incoming
+        ]
+
+    existing_total = len(_tomorrow_flatten_sections(working_sections, limit=limit))
+    target_values = list(working_sections.get(target_bucket, []))
+    added = 0
+    moved = 0
+    overflow = 0
+
+    for symbol in normalized_incoming:
+        previous_bucket = membership_before.get(symbol)
+        if previous_bucket is None:
+            if existing_total >= limit:
+                overflow += 1
+                continue
+            added += 1
+            existing_total += 1
+        elif previous_bucket != target_bucket:
+            moved += 1
+        if symbol not in target_values:
+            target_values.append(symbol)
+
+    working_sections[target_bucket] = target_values
+    return _apply_tomorrow_sections_limit(working_sections, limit=limit), added, moved, overflow
+
+
+def _save_symbols_to_tomorrow_store(
+    symbols: list[object] | tuple[object, ...] | None,
+    *,
+    bucket: str = "relax",
+) -> dict[str, object]:
     store, storage_mode = _load_tomorrow_store()
-    merged, added = _merge_tomorrow_symbols(store.get("picks", []), symbols, limit=20)
-    changed = merged != list(store.get("picks", []))
+    sections_before = store.get("sections", _tomorrow_section_defaults())
+    sections_after, added, moved, overflow = _assign_symbols_to_tomorrow_bucket(
+        sections_before,
+        symbols,
+        bucket=bucket,
+        limit=20,
+    )
+    target_bucket = _normalize_tomorrow_bucket(bucket)
+    changed = sections_after != store.get("sections", _tomorrow_section_defaults())
     if changed:
-        store["picks"] = merged
+        store["sections"] = sections_after
+        store["picks"] = _tomorrow_flatten_sections(sections_after, limit=20)
         _persist_tomorrow_store(store)
+
     return {
         "added": int(added),
+        "moved": int(moved),
         "changed": bool(changed),
-        "total": len(merged),
+        "total": len(_tomorrow_flatten_sections(sections_after, limit=20)),
+        "section_total": len(sections_after.get(target_bucket, [])),
         "storage_mode": storage_mode,
-        "limit_reached": len(merged) >= 20,
+        "limit_reached": bool(overflow > 0),
+        "bucket": target_bucket,
+        "bucket_label": _tomorrow_section_label(target_bucket),
     }
 
 
@@ -535,6 +706,7 @@ def _render_add_in_picks_actions(
     *,
     key_prefix: str,
     scope_label: str,
+    bucket: str = "relax",
     helper_text: str = "",
 ) -> None:
     normalized = _normalize_tomorrow_symbols(symbols)
@@ -563,17 +735,23 @@ def _render_add_in_picks_actions(
         if not normalized:
             st.info("No valid stock is available to add right now.")
         else:
-            summary = _save_symbols_to_tomorrow_store(normalized)
-            if summary["added"]:
+            summary = _save_symbols_to_tomorrow_store(normalized, bucket=bucket)
+            bucket_label = str(summary.get("bucket_label", _tomorrow_section_label(bucket)))
+            if summary["added"] or summary["moved"]:
                 target = "Google Sheets" if summary["storage_mode"] == "cloud" else "local storage"
-                noun = "stock" if summary["added"] == 1 else "stocks"
-                st.success(
-                    f"Added {summary['added']} {noun} from {scope_label} to Tomorrow's Picks in {target}."
-                )
+                parts: list[str] = []
+                if summary["added"]:
+                    noun = "stock" if int(summary["added"]) == 1 else "stocks"
+                    parts.append(f"added {summary['added']} new {noun}")
+                if summary["moved"]:
+                    noun = "stock" if int(summary["moved"]) == 1 else "stocks"
+                    parts.append(f"moved {summary['moved']} existing {noun}")
+                joined = " and ".join(parts)
+                st.success(f"{joined.title()} from {scope_label} into the {bucket_label} strip in {target}.")
             elif summary["limit_reached"]:
                 st.info("Tomorrow's Picks is already full at 20 stocks, or these symbols are already saved.")
             else:
-                st.info("These symbols are already in Tomorrow's Picks.")
+                st.info(f"These symbols are already saved in the {bucket_label} strip.")
 
     if open_clicked:
         _activate_sidebar_panel("tomorrow_picks_show_panel")
@@ -1402,6 +1580,7 @@ def render_stock_aura_panel() -> None:
         [symbol],
         key_prefix=f"aura_result_{symbol or 'stock'}",
         scope_label="Stock Aura",
+        bucket=_tomorrow_bucket_for_mode(st.session_state.get("mode", 3)),
         helper_text="Add this Stock Aura result into Tomorrow's Picks and keep it saved until you delete it.",
     )
 
@@ -2093,6 +2272,770 @@ def get_nifty_20d_return() -> float | None:
 # ─────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────
+def _tomorrow_section_stat_card(bucket: str, count: int) -> str:
+    meta = dict(_TOMORROW_SECTION_META.get(bucket, {}))
+    label = html.escape(str(meta.get("label", bucket.title()) or bucket.title()))
+    caption = html.escape(str(meta.get("caption", "") or ""))
+    accent = str(meta.get("accent", "#00d4a8") or "#00d4a8")
+    noun = "stock" if int(count) == 1 else "stocks"
+    return (
+        '<div class="tmr-v2-stat-card" style="--tmr-accent:{accent};">'
+        '<div class="tmr-v2-stat-label">{label}</div>'
+        '<div class="tmr-v2-stat-value">{count}</div>'
+        '<div class="tmr-v2-stat-caption">{caption}</div>'
+        '<div class="tmr-v2-stat-foot">{count} saved {noun}</div>'
+        '</div>'
+    ).format(
+        accent=accent,
+        label=label,
+        count=int(count),
+        caption=caption,
+        noun=noun,
+    )
+
+
+def render_tomorrow_picks_panel() -> None:
+    if not st.session_state.get("tomorrow_picks_show_panel", False):
+        return
+
+    store, storage_mode = _load_tomorrow_store()
+    sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+    store["sections"] = sections
+    store["picks"] = _tomorrow_flatten_sections(sections, limit=20)
+
+    saved_count = len(store["picks"])
+    slots_left = max(0, 20 - saved_count)
+    active_sections = sum(1 for bucket in _TOMORROW_SECTION_ORDER if sections.get(bucket))
+    saved_notes = str(store.get("notes", "") or "")
+    notes_words = len(saved_notes.split()) if saved_notes.strip() else 0
+    notes_feedback = st.session_state.get("tmr_notes_feedback", {}) or {}
+    notes_feedback_kind = str(notes_feedback.get("kind", "info") or "info").strip().lower()
+    notes_feedback_msg = str(notes_feedback.get("message", "") or "").strip()
+    notes_feedback_at = str(notes_feedback.get("at", "") or "").strip()
+    if notes_feedback_kind not in {"success", "error", "info"}:
+        notes_feedback_kind = "info"
+
+    if "tmr_notes_area" not in st.session_state:
+        st.session_state["tmr_notes_area"] = saved_notes
+
+    status_copy = (
+        "Cloud sync is active. Picks stay saved until you delete them."
+        if storage_mode == "cloud"
+        else "Local persistence is active. Picks stay saved until you delete them."
+    )
+    sync_caption = (
+        "Google Sheets keeps your four strips synced across sessions."
+        if storage_mode == "cloud"
+        else "This machine stores your four strips permanently until removal."
+    )
+    storage_label = "Cloud Sync" if storage_mode == "cloud" else "Local Save"
+    default_bucket = _tomorrow_bucket_for_mode(st.session_state.get("mode", 3))
+    default_bucket_index = (
+        _TOMORROW_SECTION_ORDER.index(default_bucket)
+        if default_bucket in _TOMORROW_SECTION_ORDER
+        else 0
+    )
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-anchor) {
+          background:
+            radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 30%),
+            radial-gradient(circle at top left, rgba(0,212,168,0.10), transparent 28%),
+            linear-gradient(180deg, rgba(9,13,20,0.97), rgba(5,8,13,0.99));
+          border:1px solid rgba(77,107,140,0.34);
+          border-radius:22px;
+          padding:24px 24px 20px 24px;
+          box-shadow:
+            0 24px 54px rgba(0,0,0,0.42),
+            inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-left-anchor),
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-notes-anchor) {
+          background:linear-gradient(180deg, rgba(12,18,28,0.96), rgba(8,13,21,0.98));
+          border:1px solid rgba(60,88,118,0.40);
+          border-radius:18px;
+          padding:18px 18px 20px 18px;
+          height:100%;
+          box-shadow:
+            inset 0 0 0 1px rgba(255,255,255,0.02),
+            0 16px 34px rgba(0,0,0,0.18);
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-left-anchor) div[data-testid="stTextInput"] input,
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-left-anchor) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-notes-anchor) div[data-testid="stTextArea"] textarea {
+          background:rgba(9,17,27,0.95) !important;
+          color:#dce7f4 !important;
+          border:1px solid rgba(56,86,116,0.52) !important;
+          box-shadow:none !important;
+        }
+        div[data-testid="stVerticalBlock"]:has(.tmr-v2-notes-anchor) div[data-testid="stTextArea"] textarea {
+          min-height:360px !important;
+        }
+        .tmr-v2-title {
+          font-family:'Syne',sans-serif;
+          font-size:44px;
+          font-weight:800;
+          letter-spacing:-1px;
+          color:#f0b429;
+          margin:0 0 8px 0;
+        }
+        .tmr-v2-lead {
+          font-size:14px;
+          line-height:1.55;
+          color:#90b0cd;
+          margin:0 0 16px 0;
+        }
+        .tmr-v2-status {
+          border:1px solid rgba(78,110,143,0.34);
+          border-left:4px solid #f0b429;
+          border-radius:14px;
+          padding:12px 14px;
+          margin:0 0 20px 0;
+          font-size:12px;
+          color:#dce7f4;
+          background:linear-gradient(90deg, rgba(18,28,41,0.95), rgba(10,16,25,0.98));
+        }
+        .tmr-v2-status strong {
+          color:#f4f8ff;
+        }
+        .tmr-v2-metrics {
+          display:grid;
+          grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+          gap:14px;
+          margin:0 0 18px 0;
+        }
+        .tmr-v2-metric {
+          border:1px solid rgba(65,96,127,0.34);
+          border-radius:16px;
+          padding:16px 16px 14px 16px;
+          background:linear-gradient(180deg, rgba(10,17,27,0.96), rgba(7,12,20,0.99));
+        }
+        .tmr-v2-metric-label {
+          font-size:11px;
+          letter-spacing:1px;
+          text-transform:uppercase;
+          color:#7d9abb;
+          margin-bottom:8px;
+        }
+        .tmr-v2-metric-value {
+          font-family:'Syne',sans-serif;
+          font-size:26px;
+          font-weight:800;
+          color:#f4f8ff;
+          line-height:1;
+          margin-bottom:6px;
+        }
+        .tmr-v2-metric-caption {
+          font-size:12px;
+          line-height:1.45;
+          color:#93afcb;
+        }
+        .tmr-v2-stat-grid {
+          display:grid;
+          grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+          gap:14px;
+          margin:0 0 18px 0;
+        }
+        .tmr-v2-stat-card {
+          border:1px solid color-mix(in srgb, var(--tmr-accent) 30%, rgba(70,96,128,0.35));
+          border-radius:16px;
+          padding:15px 15px 13px 15px;
+          background:linear-gradient(180deg, rgba(11,19,29,0.96), rgba(8,13,21,0.98));
+          box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02);
+        }
+        .tmr-v2-stat-label {
+          font-size:11px;
+          letter-spacing:1px;
+          text-transform:uppercase;
+          color:var(--tmr-accent);
+          margin-bottom:7px;
+        }
+        .tmr-v2-stat-value {
+          font-family:'Syne',sans-serif;
+          font-size:28px;
+          font-weight:800;
+          color:#f4f8ff;
+          line-height:1;
+          margin-bottom:6px;
+        }
+        .tmr-v2-stat-caption {
+          font-size:12px;
+          color:#dce7f4;
+          line-height:1.45;
+          min-height:34px;
+        }
+        .tmr-v2-stat-foot {
+          margin-top:8px;
+          font-size:11px;
+          color:#89a8c7;
+        }
+        .tmr-v2-add-box {
+          border:1px solid rgba(70,100,132,0.34);
+          border-radius:16px;
+          padding:14px 14px 12px 14px;
+          margin:0 0 18px 0;
+          background:linear-gradient(180deg, rgba(10,17,27,0.94), rgba(8,13,21,0.98));
+        }
+        .tmr-v2-add-title {
+          font-size:13px;
+          font-weight:700;
+          color:#f4f8ff;
+          margin-bottom:4px;
+        }
+        .tmr-v2-add-caption {
+          font-size:11px;
+          color:#8aa9c8;
+          margin-bottom:10px;
+        }
+        .tmr-v2-strip-card {
+          border:1px solid color-mix(in srgb, var(--tmr-accent) 34%, rgba(55,84,114,0.34));
+          border-radius:18px;
+          padding:14px 14px 12px 14px;
+          margin:0 0 14px 0;
+          background:
+            radial-gradient(circle at top right, color-mix(in srgb, var(--tmr-accent) 12%, transparent), transparent 38%),
+            linear-gradient(180deg, rgba(10,17,27,0.97), rgba(7,12,20,0.99));
+          box-shadow:
+            inset 0 0 0 1px rgba(255,255,255,0.02),
+            0 14px 30px rgba(0,0,0,0.16);
+        }
+        .tmr-v2-strip-head {
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:12px;
+          margin-bottom:10px;
+        }
+        .tmr-v2-strip-kicker {
+          font-size:10px;
+          letter-spacing:1.1px;
+          text-transform:uppercase;
+          color:var(--tmr-accent);
+          margin-bottom:5px;
+        }
+        .tmr-v2-strip-title {
+          font-family:'Syne',sans-serif;
+          font-size:22px;
+          font-weight:800;
+          color:#f4f8ff;
+          margin:0 0 4px 0;
+        }
+        .tmr-v2-strip-caption {
+          font-size:12px;
+          line-height:1.45;
+          color:#8daecf;
+          max-width:540px;
+        }
+        .tmr-v2-strip-count {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:74px;
+          padding:10px 12px;
+          border-radius:999px;
+          border:1px solid color-mix(in srgb, var(--tmr-accent) 32%, rgba(255,255,255,0.12));
+          color:#f4f8ff;
+          font-size:12px;
+          font-weight:700;
+          background:rgba(10,17,27,0.86);
+        }
+        .tmr-v2-row-symbol {
+          font-weight:800;
+          color:#f4f8ff;
+          font-size:17px;
+          letter-spacing:0.2px;
+        }
+        .tmr-v2-row-meta {
+          font-size:11px;
+          color:#8daac8;
+          margin-top:2px;
+        }
+        .tmr-v2-empty {
+          padding:14px 12px;
+          border-radius:14px;
+          border:1px dashed rgba(82,112,143,0.30);
+          color:#6f8ba8;
+          font-size:12px;
+          background:rgba(8,13,20,0.58);
+          margin:0 0 14px 0;
+        }
+        .tmr-v2-notes-title {
+          font-family:'Syne',sans-serif;
+          font-size:28px;
+          font-weight:800;
+          color:#f4f8ff;
+          margin:0 0 8px 0;
+        }
+        .tmr-v2-notes-caption {
+          font-size:12px;
+          line-height:1.5;
+          color:#8eaed0;
+          margin:0 0 14px 0;
+        }
+        .tmr-v2-notes-status {
+          border-radius:14px;
+          padding:12px 14px;
+          margin:0 0 14px 0;
+          border:1px solid rgba(59,90,120,0.38);
+          font-size:12px;
+          line-height:1.5;
+          background:linear-gradient(180deg, rgba(10,17,26,0.96), rgba(8,13,20,0.98));
+          color:#dce7f4;
+        }
+        .tmr-v2-notes-status strong {
+          color:#f4f8ff;
+        }
+        .tmr-v2-notes-status-success {
+          border-color:rgba(0,212,168,0.34);
+          background:linear-gradient(180deg, rgba(8,36,30,0.86), rgba(7,16,23,0.98));
+        }
+        .tmr-v2-notes-status-error {
+          border-color:rgba(255,77,109,0.34);
+          background:linear-gradient(180deg, rgba(48,18,25,0.88), rgba(11,14,22,0.98));
+        }
+        .tmr-v2-notes-status-info {
+          border-color:rgba(240,180,41,0.30);
+          background:linear-gradient(180deg, rgba(50,39,14,0.82), rgba(10,15,24,0.98));
+        }
+        .tmr-v2-notes-helper {
+          font-size:11px;
+          color:#7e9aba;
+          margin-top:10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container():
+        st.markdown('<div class="tmr-v2-anchor"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="tmr-v2-title">Tomorrow\'s Picks</div>', unsafe_allow_html=True)
+        st.markdown(
+            (
+                '<div class="tmr-v2-lead">'
+                'Four dedicated strips keep Relax, Swing, Intraday, and Breakout ideas separate. '
+                'Any ADD IN PICKS action now lands in the correct strip automatically, and each pick stays saved until you remove it.'
+                '</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            (
+                '<div class="tmr-v2-status">'
+                f'<strong>{html.escape(status_copy)}</strong><br>{html.escape(sync_caption)}'
+                '</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            (
+                '<div class="tmr-v2-metrics">'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Saved Picks</div><div class="tmr-v2-metric-value">{saved_count}</div><div class="tmr-v2-metric-caption">Total stocks saved across all four strips</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Slots Left</div><div class="tmr-v2-metric-value">{slots_left}</div><div class="tmr-v2-metric-caption">Maximum 20 saved picks in total</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Active Strips</div><div class="tmr-v2-metric-value">{active_sections}/4</div><div class="tmr-v2-metric-caption">How many strategy lanes currently hold picks</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Storage</div><div class="tmr-v2-metric-value">{html.escape(storage_label)}</div><div class="tmr-v2-metric-caption">{html.escape(sync_caption)}</div></div>'
+                '</div>'
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="tmr-v2-stat-grid">'
+            + "".join(
+                _tomorrow_section_stat_card(bucket, len(sections.get(bucket, [])))
+                for bucket in _TOMORROW_SECTION_ORDER
+            )
+            + '</div>',
+            unsafe_allow_html=True,
+        )
+
+        left_col, right_col = st.columns([3.2, 2], gap="large")
+
+        with left_col:
+            with st.container():
+                st.markdown('<div class="tmr-v2-left-anchor"></div>', unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="tmr-v2-add-box">'
+                    '<div class="tmr-v2-add-title">Quick Add to a Strip</div>'
+                    '<div class="tmr-v2-add-caption">Choose the lane first, then save a manual symbol into that strategy bucket.</div>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+                with st.form("tmr_add_form_v2", clear_on_submit=True):
+                    add_input_col, add_bucket_col, add_button_col = st.columns([2.2, 1.2, 1], gap="small")
+                    with add_input_col:
+                        new_symbol = st.text_input(
+                            "Add Symbol",
+                            key="tmr_symbol_input_v2",
+                            placeholder="e.g. RELIANCE",
+                        )
+                    with add_bucket_col:
+                        manual_bucket = st.selectbox(
+                            "Strip",
+                            options=list(_TOMORROW_SECTION_ORDER),
+                            index=default_bucket_index,
+                            format_func=_tomorrow_section_label,
+                            key="tmr_manual_bucket",
+                        )
+                    with add_button_col:
+                        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+                        add_clicked = st.form_submit_button(
+                            "Add",
+                            use_container_width=True,
+                            disabled=saved_count >= 20,
+                        )
+
+                if add_clicked:
+                    symbol = _normalize_tomorrow_symbol(new_symbol)
+                    if not symbol:
+                        st.info("Enter a valid stock symbol first.")
+                    else:
+                        add_summary = _save_symbols_to_tomorrow_store([symbol], bucket=manual_bucket)
+                        bucket_label = str(add_summary.get("bucket_label", _tomorrow_section_label(manual_bucket)))
+                        if add_summary["added"] or add_summary["moved"]:
+                            st.success(f"{symbol} is now saved in the {bucket_label} strip.")
+                            store, storage_mode = _load_tomorrow_store()
+                            sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+                            store["sections"] = sections
+                            store["picks"] = _tomorrow_flatten_sections(sections, limit=20)
+                            saved_count = len(store["picks"])
+                            slots_left = max(0, 20 - saved_count)
+                            active_sections = sum(1 for bucket in _TOMORROW_SECTION_ORDER if sections.get(bucket))
+                        elif add_summary["limit_reached"]:
+                            st.warning("Tomorrow's Picks already has 20 saved stocks. Remove one before adding another.")
+                        else:
+                            st.info(f"{symbol} is already in the {bucket_label} strip.")
+
+                if saved_count >= 20:
+                    st.caption("Tomorrow's Picks is full at 20 total saved stocks.")
+
+                for bucket in _TOMORROW_SECTION_ORDER:
+                    meta = dict(_TOMORROW_SECTION_META.get(bucket, {}))
+                    label = str(meta.get("label", bucket.title()) or bucket.title())
+                    caption = str(meta.get("caption", "") or "")
+                    accent = str(meta.get("accent", "#00d4a8") or "#00d4a8")
+                    bucket_symbols = list(sections.get(bucket, []))
+
+                    st.markdown(
+                        (
+                            f'<div class="tmr-v2-strip-card" style="--tmr-accent:{accent};">'
+                            '<div class="tmr-v2-strip-head">'
+                            '<div>'
+                            '<div class="tmr-v2-strip-kicker">Strategy Strip</div>'
+                            f'<div class="tmr-v2-strip-title">{html.escape(label)}</div>'
+                            f'<div class="tmr-v2-strip-caption">{html.escape(caption)}</div>'
+                            '</div>'
+                            f'<div class="tmr-v2-strip-count">{len(bucket_symbols)} saved</div>'
+                            '</div>'
+                            '</div>'
+                        ),
+                        unsafe_allow_html=True,
+                    )
+
+                    if not bucket_symbols:
+                        st.markdown(
+                            f'<div class="tmr-v2-empty">No stocks saved in the {html.escape(label)} strip yet. Use ADD IN PICKS from that mode, or add a manual symbol above.</div>',
+                            unsafe_allow_html=True,
+                        )
+                        continue
+
+                    for idx, symbol in enumerate(bucket_symbols):
+                        row_col, meta_col, remove_col = st.columns([2.1, 2.8, 1], gap="small")
+                        with row_col:
+                            st.markdown(
+                                (
+                                    f'<div class="tmr-v2-row-symbol">{html.escape(symbol)}</div>'
+                                    f'<div class="tmr-v2-row-meta">{html.escape(label)} strip</div>'
+                                ),
+                                unsafe_allow_html=True,
+                            )
+                        with meta_col:
+                            st.markdown(
+                                (
+                                    '<div class="tmr-v2-row-meta">'
+                                    f'Auto-routed from {html.escape(label)} results and stored permanently until removed.'
+                                    '</div>'
+                                ),
+                                unsafe_allow_html=True,
+                            )
+                        with remove_col:
+                            remove_clicked = st.button(
+                                "Remove",
+                                key=f"tmr_v2_remove_{bucket}_{idx}",
+                                use_container_width=True,
+                            )
+                        if remove_clicked:
+                            updated_sections = {
+                                name: list(values)
+                                for name, values in sections.items()
+                            }
+                            updated_sections[bucket] = [
+                                saved_symbol
+                                for saved_symbol in bucket_symbols
+                                if saved_symbol != symbol
+                            ]
+                            store["sections"] = _apply_tomorrow_sections_limit(updated_sections, limit=20)
+                            store["picks"] = _tomorrow_flatten_sections(store["sections"], limit=20)
+                            _persist_tomorrow_store(store)
+                            st.rerun()
+
+        with right_col:
+            with st.container():
+                st.markdown('<div class="tmr-v2-notes-anchor"></div>', unsafe_allow_html=True)
+                st.markdown('<div class="tmr-v2-notes-title">Notes</div>', unsafe_allow_html=True)
+                st.markdown(
+                    (
+                        '<div class="tmr-v2-notes-caption">'
+                        'Keep your thesis, entry logic, invalidation, or reminders here. '
+                        'Notes stay linked to the four-strip Tomorrow Picks board.'
+                        '</div>'
+                    ),
+                    unsafe_allow_html=True,
+                )
+                if notes_feedback_msg:
+                    status_html = (
+                        f'<div class="tmr-v2-notes-status tmr-v2-notes-status-{notes_feedback_kind}">'
+                        f'<strong>{html.escape(notes_feedback_msg)}</strong>'
+                        f'{f"<br><span>Checked at {html.escape(notes_feedback_at)}</span>" if notes_feedback_at else ""}'
+                        '</div>'
+                    )
+                else:
+                    default_note_status = (
+                        "Saved notes are ready to edit."
+                        if saved_notes.strip()
+                        else "No saved notes yet. Add one and click Save Notes."
+                    )
+                    status_html = (
+                        '<div class="tmr-v2-notes-status tmr-v2-notes-status-info">'
+                        f'<strong>{html.escape(default_note_status)}</strong>'
+                        '<br><span>The panel verifies storage after each note save.</span>'
+                        '</div>'
+                    )
+                st.markdown(status_html, unsafe_allow_html=True)
+
+                with st.form("tmr_notes_form_v2", clear_on_submit=False):
+                    notes_value = st.text_area(
+                        "Notes",
+                        key="tmr_notes_area",
+                        height=360,
+                        placeholder="Example: Relax strip for slower continuation names, Breakout strip for radar/live pulse setups, invalidation below EMA20, partial profit zones...",
+                        label_visibility="collapsed",
+                    )
+                    notes_btn_col, notes_reset_col = st.columns(2, gap="small")
+                    with notes_btn_col:
+                        save_notes_clicked = st.form_submit_button(
+                            "Save Notes",
+                            use_container_width=True,
+                        )
+                    with notes_reset_col:
+                        reset_notes_clicked = st.form_submit_button(
+                            "Revert Saved",
+                            use_container_width=True,
+                        )
+
+                if reset_notes_clicked:
+                    st.session_state["tmr_notes_area"] = saved_notes
+                    _set_tomorrow_notes_feedback("info", "Reverted notes back to the last saved version.")
+                    st.rerun()
+                if save_notes_clicked:
+                    if notes_value == store["notes"]:
+                        _set_tomorrow_notes_feedback("info", "Notes already match the saved version.")
+                    else:
+                        store["notes"] = notes_value
+                        _persist_tomorrow_store(store)
+                        verified, verified_mode = _verify_tomorrow_notes_saved(notes_value)
+                        if verified:
+                            target_name = "Google Sheets" if verified_mode == "cloud" else "local storage"
+                            _set_tomorrow_notes_feedback("success", f"Notes saved and verified in {target_name}.")
+                        else:
+                            _set_tomorrow_notes_feedback("error", "Save was attempted, but verification did not confirm the notes in storage.")
+                    st.rerun()
+
+                st.markdown(
+                    f'<div class="tmr-v2-notes-helper">Words saved: {notes_words}. Tip: keep strip-specific notes here so Relax, Swing, Intraday, and Breakout decisions stay in one place.</div>',
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.button(
+            "Close",
+            key="tmr_picks_close_btn_v2",
+            use_container_width=True,
+            on_click=_close_tomorrow_picks_panel,
+        )
+
+
+def render_tomorrow_picks_ticker_strip() -> None:
+    store, _storage_mode = _load_tomorrow_store()
+    sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+
+    st.markdown(
+        """
+        <style>
+        .tmr-board-shell {
+          border:1px solid rgba(86,118,150,0.34);
+          border-radius:22px;
+          padding:18px 18px 14px 18px;
+          background:
+            radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 26%),
+            linear-gradient(180deg, rgba(10,17,27,0.97), rgba(6,10,17,0.99));
+          box-shadow:
+            0 18px 36px rgba(0,0,0,0.18),
+            inset 0 0 0 1px rgba(255,255,255,0.02);
+          margin:10px 0 4px 0;
+        }
+        .tmr-board-header {
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:14px;
+          flex-wrap:wrap;
+          margin-bottom:12px;
+        }
+        .tmr-board-title {
+          font-family:'Syne',sans-serif;
+          font-size:18px;
+          font-weight:800;
+          letter-spacing:1px;
+          text-transform:uppercase;
+          color:#f0b429;
+        }
+        .tmr-board-copy {
+          font-size:11px;
+          color:#88a8c7;
+        }
+        .tmr-board-row {
+          display:grid;
+          grid-template-columns:minmax(140px, 180px) 1fr;
+          gap:14px;
+          align-items:flex-start;
+          padding:12px 0;
+          border-top:1px solid rgba(42,61,86,0.46);
+        }
+        .tmr-board-row:first-of-type {
+          border-top:none;
+          padding-top:0;
+        }
+        .tmr-board-label-wrap {
+          display:flex;
+          flex-direction:column;
+          gap:5px;
+        }
+        .tmr-board-label {
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          width:max-content;
+          padding:8px 12px;
+          border-radius:999px;
+          border:1px solid color-mix(in srgb, var(--tmr-accent) 34%, rgba(255,255,255,0.12));
+          background:rgba(9,15,24,0.88);
+          color:#f4f8ff;
+          font-size:12px;
+          font-weight:800;
+          letter-spacing:0.5px;
+          text-transform:uppercase;
+        }
+        .tmr-board-label-count {
+          color:var(--tmr-accent);
+        }
+        .tmr-board-caption {
+          font-size:11px;
+          line-height:1.45;
+          color:#7f9cbc;
+        }
+        .tmr-board-items {
+          display:flex;
+          flex-wrap:wrap;
+          gap:8px;
+        }
+        .tmr-board-chip {
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          padding:9px 12px;
+          border-radius:999px;
+          border:1px solid color-mix(in srgb, var(--tmr-accent) 28%, rgba(72,102,134,0.30));
+          background:linear-gradient(180deg, rgba(13,22,33,0.94), rgba(9,15,24,0.98));
+          color:#dce7f4;
+          font-size:12px;
+          font-weight:700;
+        }
+        .tmr-board-chip-badge {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:34px;
+          padding:4px 8px;
+          border-radius:999px;
+          background:rgba(9,28,36,0.92);
+          color:var(--tmr-accent);
+          border:1px solid color-mix(in srgb, var(--tmr-accent) 32%, rgba(255,255,255,0.10));
+          font-size:10px;
+          letter-spacing:0.8px;
+          text-transform:uppercase;
+        }
+        .tmr-board-empty {
+          display:inline-flex;
+          align-items:center;
+          min-height:40px;
+          padding:0 2px;
+          color:#6f8ba8;
+          font-size:12px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    rows_html: list[str] = []
+    for bucket in _TOMORROW_SECTION_ORDER:
+        meta = dict(_TOMORROW_SECTION_META.get(bucket, {}))
+        label = html.escape(str(meta.get("label", bucket.title()) or bucket.title()))
+        caption = html.escape(str(meta.get("caption", "") or ""))
+        accent = str(meta.get("accent", "#00d4a8") or "#00d4a8")
+        bucket_symbols = list(sections.get(bucket, []))
+        if bucket_symbols:
+            items_html = "".join(
+                (
+                    '<span class="tmr-board-chip">'
+                    '<span class="tmr-board-chip-badge">NSE</span>'
+                    f'{html.escape(symbol)}'
+                    '</span>'
+                )
+                for symbol in bucket_symbols
+            )
+        else:
+            items_html = f'<span class="tmr-board-empty">No picks saved in the {label} strip yet.</span>'
+
+        rows_html.append(
+            (
+                f'<div class="tmr-board-row" style="--tmr-accent:{accent};">'
+                '<div class="tmr-board-label-wrap">'
+                f'<div class="tmr-board-label">{label} <span class="tmr-board-label-count">{len(bucket_symbols)}</span></div>'
+                f'<div class="tmr-board-caption">{caption}</div>'
+                '</div>'
+                f'<div class="tmr-board-items">{items_html}</div>'
+                '</div>'
+            )
+        )
+
+    st.markdown(
+        (
+            '<div class="tmr-board-shell">'
+            '<div class="tmr-board-header">'
+            '<div class="tmr-board-title">Tomorrow\'s Picks Board</div>'
+            '<div class="tmr-board-copy">Grouped live by strategy strip: Relax, Swing, Intraday, and Breakout.</div>'
+            '</div>'
+            + "".join(rows_html)
+            + '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 st.set_page_config(
     page_title="NSE Sentinel — Stock Scanner",
     page_icon="📡",
@@ -6044,6 +6987,7 @@ if _show_home_scanner and "results" in st.session_state:
                 _tomorrow_symbols,
                 key_prefix=f"scan_top3_mode_{stored_mode}",
                 scope_label="main scan",
+                bucket=_tomorrow_bucket_for_mode(stored_mode),
                 helper_text="Add these top scan picks into Tomorrow's Picks and keep them saved until you remove them.",
             )
 
@@ -6077,6 +7021,7 @@ if _BREAKOUT_SECTION_OK:
         _CSV_NEXT_DAY_ENGINE_OK=_CSV_NEXT_DAY_ENGINE_OK,
         _DATA_DOWNLOADER_OK=_DATA_DOWNLOADER_OK,
         _BREAKOUT_RADAR_OK=_BREAKOUT_RADAR_OK,
+        render_add_in_picks_actions=_render_add_in_picks_actions,
     )
 else:
     _csv_panel_open = bool(st.session_state.get("csv_next_day_show_panel", False))
@@ -6338,6 +7283,7 @@ else:
             [_w_sym],
             key_prefix=f"battle_winner_{_normalize_tomorrow_symbol(_w_sym) or 'stock'}",
             scope_label="Compare Stocks winner",
+            bucket=_tomorrow_bucket_for_mode(st.session_state.get("mode", 3)),
             helper_text="Add the current battle winner into Tomorrow's Picks without reopening the compare view.",
         )
 

@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 
 import threading
+from html import escape
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Any
@@ -120,6 +121,18 @@ def _status_card(title: str, value: str, caption: str, accent: str) -> str:
     )
 
 
+def _insight_card(title: str, value: str, caption: str, accent: str) -> str:
+    return (
+        f'<div style="background:linear-gradient(180deg,#0d1521 0%,#0b1017 100%);'
+        f'border:1px solid {accent}2b;border-radius:14px;padding:14px 16px;min-height:102px;">'
+        f'<div style="font-size:10px;color:#4a6480;letter-spacing:1.2px;text-transform:uppercase;'
+        f'margin-bottom:8px;">{escape(title)}</div>'
+        f'<div style="font-size:18px;font-weight:900;color:{accent};line-height:1.15;margin-bottom:8px;">{escape(value)}</div>'
+        f'<div style="font-size:11px;color:#8ab4d8;line-height:1.55;">{escape(caption)}</div>'
+        '</div>'
+    )
+
+
 def _source_color(primary_source: str) -> str:
     source = str(primary_source or "").strip().upper()
     if source == "LIVE ONLY":
@@ -147,6 +160,142 @@ def _safe_dt_label(value: object) -> str:
         return dt.strftime("%d %b %Y, %I:%M:%S %p IST")
     except Exception:
         return str(value)
+
+
+def _pretty_label(value: object, fallback: str = "N/A") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    return text.replace("_", " ").replace("+", " + ").title()
+
+
+def _prediction_conviction_card(pred: dict[str, Any]) -> tuple[str, str, str]:
+    prob = float(pred.get("bullish_probability", 50.0) or 50.0)
+    conf = float(pred.get("confidence", 50.0) or 50.0)
+    coverage_quality = str(pred.get("coverage_quality", "MEDIUM") or "MEDIUM").strip().upper()
+    probability_model = _pretty_label(pred.get("probability_model", "base"), fallback="Base")
+    directional_gap = abs(prob - 50.0)
+
+    if coverage_quality == "VERY_LOW":
+        return (
+            "Low Reliability",
+            f"Coverage is very low. Treat this as a weak read. Model: {probability_model}.",
+            "#ff4d6d",
+        )
+    if coverage_quality == "LOW":
+        return (
+            "Guarded Read",
+            f"Coverage is low, so the directional edge can change quickly. Model: {probability_model}.",
+            "#f0b429",
+        )
+    if conf >= 70 and directional_gap >= 12:
+        return (
+            "High Conviction",
+            f"Strong signal agreement and cleaner coverage. Model: {probability_model}.",
+            "#00d4a8",
+        )
+    if conf >= 58 and directional_gap >= 8:
+        return (
+            "Medium Conviction",
+            f"Usable directional edge, but still probabilistic. Model: {probability_model}.",
+            "#0094ff",
+        )
+    return (
+        "Low Edge",
+        f"Probability is near balance or confidence is modest. Model: {probability_model}.",
+        "#8ab4d8",
+    )
+
+
+def _result_insight_cards(result: dict[str, Any], pred: dict[str, Any]) -> list[str]:
+    meta = result.get("scan_meta", {}) if isinstance(result, dict) else {}
+    profile = meta.get("profile", {}) if isinstance(meta, dict) else {}
+    source = str(profile.get("primary_source", "NO DATA") or "NO DATA")
+    source_accent = _source_color(source)
+    captured_at = str(profile.get("captured_at", "") or "").strip() or str(meta.get("refreshed_at", "Not yet") or "Not yet")
+    market_date = str(profile.get("market_date", "-") or "-")
+    market_window = str(profile.get("window", "-") or "-")
+    live_count = int(profile.get("live", 0) or 0)
+    csv_count = int(profile.get("csv", 0) or 0)
+    missing_count = int(profile.get("missing", 0) or 0)
+    coverage_quality = _pretty_label(pred.get("coverage_quality", "MEDIUM"), fallback="Medium")
+    signal_quality = _pretty_label(pred.get("signal_quality", "MEDIUM"), fallback="Medium")
+    conviction_value, conviction_caption, conviction_accent = _prediction_conviction_card(pred)
+
+    return [
+        _insight_card(
+            "Data Trust",
+            source,
+            f"Live {live_count} | CSV {csv_count} | Missing {missing_count}",
+            source_accent,
+        ),
+        _insight_card(
+            "Captured",
+            captured_at,
+            f"Market date {market_date} | Window {market_window}",
+            "#8ab4d8",
+        ),
+        _insight_card(
+            "Prediction Basis",
+            _pretty_label(pred.get("probability_model", "base"), fallback="Base"),
+            f"Coverage {coverage_quality} | Signal {signal_quality}",
+            "#0094ff",
+        ),
+        _insight_card(
+            "Conviction",
+            conviction_value,
+            conviction_caption,
+            conviction_accent,
+        ),
+    ]
+
+
+def _top_stock_card(stock: dict[str, Any]) -> str:
+    symbol = escape(str(stock.get("symbol", "-") or "-"))
+    signal = escape(str(stock.get("signal", "-") or "-"))
+    grade = escape(str(stock.get("grade", "-") or "-"))
+    score = float(stock.get("score", 0.0) or 0.0)
+    conf = float(stock.get("conf", 0.0) or 0.0)
+    accent = _prob_color(score)
+    return (
+        f'<div style="background:linear-gradient(180deg,#0f1923 0%,#0b1017 100%);'
+        f'border:1px solid {accent}2f;border-radius:14px;padding:14px 16px;min-height:118px;">'
+        f'<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">'
+        f'<div style="font-size:18px;font-weight:900;color:#ccd9e8;">{symbol}</div>'
+        f'<div style="font-size:22px;font-weight:900;color:{accent};">{score:.1f}</div>'
+        f'</div>'
+        f'<div style="font-size:11px;color:#8ab4d8;margin:8px 0 10px 0;">{signal}</div>'
+        f'<div style="display:flex;gap:14px;flex-wrap:wrap;">'
+        f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;">Grade</div>'
+        f'<div style="font-size:13px;font-weight:800;color:#f0b429;">{grade}</div></div>'
+        f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;">Conf</div>'
+        f'<div style="font-size:13px;font-weight:800;color:#0094ff;">{conf:.0f}%</div></div>'
+        f'</div></div>'
+    )
+
+
+def _top_sector_card(row: dict[str, Any]) -> str:
+    sector = escape(str(row.get("Sector", "-") or "-"))
+    prediction = escape(str(row.get("Prediction", "SIDEWAYS") or "SIDEWAYS"))
+    probability = float(row.get("Probability %", 50.0) or 50.0)
+    confidence = float(row.get("Confidence %", 40.0) or 40.0)
+    coverage = float(row.get("Coverage %", 0.0) or 0.0)
+    accent = _pred_color(prediction)
+    return (
+        f'<div style="background:linear-gradient(180deg,#0f1923 0%,#0b1017 100%);'
+        f'border:1px solid {accent}30;border-radius:14px;padding:14px 16px;min-height:122px;">'
+        f'<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">'
+        f'<div style="font-size:17px;font-weight:900;color:#ccd9e8;">{sector}</div>'
+        f'<div style="font-size:22px;font-weight:900;color:{_prob_color(probability)};">{probability:.0f}%</div>'
+        f'</div>'
+        f'<div style="font-size:11px;color:{accent};margin:8px 0 10px 0;">{prediction}</div>'
+        f'<div style="display:flex;gap:14px;flex-wrap:wrap;">'
+        f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;">Confidence</div>'
+        f'<div style="font-size:13px;font-weight:800;color:#0094ff;">{confidence:.0f}%</div></div>'
+        f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;">Coverage</div>'
+        f'<div style="font-size:13px;font-weight:800;color:#22c55e;">{coverage:.0f}%</div></div>'
+        f'</div></div>'
+    )
 
 
 def _build_data_profile(symbols: list[str] | tuple[str, ...] | None) -> dict[str, Any]:
@@ -1088,6 +1237,7 @@ def render_sector_screener_dashboard(
         market_date = str(profile.get("market_date", "—"))
         window = str(profile.get("window", "—"))
         refreshed_at = str(meta.get("refreshed_at", "Not yet"))
+        captured_at = str(profile.get("captured_at", "") or "").strip()
         live_count = int(profile.get("live", 0))
         csv_count = int(profile.get("csv", 0))
         missing_count = int(profile.get("missing", 0))
@@ -1100,6 +1250,7 @@ def render_sector_screener_dashboard(
             + _pill(f"{missing_count} missing", "#ff4d6d", "15")
             + _pill(f"Market date {market_date}", "#8ab4d8", "15")
             + _pill(f"Window {window}", "#8ab4d8", "15")
+            + (_pill(f"Captured {captured_at}", "#22c55e", "15") if captured_at else "")
             + _pill(policy, "#0094ff", "15")
             + _pill(refreshed_at, "#8ab4d8", "15")
             + '</div>'
@@ -1122,6 +1273,10 @@ def render_sector_screener_dashboard(
         if _last_profile else
         "Will populate after the next sector scan."
     )
+    if _last_profile:
+        _market_date_caption = (
+            f"Window {str(_last_profile.get('window', 'â€”'))} â€¢ Captured {str(_last_profile.get('captured_at', 'Not yet'))}"
+        )
     _refresh_value = str(_last_refresh_meta.get("refreshed_at", "Not yet")) if isinstance(_last_refresh_meta, dict) else "Not yet"
     _refresh_caption = (
         f"{'Live refresh requested' if _last_refresh_meta.get('live_requested') else 'Shared cache reuse allowed'} • Scope {_last_refresh_meta.get('scope', '—')}"
@@ -1172,9 +1327,20 @@ def render_sector_screener_dashboard(
             'padding:12px 14px;font-size:12px;color:#8ab4d8;line-height:1.7;">'
             f'<b style="color:#ccd9e8;">Live refresh behavior:</b> '
             f'{"Disabled while Time Travel is active." if _tt_live_blocked else "Clears sector caches, refreshes market bias, and re-downloads the selected basket from the live loader path."}'
+            f'<br><b style="color:#ccd9e8;">Prediction meaning:</b> Probability is a directional confidence score built from coverage, signal quality, and sector/index agreement. It is not a guaranteed hit rate.'
             '</div>',
             unsafe_allow_html=True,
         )
+
+    st.markdown(
+        '<div style="background:linear-gradient(90deg,#0b1017 0%,#101a28 100%);'
+        'border:1px solid #16324a;border-radius:14px;padding:14px 16px;margin:14px 0 18px 0;">'
+        '<div style="font-size:11px;color:#4a6480;letter-spacing:1.1px;text-transform:uppercase;margin-bottom:6px;">Reality Check</div>'
+        '<div style="font-size:13px;color:#ccd9e8;line-height:1.7;">'
+        'Use <b>Refresh Live</b> when you want the newest loader path data. The source pills below will tell you whether the basket is live, mixed, or CSV-backed, and the probability card should be read as a directional edge rather than a guaranteed next-day outcome.'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
 
     if _close_clicked:
         st.session_state["ss_screener_active_sector"] = None
@@ -1373,6 +1539,11 @@ def render_sector_screener_dashboard(
                 unsafe_allow_html=True,
             )
 
+            _overall_insight_cols = st.columns(4)
+            for _col, _markup in zip(_overall_insight_cols, _result_insight_cards(_res, _pred)):
+                with _col:
+                    st.markdown(_markup, unsafe_allow_html=True)
+
             _mcols = st.columns(7)
             with _mcols[0]:
                 st.metric("Unique Stocks", f"{int(_res.get('requested_count', 0)):,}")
@@ -1424,6 +1595,13 @@ def render_sector_screener_dashboard(
             )
             if _sector_rows:
                 _sector_df = pd.DataFrame(_sector_rows).sort_values("Probability %", ascending=False, kind="stable")
+                _top_sector_cards = _sector_df.head(3).to_dict("records")
+                if _top_sector_cards:
+                    _top_sector_cols = st.columns(len(_top_sector_cards))
+                    for _col, _row in zip(_top_sector_cols, _top_sector_cards):
+                        with _col:
+                            st.markdown(_top_sector_card(_row), unsafe_allow_html=True)
+                    st.markdown("<br>", unsafe_allow_html=True)
                 st.dataframe(_sector_df, width="stretch", hide_index=True)
 
             with st.expander(f"📋 All Covered Symbols — {len(_symbols)} unique", expanded=False):
@@ -1477,6 +1655,11 @@ def render_sector_screener_dashboard(
                 unsafe_allow_html=True,
             )
 
+            _sector_insight_cols = st.columns(4)
+            for _col, _markup in zip(_sector_insight_cols, _result_insight_cards(_res, _pred)):
+                with _col:
+                    st.markdown(_markup, unsafe_allow_html=True)
+
             _mcols = st.columns(8)
             with _mcols[0]:
                 st.metric("Universe Size", f"{int(_res.get('requested_count', 0)):,}")
@@ -1506,6 +1689,12 @@ def render_sector_screener_dashboard(
                 unsafe_allow_html=True,
             )
             if _top_stocks:
+                _top_stock_cards = _top_stocks[:3]
+                _top_stock_cols = st.columns(len(_top_stock_cards))
+                for _col, _stock in zip(_top_stock_cols, _top_stock_cards):
+                    with _col:
+                        st.markdown(_top_stock_card(_stock), unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
                 st.dataframe(
                     pd.DataFrame([
                         {
@@ -1680,6 +1869,17 @@ def render_sector_screener_dashboard(
             unsafe_allow_html=True,
         )
         st.dataframe(pd.DataFrame(_all_rows), width="stretch", hide_index=True)
+        _rankable_rows = [row for row in _all_rows if str(row.get("Sector", "")).strip().lower() != "overall"]
+        _top_sector_summary = _rankable_rows[:3]
+        if _top_sector_summary:
+            st.markdown(
+                '<div style="font-size:13px;font-weight:800;color:#8ab4d8;margin:12px 0 8px;">Top Sector Reads</div>',
+                unsafe_allow_html=True,
+            )
+            _summary_cols = st.columns(len(_top_sector_summary))
+            for _col, _row in zip(_summary_cols, _top_sector_summary):
+                with _col:
+                    st.markdown(_top_sector_card(_row), unsafe_allow_html=True)
 
         _overall_result = st.session_state.get("ss_screener_all_overall")
         if _overall_result and _overall_result.get("pred"):
