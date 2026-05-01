@@ -3476,9 +3476,295 @@ h1 {
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────
-# PERFORMANCE-SAFE ANIMATIONS  (GPU-only: transform + opacity)
-# Uses will-change to stay on compositor thread → zero repaints
+# UI BUG FIXES + PERFORMANCE-SAFE ANIMATIONS
 # ─────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* ════════════════════════════════════════════════════════════
+   FIX 1: Hide Streamlit's internal toolbar icon text
+   (The "keyboard_double" / raw icon text appearing in sidebar)
+   ════════════════════════════════════════════════════════════ */
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stHeader"] { display: none !important; }
+
+/* Hide any raw material icon text leaking into the UI */
+.stApp > header { display: none !important; }
+
+/* ════════════════════════════════════════════════════════════
+   FIX 2: Metric cards — stop text truncation
+   ════════════════════════════════════════════════════════════ */
+[data-testid="stMetric"] {
+  overflow: visible !important;
+  min-width: 0 !important;
+}
+[data-testid="stMetricLabel"] {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  font-size: 10px !important;
+  line-height: 1.4 !important;
+  word-break: break-word !important;
+}
+[data-testid="stMetricValue"] {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: clamp(1.4rem, 3vw, 2rem) !important;
+}
+
+/* ════════════════════════════════════════════════════════════
+   FIX 3: Smooth scan loading panel (no jarring white flash)
+   ════════════════════════════════════════════════════════════ */
+[data-testid="stSpinner"] > div {
+  background: rgba(8, 12, 20, 0.9) !important;
+  border: 1px solid var(--border2) !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  backdrop-filter: blur(10px) !important;
+}
+/* Progress bar — styled neon sweep */
+[data-testid="stProgressBar"] > div {
+  background: rgba(26, 36, 54, 0.8) !important;
+  border-radius: 6px !important;
+  height: 8px !important;
+  overflow: hidden !important;
+}
+[data-testid="stProgressBar"] > div > div {
+  background: linear-gradient(90deg, #00e6b8, #00a3ff, #00e6b8) !important;
+  background-size: 200% 100% !important;
+  border-radius: 6px !important;
+  animation: _sentProgressFlow 1.8s linear infinite !important;
+  will-change: background-position !important;
+}
+@keyframes _sentProgressFlow {
+  0%   { background-position: 0%   50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   FIX 4: No stutter — remove animation from stMain entirely
+   (page-in animation was causing full-flash on every scan click)
+   ════════════════════════════════════════════════════════════ */
+[data-testid="stMain"],
+[data-testid="stAppViewContainer"],
+[data-testid="stMainBlockContainer"] {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════
+   FIX 5: Sidebar — no stutter animation on rerun
+   ════════════════════════════════════════════════════════════ */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] *,
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* ════════════════════════════════════════════════════════════
+   KEYFRAMES — GPU-only (transform + opacity only)
+   ════════════════════════════════════════════════════════════ */
+
+@keyframes _sentFadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes _sentNeonPulse {
+  0%,100% { opacity: 1;    }
+  50%      { opacity: 0.5; }
+}
+@keyframes _sentLiveDot {
+  0%,100% { transform: scale(1);    opacity: 1;    }
+  50%      { transform: scale(1.55); opacity: 0.4; }
+}
+@keyframes _sentTicker {
+  from { transform: translateX(0);    }
+  to   { transform: translateX(-50%); }
+}
+@keyframes _sentFloat {
+  0%,100% { transform: translateY(0);    }
+  50%      { transform: translateY(-5px); }
+}
+@keyframes _sentSweep {
+  0%   { transform: translateX(-100%); opacity: 0.6; }
+  100% { transform: translateX(400%);  opacity: 0;   }
+}
+
+/* ════════════════════════════════════════════════════════════
+   APPLY ANIMATIONS
+   ════════════════════════════════════════════════════════════ */
+
+/* Cards fade in — only on FIRST paint (one-shot, no infinite) */
+.pick-card, .breakdown-box {
+  animation: _sentFadeUp 0.42s cubic-bezier(0.22, 0.68, 0, 1.2) both;
+  will-change: transform, opacity;
+}
+.pick-card:nth-child(1) { animation-delay: 0.00s; }
+.pick-card:nth-child(2) { animation-delay: 0.06s; }
+.pick-card:nth-child(3) { animation-delay: 0.12s; }
+.pick-card:nth-child(4) { animation-delay: 0.18s; }
+.pick-card:nth-child(5) { animation-delay: 0.24s; }
+.pick-card:nth-child(6) { animation-delay: 0.30s; }
+
+/* Neon badge pulse — infinite but opacity-only */
+.sig-buy, .count-pill {
+  animation: _sentNeonPulse 2.8s ease-in-out infinite;
+  will-change: opacity;
+}
+
+/* Live dot breathes */
+.live-dot {
+  animation: _sentLiveDot 2s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* Ticker strip */
+.ticker-strip-inner {
+  animation: _sentTicker 32s linear infinite;
+  will-change: transform;
+}
+.ticker-strip:hover .ticker-strip-inner {
+  animation-play-state: paused;
+}
+
+/* Winner/top-pick float */
+.winner-card {
+  animation: _sentFloat 6s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Scanner header sweep */
+.scan-header-wrap { position: relative; overflow: hidden; }
+.scan-header-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 28%;
+  background: linear-gradient(90deg, transparent, rgba(0,230,184,0.1), transparent);
+  animation: _sentSweep 2.8s ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* Button hover shimmer — pure CSS, no JS */
+.stButton > button { overflow: hidden; position: relative; }
+.stButton > button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+  transform: translateX(-110%);
+  will-change: transform;
+}
+.stButton > button:hover::after {
+  transform: translateX(110%);
+  transition: transform 0.5s ease;
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# JS: Scroll-reveal via IntersectionObserver
+# KEY FIX: uses sessionStorage to track which elements have already been
+# revealed, so Streamlit reruns (on scan click etc.) do NOT re-hide them.
+components.html("""
+<script>
+(function(){
+  "use strict";
+  const STORE_KEY = "sent_revealed";
+  const CSS = `
+    .sent-hidden {
+      opacity: 0;
+      transform: translateY(16px);
+      will-change: transform, opacity;
+      transition: opacity 0.42s ease, transform 0.42s cubic-bezier(0.22,0.68,0,1.18);
+    }
+    .sent-visible {
+      opacity: 1 !important;
+      transform: translateY(0) !important;
+    }
+  `;
+  const s = document.createElement("style");
+  s.textContent = CSS;
+  document.head.appendChild(s);
+
+  // Build a set of already-revealed element signatures from sessionStorage
+  let revealed;
+  try { revealed = new Set(JSON.parse(sessionStorage.getItem(STORE_KEY) || "[]")); }
+  catch(e) { revealed = new Set(); }
+
+  function sig(el) {
+    // Unique-enough signature: tag + class + text snippet
+    return el.tagName + ":" + (el.dataset.testid||"") + ":" + (el.innerText||"").slice(0,30);
+  }
+
+  function saveRevealed() {
+    try { sessionStorage.setItem(STORE_KEY, JSON.stringify([...revealed].slice(-200))); }
+    catch(e){}
+  }
+
+  const TARGETS = [
+    "[data-testid='stMetric']",
+    ".pick-card",
+    ".breakdown-box",
+    "[data-testid='stDataFrame']",
+    "[data-testid='stAlert']",
+    "[data-testid='stExpander']",
+  ].join(",");
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      e.target.classList.remove("sent-hidden");
+      e.target.classList.add("sent-visible");
+      revealed.add(sig(e.target));
+      saveRevealed();
+      io.unobserve(e.target);
+    });
+  }, { threshold: 0.06 });
+
+  function observe() {
+    document.querySelectorAll(TARGETS).forEach(el => {
+      if (el.dataset.sentObs) return;
+      el.dataset.sentObs = "1";
+      // If this element was already revealed in this session → show instantly
+      if (revealed.has(sig(el))) {
+        el.classList.add("sent-visible");
+      } else {
+        el.classList.add("sent-hidden");
+        io.observe(el);
+      }
+    });
+  }
+
+  const mo = new MutationObserver(observe);
+
+  function boot() {
+    observe();
+    const root = document.querySelector(".stApp") || document.body;
+    mo.observe(root, { childList: true, subtree: true });
+  }
+
+  document.readyState === "loading"
+    ? document.addEventListener("DOMContentLoaded", boot)
+    : boot();
+})();
+</script>
+""", height=0, width=0)
+
+
 st.markdown("""
 <style>
 /* ════════════════════════════════════════════════
