@@ -56,6 +56,17 @@ def _previous_weekday(day: date) -> date:
     return cur
 
 
+def _recent_market_days(anchor: date, count: int = 3) -> list[date]:
+    days: list[date] = []
+    cur = anchor
+    limit = max(1, int(count))
+    while len(days) < limit:
+        if cur.weekday() < 5:
+            days.append(cur)
+        cur -= timedelta(days=1)
+    return days
+
+
 def _available_snapshot_dates() -> list[date]:
     dates: list[date] = []
     try:
@@ -119,6 +130,40 @@ def get_expected_data_date() -> date:
 
     fallback = _latest_snapshot_on_or_before(baseline)
     return fallback or baseline
+
+
+def get_acceptable_data_dates() -> list[date]:
+    """
+    Return a short list of valid market dates for daily OHLCV freshness checks.
+
+    Yahoo daily candles can lag the calendar on exchange holidays or shortly
+    after the close, so we allow the most recent few trading sessions instead
+    of rejecting otherwise valid last-available market data.
+    """
+    now_ist = _now_ist()
+    today = now_ist.date()
+    window = get_current_window()
+
+    if window in ("LIVE", "CLOSED"):
+        primary = _recent_market_days(today, count=3)
+    elif window == "PRE_MARKET":
+        primary = _recent_market_days(_previous_weekday(today - timedelta(days=1)), count=3)
+    else:
+        primary = _recent_market_days(_previous_weekday(today), count=3)
+
+    snapshot_fallback = _latest_snapshot_on_or_before(today)
+    snapshot_days = []
+    if snapshot_fallback is not None and (today - snapshot_fallback).days <= 7:
+        snapshot_days = _recent_market_days(snapshot_fallback, count=2)
+
+    ordered: list[date] = []
+    seen: set[date] = set()
+    for day in primary + snapshot_days:
+        if day in seen:
+            continue
+        seen.add(day)
+        ordered.append(day)
+    return ordered
 
 
 def stamp_frame_metadata(
@@ -215,7 +260,7 @@ def is_data_fresh(df: pd.DataFrame) -> bool:
         return False
 
     try:
-        return last_seen == get_expected_data_date()
+        return last_seen in set(get_acceptable_data_dates())
     except Exception:
         return False
 

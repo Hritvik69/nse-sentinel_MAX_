@@ -42,7 +42,7 @@ import yfinance as yf
 
 try:
     from strategy_engines._engine_utils import (
-        ema, rsi_vec, safe, get_df_for_ticker, preload_all, ALL_DATA,
+        ema, rsi_vec, safe, get_df_for_ticker, preload_all, ALL_DATA, _ALL_DATA_LOCK,
     )
     _EU_OK = True
 except Exception:
@@ -51,6 +51,7 @@ except Exception:
     import numpy as _np
     import pandas as _pd
     ALL_DATA: dict = {}  # type: ignore[assignment]
+    _ALL_DATA_LOCK = threading.Lock()
     def ema(series, period):          return series  # type: ignore[misc]
     def rsi_vec(close, period=14):    return _pd.Series([50.0] * len(close), index=close.index)  # type: ignore[misc]
     def safe(v, default=0.0):         # type: ignore[misc]
@@ -420,6 +421,19 @@ def _build_stock_row_cached(ticker_ns: str, mode: int) -> dict | None:
         return row
     except Exception:
         return None
+
+
+def _discard_dashboard_row_cache_for(tickers_ns: list[str]) -> None:
+    if not tickers_ns:
+        return
+    wanted = set(tickers_ns)
+    try:
+        with _DASHBOARD_STOCK_ROW_CACHE_LOCK:
+            stale_keys = [key for key in _DASHBOARD_STOCK_ROW_CACHE if len(key) > 1 and key[1] in wanted]
+            for key in stale_keys:
+                _DASHBOARD_STOCK_ROW_CACHE.pop(key, None)
+    except Exception:
+        pass
 
 
 def _is_bullish(row: "pd.Series | dict") -> bool:
@@ -1529,6 +1543,7 @@ def _compute_dashboard_sector_stocks(sector_name: str) -> tuple[str, ...]:
 def preload_dashboard_sector_data(
     sector_name: str,
     workers: int = 12,
+    force_live_refresh: bool = False,
 ) -> list[str]:
     """
     Preload one dashboard basket once into ALL_DATA and return the deduplicated symbols.
@@ -1541,6 +1556,19 @@ def preload_dashboard_sector_data(
             return []
 
         tickers_ns = [sym if sym.endswith(".NS") else f"{sym}.NS" for sym in symbols]
+        if force_live_refresh:
+            with _ALL_DATA_LOCK:
+                for ticker_ns in tickers_ns:
+                    ALL_DATA.pop(ticker_ns, None)
+            _discard_dashboard_row_cache_for(tickers_ns)
+            preload_all(
+                tickers_ns,
+                period="6mo",
+                workers=max(1, int(workers)),
+                force_live_refresh=True,
+            )
+            return symbols
+
         missing = [ticker_ns for ticker_ns in tickers_ns if ticker_ns not in ALL_DATA]
         if missing:
             preload_all(missing, period="6mo", workers=max(1, int(workers)))
@@ -1616,6 +1644,7 @@ def build_raw_rows_for_tickers(
     mode: int = 2,
     preload_missing: bool = True,
     workers: int = 12,
+    force_live_refresh: bool = False,
 ) -> list[dict]:
     """
     Build raw rows for an explicit ticker list.
@@ -1630,24 +1659,37 @@ def build_raw_rows_for_tickers(
 
         tickers_ns = [t if t.endswith(".NS") else f"{t}.NS" for t in symbols]
         if preload_missing:
-            missing = [t for t in tickers_ns if t not in ALL_DATA]
-            if missing:
-                preload_all(missing, period="6mo", workers=max(1, int(workers)))
-                try:
-                    from time_travel_engine import (
-                        is_active as _tt_brfr_active,
-                        get_reference_date as _tt_brfr_date,
-                        truncate_df as _tt_brfr_trunc,
-                    )
-                    if _tt_brfr_active():
-                        _cutoff = _tt_brfr_date()
-                        if _cutoff is not None:
-                            for _t in missing:
-                                _df_raw = ALL_DATA.get(_t)
-                                if _df_raw is not None and not _df_raw.empty:
-                                    ALL_DATA[_t] = _tt_brfr_trunc(_df_raw, _cutoff)
-                except Exception:
-                    pass
+            if force_live_refresh:
+                with _ALL_DATA_LOCK:
+                    for ticker_ns in tickers_ns:
+                        ALL_DATA.pop(ticker_ns, None)
+                _discard_dashboard_row_cache_for(tickers_ns)
+                preload_all(
+                    tickers_ns,
+                    period="6mo",
+                    workers=max(1, int(workers)),
+                    force_live_refresh=True,
+                )
+                missing = tickers_ns
+            else:
+                missing = [t for t in tickers_ns if t not in ALL_DATA]
+                if missing:
+                    preload_all(missing, period="6mo", workers=max(1, int(workers)))
+            try:
+                from time_travel_engine import (
+                    is_active as _tt_brfr_active,
+                    get_reference_date as _tt_brfr_date,
+                    truncate_df as _tt_brfr_trunc,
+                )
+                if _tt_brfr_active():
+                    _cutoff = _tt_brfr_date()
+                    if _cutoff is not None:
+                        for _t in missing:
+                            _df_raw = ALL_DATA.get(_t)
+                            if _df_raw is not None and not _df_raw.empty:
+                                ALL_DATA[_t] = _tt_brfr_trunc(_df_raw, _cutoff)
+            except Exception:
+                pass
 
         max_workers = max(1, min(int(workers), len(symbols)))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -1666,6 +1708,7 @@ def build_dashboard_sector_raw_rows(
     mode: int = 2,
     preload_missing: bool = True,
     workers: int = 12,
+    force_live_refresh: bool = False,
 ) -> list[dict]:
     """Build raw rows for one broad dashboard sector basket."""
     return build_raw_rows_for_tickers(
@@ -1673,4 +1716,5 @@ def build_dashboard_sector_raw_rows(
         mode=mode,
         preload_missing=preload_missing,
         workers=workers,
+        force_live_refresh=force_live_refresh,
     )

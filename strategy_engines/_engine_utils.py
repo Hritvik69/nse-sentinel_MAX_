@@ -74,6 +74,17 @@ def _dsm_fallback_expected_data_date() -> date:
     return _previous_market_day(today)
 
 
+def _dsm_fallback_acceptable_data_dates() -> list[date]:
+    now_ist = _now_ist()
+    today = now_ist.date()
+    window = _dsm_fallback_current_window()
+    if window in ("LIVE", "CLOSED"):
+        return _recent_market_days(today, count=3)
+    if window == "PRE_MARKET":
+        return _recent_market_days(_previous_market_day(today - timedelta(days=1)), count=3)
+    return _recent_market_days(_previous_market_day(today), count=3)
+
+
 def _dsm_fallback_is_data_fresh(df: pd.DataFrame | None) -> bool:
     if df is None or df.empty:
         return False
@@ -81,7 +92,7 @@ def _dsm_fallback_is_data_fresh(df: pd.DataFrame | None) -> bool:
         last_seen = pd.to_datetime(df.index[-1]).date()
     except Exception:
         return False
-    return last_seen == _dsm_fallback_expected_data_date()
+    return last_seen in set(_dsm_fallback_acceptable_data_dates())
 
 
 def _dsm_fallback_scan_plan() -> dict[str, object]:
@@ -173,6 +184,17 @@ def _previous_market_day(day: date) -> date:
     while cur.weekday() >= 5:
         cur -= timedelta(days=1)
     return cur
+
+
+def _recent_market_days(anchor: date, count: int = 3) -> list[date]:
+    days: list[date] = []
+    cur = anchor
+    limit = max(1, int(count))
+    while len(days) < limit:
+        if cur.weekday() < 5:
+            days.append(cur)
+        cur -= timedelta(days=1)
+    return days
 
 
 def _expected_live_data_date() -> date | None:

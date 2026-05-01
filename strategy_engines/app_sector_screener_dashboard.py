@@ -1,13 +1,23 @@
 import streamlit as st
 import pandas as pd
 
+import threading
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Any
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore[assignment]
+
+_IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedelta(hours=5, minutes=30))
 
 try:
     from strategy_engines.multi_index_market_bias_engine import (
         analyze_index,
         build_dashboard_sector_raw_rows,
+        clear_index_cache,
         compute_overall_market_enhanced,
         compute_sector_prediction_enhanced,
         get_dashboard_data_signature,
@@ -25,6 +35,7 @@ except ImportError:
         from multi_index_market_bias_engine import (
             analyze_index,
             build_dashboard_sector_raw_rows,
+            clear_index_cache,
             compute_overall_market_enhanced,
             compute_sector_prediction_enhanced,
             get_dashboard_data_signature,
@@ -39,6 +50,17 @@ except ImportError:
         _SSE_OK = True
     except ImportError:
         _SSE_OK = False
+        def clear_index_cache() -> None:  # type: ignore[misc]
+            return None
+
+try:
+    from strategy_engines._engine_utils import ALL_DATA, _ALL_DATA_LOCK
+except ImportError:
+    try:
+        from _engine_utils import ALL_DATA, _ALL_DATA_LOCK  # type: ignore[import]
+    except ImportError:
+        ALL_DATA: dict[str, pd.DataFrame | None] = {}  # type: ignore[assignment]
+        _ALL_DATA_LOCK = threading.Lock()
 
 
 def _pred_color(pred: str) -> str:
@@ -77,6 +99,140 @@ def _pill(text: str, color: str, bg_alpha: str = "22") -> str:
         'border-radius:999px;padding:4px 10px;font-size:11px;font-weight:800;'
         f'display:inline-block;">{text}</span>'
     )
+
+
+def _now_ist() -> datetime:
+    try:
+        return datetime.now(_IST_TZ)
+    except Exception:
+        return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+
+def _status_card(title: str, value: str, caption: str, accent: str) -> str:
+    return (
+        f'<div style="background:#0b1017;border:1px solid {accent}33;border-radius:14px;'
+        'padding:14px 16px;min-height:108px;">'
+        f'<div style="font-size:10px;color:#4a6480;letter-spacing:1.2px;text-transform:uppercase;'
+        f'margin-bottom:8px;">{title}</div>'
+        f'<div style="font-size:22px;font-weight:900;color:{accent};line-height:1.1;margin-bottom:8px;">{value}</div>'
+        f'<div style="font-size:11px;color:#8ab4d8;line-height:1.5;">{caption}</div>'
+        '</div>'
+    )
+
+
+def _source_color(primary_source: str) -> str:
+    source = str(primary_source or "").strip().upper()
+    if source == "LIVE ONLY":
+        return "#00d4a8"
+    if source == "LIVE DOMINANT":
+        return "#22c55e"
+    if source == "MIXED":
+        return "#0094ff"
+    if source == "CSV CACHE":
+        return "#f0b429"
+    if source == "NO DATA":
+        return "#ff4d6d"
+    return "#8ab4d8"
+
+
+def _safe_dt_label(value: object) -> str:
+    if value in (None, "", "None"):
+        return "Not yet"
+    try:
+        dt = pd.to_datetime(value)
+        if getattr(dt, "tzinfo", None) is None:
+            dt = dt.tz_localize(_IST_TZ)
+        else:
+            dt = dt.tz_convert(_IST_TZ)
+        return dt.strftime("%d %b %Y, %I:%M:%S %p IST")
+    except Exception:
+        return str(value)
+
+
+def _build_data_profile(symbols: list[str] | tuple[str, ...] | None) -> dict[str, Any]:
+    ordered = [str(sym).replace(".NS", "").strip().upper() for sym in (symbols or []) if str(sym).strip()]
+    profile: dict[str, Any] = {
+        "total": len(ordered),
+        "live": 0,
+        "csv": 0,
+        "unknown": 0,
+        "missing": 0,
+        "primary_source": "NO DATA",
+        "market_date": "—",
+        "window": "—",
+        "captured_at": "",
+        "loaded": 0,
+    }
+    if not ordered:
+        return profile
+
+    try:
+        with _ALL_DATA_LOCK:
+            frames = {
+                sym: ALL_DATA.get(sym if sym.endswith(".NS") else f"{sym}.NS")
+                for sym in ordered
+            }
+    except Exception:
+        frames = {}
+
+    market_dates: set[str] = set()
+    window_counts: dict[str, int] = {}
+    latest_capture = None
+
+    for sym in ordered:
+        df = frames.get(sym)
+        if df is None or getattr(df, "empty", True):
+            profile["missing"] += 1
+            continue
+
+        source = str(getattr(df, "attrs", {}).get("_nse_data_source", "") or "").strip().lower()
+        if source.startswith("live"):
+            profile["live"] += 1
+        elif source.startswith("csv"):
+            profile["csv"] += 1
+        else:
+            profile["unknown"] += 1
+
+        market_date = str(getattr(df, "attrs", {}).get("_nse_market_date", "") or "").strip()
+        if market_date:
+            market_dates.add(market_date)
+
+        window = str(getattr(df, "attrs", {}).get("_nse_window", "") or "").strip().upper()
+        if window:
+            window_counts[window] = window_counts.get(window, 0) + 1
+
+        captured_at = str(getattr(df, "attrs", {}).get("_nse_captured_at", "") or "").strip()
+        if captured_at:
+            try:
+                parsed = pd.to_datetime(captured_at)
+                if latest_capture is None or parsed > latest_capture:
+                    latest_capture = parsed
+            except Exception:
+                pass
+
+    profile["loaded"] = int(profile["total"]) - int(profile["missing"])
+    if market_dates:
+        profile["market_date"] = sorted(market_dates)[-1]
+    if window_counts:
+        profile["window"] = max(window_counts.items(), key=lambda item: item[1])[0]
+    if latest_capture is not None:
+        profile["captured_at"] = _safe_dt_label(latest_capture)
+
+    loaded = max(int(profile["loaded"]), 0)
+    if loaded <= 0:
+        primary = "NO DATA"
+    elif int(profile["live"]) == loaded and int(profile["csv"]) == 0 and int(profile["unknown"]) == 0:
+        primary = "LIVE ONLY"
+    elif int(profile["live"]) > 0 and int(profile["csv"]) == 0:
+        primary = "LIVE DOMINANT"
+    elif int(profile["live"]) > 0:
+        primary = "MIXED"
+    elif int(profile["csv"]) > 0:
+        primary = "CSV CACHE"
+    else:
+        primary = "UNKNOWN"
+    profile["primary_source"] = primary
+    return profile
 
 
 def _sector_flag_badge(pred: dict[str, Any]) -> str:
@@ -262,6 +418,9 @@ def render_sector_screener_dashboard(
         st.session_state["ss_screener_all_results"] = None
         st.session_state["ss_screener_all_overall"] = None
         st.session_state["ss_screener_sector_cache"] = {}
+        st.session_state["ss_screener_pending_live_refresh"] = None
+        st.session_state["ss_screener_pending_scan_all_live"] = False
+        st.session_state["ss_screener_last_refresh_meta"] = {}
         st.session_state["ss_screener_tt_date_guard"] = _tt_guard_key
     else:
         st.session_state.setdefault("ss_screener_active_sector", None)
@@ -270,6 +429,9 @@ def render_sector_screener_dashboard(
         st.session_state.setdefault("ss_screener_all_results", None)
         st.session_state.setdefault("ss_screener_all_overall", None)
         st.session_state.setdefault("ss_screener_sector_cache", {})
+        st.session_state.setdefault("ss_screener_pending_live_refresh", None)
+        st.session_state.setdefault("ss_screener_pending_scan_all_live", False)
+        st.session_state.setdefault("ss_screener_last_refresh_meta", {})
         st.session_state.setdefault("ss_screener_tt_date_guard", _tt_guard_key)
 
     _base_sectors = get_dashboard_sector_labels(include_overall=False)
@@ -695,7 +857,11 @@ def render_sector_screener_dashboard(
         cache = st.session_state.setdefault("ss_screener_sector_cache", {})
         mb = market_bias if isinstance(market_bias, dict) else _get_market_bias()
         if not preloaded:
-            preload_dashboard_sector_data(sector_name, workers=12)
+            preload_dashboard_sector_data(
+                sector_name,
+                workers=12,
+                force_live_refresh=force_refresh,
+            )
 
         cache_key = _sector_cache_key(sector_name, mb)
         if not force_refresh and cache_key in cache:
@@ -799,7 +965,11 @@ def render_sector_screener_dashboard(
         mb = market_bias if isinstance(market_bias, dict) else _get_market_bias()
         if precomputed_sector_results is None:
             if not preloaded:
-                preload_dashboard_sector_data("Overall", workers=12)
+                preload_dashboard_sector_data(
+                    "Overall",
+                    workers=12,
+                    force_live_refresh=force_refresh,
+                )
             cache_key = _sector_cache_key("Overall", mb, overall=True)
             if not force_refresh and cache_key in cache:
                 return cache[cache_key]
@@ -870,16 +1040,171 @@ def render_sector_screener_dashboard(
             "Coverage %": round(float(pred.get("coverage_pct", 0.0)), 1),
         }
 
-    if st.button("Close Screener", key="ss_screener_close_btn"):
+    def _reset_live_runtime(clear_results: bool = False) -> None:
+        try:
+            _cached_pipeline_df.clear()
+        except Exception:
+            pass
+        try:
+            _cached_index_analysis.clear()
+        except Exception:
+            pass
+        try:
+            clear_index_cache()
+        except Exception:
+            pass
+        st.session_state["ss_screener_sector_cache"] = {}
+        for key in ("market_bias_result", "market_bias_ts", "market_bias_tt_key"):
+            st.session_state.pop(key, None)
+        if clear_results:
+            st.session_state["ss_screener_sector_result"] = None
+            st.session_state["ss_screener_scan_all_done"] = False
+            st.session_state["ss_screener_all_results"] = None
+            st.session_state["ss_screener_all_overall"] = None
+
+    def _record_scan_meta(
+        result: dict[str, Any],
+        *,
+        scope_label: str,
+        live_requested: bool,
+    ) -> dict[str, Any]:
+        profile = _build_data_profile(result.get("symbols", []))
+        meta = {
+            "scope": scope_label,
+            "live_requested": bool(live_requested),
+            "refreshed_at": _safe_dt_label(_now_ist()),
+            "profile": profile,
+        }
+        out = dict(result)
+        out["scan_meta"] = meta
+        st.session_state["ss_screener_last_refresh_meta"] = meta
+        return out
+
+    def _meta_pill_row(result: dict[str, Any]) -> str:
+        meta = result.get("scan_meta", {}) if isinstance(result, dict) else {}
+        profile = meta.get("profile", {}) if isinstance(meta, dict) else {}
+        source = str(profile.get("primary_source", "NO DATA"))
+        source_color = _source_color(source)
+        market_date = str(profile.get("market_date", "—"))
+        window = str(profile.get("window", "—"))
+        refreshed_at = str(meta.get("refreshed_at", "Not yet"))
+        live_count = int(profile.get("live", 0))
+        csv_count = int(profile.get("csv", 0))
+        missing_count = int(profile.get("missing", 0))
+        policy = "LIVE REFRESH" if bool(meta.get("live_requested")) else "SHARED CACHE OK"
+        return (
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px 0;">'
+            + _pill(source, source_color)
+            + _pill(f"{live_count} live", "#00d4a8", "15")
+            + _pill(f"{csv_count} csv", "#f0b429", "15")
+            + _pill(f"{missing_count} missing", "#ff4d6d", "15")
+            + _pill(f"Market date {market_date}", "#8ab4d8", "15")
+            + _pill(f"Window {window}", "#8ab4d8", "15")
+            + _pill(policy, "#0094ff", "15")
+            + _pill(refreshed_at, "#8ab4d8", "15")
+            + '</div>'
+        )
+
+    _last_refresh_meta = st.session_state.get("ss_screener_last_refresh_meta", {})
+    _last_profile = _last_refresh_meta.get("profile", {}) if isinstance(_last_refresh_meta, dict) else {}
+    _tt_live_blocked = bool(_tt_guard_key[0])
+    _tracked_total = _counts.get("Overall", 0)
+    _refresh_scope = _active or "Overall"
+    _source_value = str(_last_profile.get("primary_source", "READY")) if _last_profile else "READY"
+    _source_caption = (
+        f"Live {int(_last_profile.get('live', 0))} • CSV {int(_last_profile.get('csv', 0))} • Missing {int(_last_profile.get('missing', 0))}"
+        if _last_profile else
+        "No sector scan has been run in this session yet."
+    )
+    _market_date_value = str(_last_profile.get("market_date", "—")) if _last_profile else "—"
+    _market_date_caption = (
+        f"Window {str(_last_profile.get('window', '—'))}"
+        if _last_profile else
+        "Will populate after the next sector scan."
+    )
+    _refresh_value = str(_last_refresh_meta.get("refreshed_at", "Not yet")) if isinstance(_last_refresh_meta, dict) else "Not yet"
+    _refresh_caption = (
+        f"{'Live refresh requested' if _last_refresh_meta.get('live_requested') else 'Shared cache reuse allowed'} • Scope {_last_refresh_meta.get('scope', '—')}"
+        if isinstance(_last_refresh_meta, dict) and _last_refresh_meta else
+        "Use Refresh Live to bypass same-session sector cache."
+    )
+    _context_value = "TIME TRAVEL" if _tt_live_blocked else "LIVE MODE"
+    _context_caption = (
+        "Historical simulation active — live refresh is disabled."
+        if _tt_live_blocked else
+        f"Primary quick refresh targets {_refresh_scope}."
+    )
+
+    _status_cols = st.columns(5)
+    _status_markup = [
+        _status_card("Context", _context_value, _context_caption, "#f0b429" if _tt_live_blocked else "#00d4a8"),
+        _status_card("Source Mix", _source_value, _source_caption, _source_color(_source_value)),
+        _status_card("Market Date", _market_date_value, _market_date_caption, "#8ab4d8"),
+        _status_card("Last Refresh", _refresh_value, _refresh_caption, "#0094ff"),
+        _status_card("Universe", f"{_tracked_total:,}", "Tracked names in the broad Overall basket.", "#22c55e"),
+    ]
+    for _col, _card_markup in zip(_status_cols, _status_markup):
+        with _col:
+            st.markdown(_card_markup, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    _act_close_col, _act_refresh_col, _act_refresh_all_col, _act_note_col = st.columns([1.0, 1.6, 1.8, 3.6])
+    with _act_close_col:
+        _close_clicked = st.button("Close Screener", key="ss_screener_close_btn", width="stretch")
+    with _act_refresh_col:
+        _live_refresh_clicked = st.button(
+            f"🔄 Refresh Live {_refresh_scope}",
+            key="ss_screener_refresh_live_btn",
+            disabled=_tt_live_blocked,
+            width="stretch",
+        )
+    with _act_refresh_all_col:
+        _refresh_all_live_clicked = st.button(
+            "📡 Refresh Live All Sectors",
+            key="ss_screener_refresh_all_live_btn",
+            disabled=_tt_live_blocked,
+            width="stretch",
+        )
+    with _act_note_col:
+        st.markdown(
+            '<div style="background:#0b1017;border:1px solid #1e3a5f;border-radius:12px;'
+            'padding:12px 14px;font-size:12px;color:#8ab4d8;line-height:1.7;">'
+            f'<b style="color:#ccd9e8;">Live refresh behavior:</b> '
+            f'{"Disabled while Time Travel is active." if _tt_live_blocked else "Clears sector caches, refreshes market bias, and re-downloads the selected basket from the live loader path."}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    if _close_clicked:
         st.session_state["ss_screener_active_sector"] = None
         st.session_state["ss_screener_sector_result"] = None
         st.session_state["ss_screener_scan_all_done"] = False
         st.session_state["ss_screener_all_results"] = None
         st.session_state["ss_screener_all_overall"] = None
         st.session_state["ss_screener_sector_cache"] = {}
+        st.session_state["ss_screener_pending_live_refresh"] = None
+        st.session_state["ss_screener_pending_scan_all_live"] = False
+        st.session_state["ss_screener_last_refresh_meta"] = {}
         st.session_state["ss_screener_tt_date_guard"] = None
         st.session_state["show_sector_screener"] = False
         st.rerun()
+
+    if _live_refresh_clicked:
+        _reset_live_runtime(clear_results=True)
+        st.session_state["ss_screener_active_sector"] = _refresh_scope
+        st.session_state["ss_screener_pending_live_refresh"] = _refresh_scope
+        st.session_state["ss_screener_pending_scan_all_live"] = False
+        st.rerun()
+
+    if _refresh_all_live_clicked:
+        _reset_live_runtime(clear_results=True)
+        st.session_state["ss_screener_active_sector"] = None
+        st.session_state["ss_screener_pending_live_refresh"] = None
+        st.session_state["ss_screener_pending_scan_all_live"] = True
+        st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
 
     st.markdown(
         '<div style="font-size:14px;font-weight:700;color:#8ab4d8;'
@@ -915,15 +1240,27 @@ def render_sector_screener_dashboard(
                 ):
                     st.session_state["ss_screener_active_sector"] = _sector
                     st.session_state["ss_screener_sector_result"] = None
+                    st.session_state["ss_screener_pending_live_refresh"] = None
+                    st.session_state["ss_screener_pending_scan_all_live"] = False
                     st.rerun()
 
     if _active and st.session_state.get("ss_screener_sector_result") is None:
         _count = _counts.get(_active, 0)
+        _force_live_active = (
+            not _tt_live_blocked
+            and str(st.session_state.get("ss_screener_pending_live_refresh") or "") == str(_active)
+        )
         _spinner_label = (
             f"🔍 Scanning {_active} across {_count} stocks..."
             if _active != "Overall"
             else f"🔍 Scanning Overall market basket across {_count} stocks..."
         )
+        if _force_live_active:
+            _spinner_label = (
+                f"Refreshing live data for {_active} across {_count} stocks..."
+                if _active != "Overall"
+                else f"Refreshing live data for Overall market basket across {_count} stocks..."
+            )
         with st.spinner(_spinner_label):
             try:
                 _tt_date = st.session_state.get("tt_date_val")
@@ -938,11 +1275,24 @@ def render_sector_screener_dashboard(
                     pass
                 try:
                     _market_bias = _get_market_bias()
-                    preload_dashboard_sector_data("Overall" if _active == "Overall" else _active, workers=12)
+                    preload_dashboard_sector_data(
+                        "Overall" if _active == "Overall" else _active,
+                        workers=12,
+                        force_live_refresh=_force_live_active,
+                    )
                     result = (
-                        _scan_overall_result(market_bias=_market_bias, preloaded=True)
+                        _scan_overall_result(
+                            force_refresh=_force_live_active,
+                            market_bias=_market_bias,
+                            preloaded=True,
+                        )
                         if _active == "Overall"
-                        else _scan_sector_result(_active, market_bias=_market_bias, preloaded=True)
+                        else _scan_sector_result(
+                            _active,
+                            force_refresh=_force_live_active,
+                            market_bias=_market_bias,
+                            preloaded=True,
+                        )
                     )
                 finally:
                     if _tt_activated:
@@ -963,7 +1313,13 @@ def render_sector_screener_dashboard(
                     "valid_row_count": 0,
                     "err": str(exc),
                 }
+            result = _record_scan_meta(
+                result,
+                scope_label=_active,
+                live_requested=_force_live_active,
+            )
             st.session_state["ss_screener_sector_result"] = result
+            st.session_state["ss_screener_pending_live_refresh"] = None
             _remember_scan_df(result)
 
     if _active and st.session_state.get("ss_screener_sector_result") is not None:
@@ -980,6 +1336,8 @@ def render_sector_screener_dashboard(
             f'text-transform:uppercase;margin-bottom:10px;">📈 {_active} Scan Result</div>',
             unsafe_allow_html=True,
         )
+
+        st.markdown(_meta_pill_row(_res), unsafe_allow_html=True)
 
         if _err:
             st.error(_err)
@@ -1209,7 +1567,12 @@ def render_sector_screener_dashboard(
             unsafe_allow_html=True,
         )
 
-    if _scan_all_btn:
+    _scan_all_live_queued = bool(st.session_state.get("ss_screener_pending_scan_all_live", False))
+
+    if _scan_all_btn or _scan_all_live_queued:
+        _force_live_all = bool(_scan_all_live_queued)
+        st.session_state["ss_screener_pending_scan_all_live"] = False
+        st.session_state["ss_screener_pending_live_refresh"] = None
         st.session_state["ss_screener_scan_all_done"] = False
         st.session_state["ss_screener_all_results"] = []
         st.session_state["ss_screener_all_overall"] = None
@@ -1228,13 +1591,23 @@ def render_sector_screener_dashboard(
             pass
 
         try:
-            _progress = st.progress(0, text="Preloading shared sector data...")
+            _progress = st.progress(
+                0,
+                text="Refreshing live sector data..." if _force_live_all else "Preloading shared sector data...",
+            )
             _market_bias = _get_market_bias()
-            preload_dashboard_sector_data("Overall", workers=12)
+            preload_dashboard_sector_data(
+                "Overall",
+                workers=12,
+                force_live_refresh=_force_live_all,
+            )
 
             _rows: list[dict[str, Any]] = []
             _sector_results_map: dict[str, dict[str, Any]] = {}
-            _progress.progress(10, text="Running sector scans on shared data...")
+            _progress.progress(
+                10,
+                text="Running sector scans on refreshed live data..." if _force_live_all else "Running sector scans on shared data...",
+            )
             _max_workers = max(1, min(6, len(_base_sectors)))
 
             with ThreadPoolExecutor(max_workers=_max_workers) as ex:
@@ -1271,9 +1644,15 @@ def render_sector_screener_dashboard(
 
             _progress.progress(90, text="Computing weighted Overall market probability...")
             _overall_result = _scan_overall_result(
+                force_refresh=_force_live_all,
                 market_bias=_market_bias,
                 precomputed_sector_results=_sector_results,
                 preloaded=True,
+            )
+            _overall_result = _record_scan_meta(
+                _overall_result,
+                scope_label="All Sectors + Overall",
+                live_requested=_force_live_all,
             )
             _overall_row = _result_to_summary_row(_overall_result)
 
@@ -1285,6 +1664,7 @@ def render_sector_screener_dashboard(
             )
             st.session_state["ss_screener_all_overall"] = _overall_result
             st.session_state["ss_screener_scan_all_done"] = True
+            st.session_state["ss_screener_pending_scan_all_live"] = False
             _remember_scan_df(_overall_result)
         finally:
             if _tt_activated_all:
@@ -1303,6 +1683,7 @@ def render_sector_screener_dashboard(
 
         _overall_result = st.session_state.get("ss_screener_all_overall")
         if _overall_result and _overall_result.get("pred"):
+            st.markdown(_meta_pill_row(_overall_result), unsafe_allow_html=True)
             _overall_pred = _overall_result["pred"]
             _tom = str(_overall_pred.get("tomorrow_prediction", "SIDEWAYS")).upper()
             _prob = float(_overall_pred.get("bullish_probability", 50.0))
