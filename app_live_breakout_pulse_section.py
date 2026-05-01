@@ -182,6 +182,7 @@ def _finish_scan_feedback(
 def render_live_breakout_pulse(
     live_pulse_clicked: bool,
     tt_date_val=None,
+    render_add_in_picks_actions=None,
 ) -> None:
     """
     Render the Live Breakout Pulse panel.
@@ -355,6 +356,58 @@ def render_live_breakout_pulse(
         st.metric("Avg Score", f"{summary['avg_score']}")
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    top_pulse_df = pulse_df.copy()
+    if "Final Score" in top_pulse_df.columns:
+        top_pulse_df = top_pulse_df.sort_values("Final Score", ascending=False).reset_index(drop=True)
+    top_pulse_df = apply_trade_decision_simple_any(top_pulse_df.copy())
+    top_pulse_df = top_pulse_df.head(3).copy()
+    top_pulse_symbols = []
+    if "Symbol" in top_pulse_df.columns:
+        top_pulse_symbols = [
+            str(symbol or "").strip().upper().replace(".NS", "")
+            for symbol in top_pulse_df["Symbol"].tolist()
+            if str(symbol or "").strip()
+        ]
+    top_pulse_cols = [
+        "Symbol",
+        "Final Score",
+        "Signal",
+        "Price (â‚¹)",
+        "RSI",
+        "Vol / Avg",
+        "Action",
+        "Hold Days",
+        "Chart Link",
+    ]
+    top_pulse_cols = [col for col in top_pulse_cols if col in top_pulse_df.columns]
+    if not top_pulse_df.empty and top_pulse_cols:
+        st.markdown('<h3 style="margin-bottom:6px;">Top 3 Breakout Stocks</h3>', unsafe_allow_html=True)
+        st.caption("Highest-scoring setups from the current Live Breakout Pulse scan.")
+        st.dataframe(
+            top_pulse_df[top_pulse_cols],
+            column_config={
+                "Symbol": st.column_config.TextColumn("Ticker"),
+                "Final Score": st.column_config.NumberColumn("Score", format="%.1f"),
+                "Signal": st.column_config.TextColumn("Signal"),
+                "RSI": st.column_config.NumberColumn("RSI", format="%.1f"),
+                "Vol / Avg": st.column_config.NumberColumn("Vol/Avg", format="%.2fx"),
+                "Chart Link": st.column_config.LinkColumn("Chart", display_text="Open Chart"),
+                "Action": st.column_config.TextColumn("Action"),
+                "Hold Days": st.column_config.TextColumn("Hold Days"),
+            },
+            width="stretch",
+            hide_index=True,
+        )
+        if callable(render_add_in_picks_actions):
+            top_pulse_key = (last_scan_at or "latest").replace(" ", "_").replace(",", "").replace(":", "-")
+            render_add_in_picks_actions(
+                top_pulse_symbols,
+                key_prefix=f"live_pulse_top3_{top_pulse_key}",
+                scope_label="Live Breakout Pulse",
+                helper_text="Add these top breakout stocks into Tomorrow's Picks and keep them saved until you remove them.",
+            )
+        st.markdown("<br>", unsafe_allow_html=True)
 
     # ── Tabs: All / by Signal ─────────────────────────────────────────
     _tab_all, _tab_lb, _tab_sm, _tab_watch = st.tabs([
