@@ -1,4 +1,4 @@
-﻿r"""
+r"""
 NSE Sentinel — Production-Ready Streamlit App  (Enhanced Edition)
 Dark terminal aesthetic | Multi-strategy scanner | 1000+ NSE stocks
 
