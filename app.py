@@ -1,4 +1,4 @@
-r"""
+﻿r"""
 NSE Sentinel — Production-Ready Streamlit App  (Enhanced Edition)
 Dark terminal aesthetic | Multi-strategy scanner | 1000+ NSE stocks
 
@@ -6371,15 +6371,29 @@ if scan_clicked or main_scan_clicked:
         if bool(_session_plan.get("use_snapshot", False)) and snapshot_exists(expected_date):
             loaded = load_snapshot_into_ALL_DATA(expected_date)
             if loaded > 0:
-                st.info(
-                    f"ðŸ“‚ Loaded {loaded} tickers from "
-                    f"{expected_date} snapshot. "
-                    f"No live refresh needed."
-                )
-                skip_preload = True
+                total_universe = len(all_tickers)
+                missing = max(0, total_universe - loaded)
+                if missing > 0:
+                    # Snapshot is partial -- preload_all fills the gaps via
+                    # historical OHLCV (CSV cache / yfinance period=6mo).
+                    # Tickers already in ALL_DATA are cache hits; skipped.
+                    st.info(
+                        f"📂 Loaded {loaded} tickers from "
+                        f"{expected_date} snapshot. "
+                        f"Fetching history for {missing} remaining tickers..."
+                    )
+                    skip_preload = False
+                else:
+                    # Full snapshot -- nothing left to fetch.
+                    st.info(
+                        f"📂 Loaded {loaded} tickers from "
+                        f"{expected_date} snapshot. "
+                        f"No live refresh needed."
+                    )
+                    skip_preload = True
             else:
                 st.warning(
-                    f"âš ï¸ Snapshot found at {_snapshot_hint_path} "
+                    f"⚠️ Snapshot found at {_snapshot_hint_path} "
                     "but could not be loaded. Falling back to live/cache preload."
                 )
 
