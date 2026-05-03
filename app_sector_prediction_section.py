@@ -117,6 +117,90 @@ def _pretty_name(value: str) -> str:
     return str(value or "").replace("_", " ").strip().title()
 
 
+def _sector_label(sector: str) -> str:
+    labels = {
+        "OVERALL": "Overall",
+        "NIFTY_50": "Nifty 50",
+        "NIFTY_150": "Nifty 150",
+        "NIFTY_300": "Nifty 300",
+        "BANKING": "Bank",
+        "NBFC_FINANCE": "NBFC",
+        "IT": "IT",
+        "AUTO": "Auto",
+        "FMCG": "FMCG",
+        "PHARMA": "Pharma",
+        "INFRA": "Infra",
+    }
+    return labels.get(sector, _pretty_name(sector))
+
+
+def _prediction_source_text(pred) -> str:
+    source = str(getattr(pred, "ohlc_source", "") or "")
+    symbol = str(getattr(pred, "ohlc_symbol", "") or "")
+    bars = int(getattr(pred, "ohlc_bars", 0) or 0)
+    used = len(getattr(pred, "stocks_used", []) or [])
+    if source == "real_sector_index":
+        base = f"Real sector index{'' if not symbol else f' ({symbol})'}"
+    elif source == "weighted_sector_basket":
+        base = f"Weighted basket · {used} stocks"
+    elif source == "leader_stock_fallback":
+        base = f"Leader fallback{'' if not symbol else f' · {symbol}'}"
+    else:
+        base = f"{used} stocks" if used else "Sector data"
+    if bars > 0:
+        base += f" · {bars} daily candles"
+    return f"{base} · {str(getattr(pred, 'predicted_at', ''))[:10]}".strip(" ·")
+
+
+def _render_sector_picker(sectors: list[str]) -> str:
+    selected = st.session_state.get("sector_pred_selected", sectors[0])
+    if selected not in sectors:
+        selected = sectors[0]
+
+    priority = [
+        sector for sector in
+        ["OVERALL", "NIFTY_50", "NIFTY_150", "NIFTY_300", "BANKING", "IT", "AUTO", "FMCG", "PHARMA", "INFRA"]
+        if sector in sectors
+    ]
+
+    if priority:
+        st.markdown(
+            '<div style="color:#8ab4d8;font-size:12px;text-transform:uppercase;'
+            'letter-spacing:1px;margin-bottom:8px;">Quick Sector Grid</div>',
+            unsafe_allow_html=True,
+        )
+        for start in range(0, len(priority), 5):
+            row = priority[start:start + 5]
+            cols = st.columns(len(row))
+            for col, sector in zip(cols, row):
+                with col:
+                    if st.button(
+                        _sector_label(sector),
+                        key=f"sector_card_{sector}",
+                        use_container_width=True,
+                        type="primary" if selected == sector else "secondary",
+                    ):
+                        selected = sector
+                        st.session_state["sector_pred_selected"] = sector
+                    st.caption(SECTOR_DESCRIPTIONS.get(sector, sector))
+
+    sector_labels = {s: f"{_sector_label(s)}  —  {SECTOR_DESCRIPTIONS.get(s, s)}" for s in sectors}
+    current = st.session_state.get("sector_pred_selected", selected)
+    if current not in sectors:
+        current = sectors[0]
+    label_options = list(sector_labels.values())
+    current_label = sector_labels[current]
+    chosen_label = st.selectbox(
+        "Choose a sector to analyse",
+        options=label_options,
+        index=label_options.index(current_label),
+        key="sector_pred_selector",
+    )
+    selected = next((s for s, label in sector_labels.items() if label == chosen_label), current)
+    st.session_state["sector_pred_selected"] = selected
+    return selected
+
+
 # ══════════════════════════════════════════════════════════════════════
 # SECTION 1 — SECTOR PREDICTION DETAIL
 # ══════════════════════════════════════════════════════════════════════
@@ -141,6 +225,7 @@ def _render_prediction_detail(
     # ── Top prediction card ───────────────────────────────────────────
     dir_col = _dir_color(pred.direction)
     icon    = _dir_icon(pred.direction)
+    source_text = _prediction_source_text(pred)
 
     st.markdown(
         f'<div style="background:#0d1626;border:2px solid {dir_col}40;border-radius:12px;'
@@ -151,7 +236,7 @@ def _render_prediction_detail(
         f'<div style="color:{dir_col};font-size:36px;font-weight:800;letter-spacing:-1px;">'
         f'{icon} {pred.direction}</div>'
         f'<div style="color:#6a8aad;font-size:12px;margin-top:2px;">'
-        f'Based on {len(pred.stocks_used)} stocks · {pred.predicted_at[:10]}</div>'
+        f'{source_text}</div>'
         f'</div>'
         f'<div style="text-align:right;">'
         f'<div style="color:#8ab4d8;font-size:11px;text-transform:uppercase;">Confidence</div>'
@@ -727,18 +812,7 @@ def render_sector_prediction_section(
     tab_pred, tab_perf = st.tabs(["🔮 Sector Prediction", "📊 Model Performance"])
 
     with tab_pred:
-        sector_labels = {s: f"{s}  —  {SECTOR_DESCRIPTIONS.get(s, s)}" for s in sectors}
-        chosen_label = st.selectbox(
-            "Choose a sector to analyse",
-            options=list(sector_labels.values()),
-            key="sector_pred_selector",
-        )
-        # Reverse-map to sector key
-        chosen = next(
-            (s for s, lbl in sector_labels.items() if lbl == chosen_label),
-            sectors[0],
-        )
-
+        chosen = _render_sector_picker(sectors)
         _render_prediction_detail(chosen, scan_df, all_data)
 
     with tab_perf:

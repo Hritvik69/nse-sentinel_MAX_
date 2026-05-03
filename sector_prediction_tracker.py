@@ -55,7 +55,7 @@ _FIELDNAMES = [
     "leader_ticker",
     "regime", "regime_confidence", "mtf_score", "mtf_note",
     "signal_agreement", "sideways_forced", "confidence_cap",
-    "dynamic_weights_json",
+    "dynamic_weights_json", "ohlc_source", "ohlc_symbol", "stocks_used_json",
     "signal_ema_slope", "signal_price_vs_ema", "signal_candle_direction",
     "signal_body_strength", "signal_consecutive", "signal_volume_confirm",
     "signal_volatility", "signal_momentum", "signal_sector_strength",
@@ -103,6 +103,110 @@ def _ensure_schema() -> None:
         pass
 
 
+def _plain_symbol(value: str) -> str:
+    return str(value or "").upper().strip().replace(".NS", "")
+
+
+def _normalize_hist(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    try:
+        if df is None or df.empty:
+            return None
+        out = df.copy()
+        if isinstance(out.columns, pd.MultiIndex):
+            out.columns = out.columns.get_level_values(0)
+        needed = ["Open", "High", "Low", "Close", "Volume"]
+        if not set(needed).issubset(out.columns):
+            return None
+        out = out[needed].copy()
+        out.index = pd.to_datetime(out.index, errors="coerce")
+        out = out[~out.index.isna()].sort_index()
+        for col in needed:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+        out = out.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
+        return out if not out.empty else None
+    except Exception:
+        return None
+
+
+def _rebuild_logged_weighted_basket(symbols: list[str], all_data: dict[str, "pd.DataFrame | None"]) -> pd.DataFrame | None:
+    panels: list[tuple[str, pd.DataFrame]] = []
+    for symbol in symbols:
+        plain = _plain_symbol(symbol)
+        hist = _normalize_hist(all_data.get(plain))
+        if hist is None:
+            hist = _normalize_hist(all_data.get(f"{plain}.NS"))
+        if hist is None or len(hist) < 30:
+            continue
+        panels.append((plain, hist))
+
+    if len(panels) < 3:
+        return None
+
+    common_index = panels[0][1].index
+    for _, hist in panels[1:]:
+        common_index = common_index.intersection(hist.index)
+    common_index = common_index.sort_values()
+    if len(common_index) < 30:
+        return None
+
+    close_panel = pd.concat(
+        [hist["Close"].reindex(common_index).rename(symbol) for symbol, hist in panels],
+        axis=1,
+    ).dropna(axis=1, how="any")
+    if close_panel.shape[1] < 3:
+        return None
+
+    symbols = list(close_panel.columns)
+    open_panel = pd.concat(
+        [hist["Open"].reindex(common_index).rename(symbol) for symbol, hist in panels if symbol in symbols],
+        axis=1,
+    )[symbols]
+    high_panel = pd.concat(
+        [hist["High"].reindex(common_index).rename(symbol) for symbol, hist in panels if symbol in symbols],
+        axis=1,
+    )[symbols]
+    low_panel = pd.concat(
+        [hist["Low"].reindex(common_index).rename(symbol) for symbol, hist in panels if symbol in symbols],
+        axis=1,
+    )[symbols]
+    volume_panel = pd.concat(
+        [hist["Volume"].reindex(common_index).rename(symbol) for symbol, hist in panels if symbol in symbols],
+        axis=1,
+    )[symbols]
+
+    turnover = (close_panel.tail(min(20, len(close_panel))) * volume_panel.tail(min(20, len(volume_panel)))).mean(axis=0)
+    turnover = pd.to_numeric(turnover, errors="coerce").clip(lower=0).fillna(0.0)
+    if turnover.sum() <= 0:
+        turnover = pd.Series(1.0, index=symbols)
+    weights = turnover / max(turnover.sum(), 1e-9)
+
+    base_close = close_panel.iloc[0].replace(0, np.nan)
+    valid_cols = [col for col in symbols if pd.notna(base_close.get(col))]
+    if len(valid_cols) < 3:
+        return None
+
+    close_panel = close_panel[valid_cols]
+    open_panel = open_panel[valid_cols]
+    high_panel = high_panel[valid_cols]
+    low_panel = low_panel[valid_cols]
+    volume_panel = volume_panel[valid_cols]
+    weights = weights[valid_cols]
+    weights = weights / max(weights.sum(), 1e-9)
+
+    scale = 100.0 / base_close[valid_cols]
+    agg = pd.DataFrame(
+        {
+            "Open": open_panel.mul(scale, axis=1).mul(weights, axis=1).sum(axis=1),
+            "High": high_panel.mul(scale, axis=1).max(axis=1),
+            "Low": low_panel.mul(scale, axis=1).min(axis=1),
+            "Close": close_panel.mul(scale, axis=1).mul(weights, axis=1).sum(axis=1),
+            "Volume": volume_panel.sum(axis=1),
+        },
+        index=common_index,
+    )
+    return _normalize_hist(agg)
+
+
 # ══════════════════════════════════════════════════════════════════════
 # PUBLIC: LOG A PREDICTION
 # ══════════════════════════════════════════════════════════════════════
@@ -143,6 +247,9 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
                 getattr(prediction, "dynamic_weights", {}) or {},
                 sort_keys=True,
             ),
+            "ohlc_source":       str(getattr(prediction, "ohlc_source", "") or ""),
+            "ohlc_symbol":       str(getattr(prediction, "ohlc_symbol", "") or ""),
+            "stocks_used_json":  json.dumps(getattr(prediction, "stocks_used", []) or []),
             "signal_ema_slope":  f"{sig.ema_slope:.2f}",
             "signal_price_vs_ema": f"{sig.price_vs_ema:.2f}",
             "signal_candle_direction": f"{sig.candle_direction:.2f}",
@@ -195,11 +302,28 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
         filled = 0
         for idx in df.index[needs]:
             try:
-                ticker = str(df.at[idx, "leader_ticker"]).strip()
-                if not ticker:
-                    continue
-                tk_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-                hist = all_data.get(tk_ns)
+                source = str(df.at[idx, "ohlc_source"]).strip()
+                ohlc_symbol = str(df.at[idx, "ohlc_symbol"]).strip()
+                ticker = ohlc_symbol or str(df.at[idx, "leader_ticker"]).strip()
+
+                if source == "weighted_sector_basket":
+                    try:
+                        members = json.loads(str(df.at[idx, "stocks_used_json"]).strip() or "[]")
+                    except Exception:
+                        members = []
+                    if not isinstance(members, list):
+                        members = []
+                    hist = _rebuild_logged_weighted_basket([str(item) for item in members], all_data)
+                else:
+                    if not ticker:
+                        continue
+                    lookup_keys = [ticker]
+                    if not ticker.startswith("^") and not ticker.endswith(".NS"):
+                        lookup_keys.append(f"{ticker}.NS")
+                    hist = next(
+                        (_normalize_hist(all_data.get(key)) for key in lookup_keys if all_data.get(key) is not None),
+                        None,
+                    )
                 if hist is None or "Close" not in hist.columns or len(hist) < 2:
                     continue
 
@@ -218,7 +342,8 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
                 if day_i + 1 >= len(hist):
                     continue
 
-                entry = float(hist["Close"].iloc[day_i])
+                entry = pd.to_numeric(df.at[idx, "entry_price"], errors="coerce")
+                entry = float(entry) if pd.notna(entry) else float(hist["Close"].iloc[day_i])
                 exit_ = float(hist["Close"].iloc[day_i + 1])
                 if entry <= 0:
                     continue

@@ -27,6 +27,11 @@ Design rules
 
 from __future__ import annotations
 
+try:
+    from nse_ticker_universe import _BASELINE as _UNIVERSE_BASELINE
+except Exception:
+    _UNIVERSE_BASELINE = []
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # MASTER SECTOR → STOCK MAPPING
@@ -185,6 +190,66 @@ SECTOR_STOCKS: dict[str, list[str]] = {
 }
 
 
+def _dedupe_symbols(symbols: list[str]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for symbol in symbols:
+        clean = str(symbol or "").upper().strip().replace(".NS", "")
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        ordered.append(clean)
+    return ordered
+
+
+_BASELINE_ORDER = _dedupe_symbols(list(_UNIVERSE_BASELINE))
+if not _BASELINE_ORDER:
+    _fallback_universe: list[str] = []
+    for _sector_stocks in SECTOR_STOCKS.values():
+        _fallback_universe.extend(_sector_stocks)
+    _BASELINE_ORDER = _dedupe_symbols(_fallback_universe)
+    del _fallback_universe
+
+INDEX_BASKETS: dict[str, list[str]] = {
+    "OVERALL": list(_BASELINE_ORDER),
+    "NIFTY_50": list(_BASELINE_ORDER[:50]),
+    "NIFTY_150": list(_BASELINE_ORDER[:150]),
+    "NIFTY_300": list(_BASELINE_ORDER[:300]),
+}
+
+ALL_SECTOR_STOCKS: dict[str, list[str]] = {
+    "OVERALL": INDEX_BASKETS["OVERALL"],
+    "NIFTY_50": INDEX_BASKETS["NIFTY_50"],
+    "NIFTY_150": INDEX_BASKETS["NIFTY_150"],
+    "NIFTY_300": INDEX_BASKETS["NIFTY_300"],
+    **SECTOR_STOCKS,
+}
+
+SECTOR_DISPLAY_ORDER: list[str] = [
+    "OVERALL",
+    "NIFTY_50",
+    "NIFTY_150",
+    "NIFTY_300",
+    "BANKING",
+    "IT",
+    "AUTO",
+    "FMCG",
+    "PHARMA",
+    "INFRA",
+    "ENERGY",
+    "METAL",
+    "NBFC_FINANCE",
+    "REALTY",
+    "CAPITAL_GOODS",
+    "CONSUMER_DURABLES",
+    "CHEMICAL",
+    "TELECOM",
+    "PSU",
+    "DEFENCE",
+    "RAILWAY",
+]
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # REVERSE LOOKUP: symbol → sector
 # Built once at module load from SECTOR_STOCKS
@@ -244,7 +309,7 @@ def get_stocks_in_sector(sector: str) -> list[str]:
     >>> get_stocks_in_sector("IT")
     ['TCS', 'INFY', 'HCLTECH', ...]
     """
-    return SECTOR_STOCKS.get(sector.upper().strip(), [])
+    return ALL_SECTOR_STOCKS.get(sector.upper().strip(), [])
 
 
 def get_all_sectors() -> list[str]:
@@ -255,7 +320,9 @@ def get_all_sectors() -> list[str]:
     -------
     list[str]  e.g. ['AUTO', 'BANKING', 'CAPITAL_GOODS', ...]
     """
-    return sorted(SECTOR_STOCKS.keys())
+    ordered = [sector for sector in SECTOR_DISPLAY_ORDER if sector in ALL_SECTOR_STOCKS]
+    remainder = [sector for sector in ALL_SECTOR_STOCKS.keys() if sector not in ordered]
+    return ordered + remainder
 
 
 def get_sector_count() -> dict[str, int]:
@@ -266,7 +333,7 @@ def get_sector_count() -> dict[str, int]:
     -------
     dict[str, int]   e.g. {"BANKING": 20, "IT": 20, ...}
     """
-    return {s: len(stocks) for s, stocks in SECTOR_STOCKS.items()}
+    return {s: len(stocks) for s, stocks in ALL_SECTOR_STOCKS.items()}
 
 
 def search_stock(query: str) -> list[tuple[str, str]]:
@@ -316,12 +383,16 @@ def get_sector_peers(symbol: str) -> list[str]:
     if sector is None:
         return []
     sym_clean = symbol.upper().strip().replace(".NS", "")
-    return [s for s in SECTOR_STOCKS.get(sector, []) if s != sym_clean]
+    return [s for s in get_stocks_in_sector(sector) if s != sym_clean]
 
 
 # ── Display helpers ────────────────────────────────────────────────────
 
 SECTOR_DESCRIPTIONS: dict[str, str] = {
+    "OVERALL":          "Broad NSE Market Basket",
+    "NIFTY_50":         "Top 50 NSE Leaders",
+    "NIFTY_150":        "Expanded Nifty 150 Basket",
+    "NIFTY_300":        "Broad Nifty 300 Basket",
     "BANKING":          "Banks — Private, PSU, Small Finance",
     "NBFC_FINANCE":     "NBFCs, Insurance, AMCs, HFCs",
     "IT":               "IT Services, Software, Tech Products",

@@ -29,6 +29,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import yfinance as yf
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -73,6 +74,9 @@ class SectorPrediction:
     dynamic_weights:   dict[str, float] = field(default_factory=dict)
     sideways_forced:   bool = False
     confidence_cap:    float = 95.0
+    ohlc_source:       str = ""
+    ohlc_symbol:       str = ""
+    ohlc_bars:         int = 0
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -80,41 +84,334 @@ class SectorPrediction:
 # ══════════════════════════════════════════════════════════════════════
 
 _MIN_ROWS = 30
+_TARGET_ROWS = 60
+_MAX_AGGREGATION_STOCKS = 80
+_MIN_AGGREGATION_STOCKS = 3
+_WEIGHT_LOOKBACK = 20
+
+_SECTOR_INDEX_CANDIDATES: dict[str, list[str]] = {
+    "OVERALL": ["^NSEI"],
+    "NIFTY_50": ["^NSEI"],
+    "BANKING": ["^NSEBANK"],
+    "IT": ["^CNXIT"],
+    "AUTO": ["^CNXAUTO"],
+    "FMCG": ["^CNXFMCG"],
+    "PHARMA": ["^CNXPHARMA"],
+    "METAL": ["^CNXMETAL"],
+    "ENERGY": ["^CNXENERGY"],
+    "REALTY": ["^CNXREALTY"],
+    "INFRA": ["^CNXINFRA"],
+}
+
+_SYMBOL_ALIASES: dict[str, list[str]] = {
+    "ZOMATO": ["ETERNAL"],
+    "BIRLASOFT": ["BSOFT"],
+    "BALKRISHIND": ["BALKRISIND"],
+}
+
+
+def _sector_key(value: str) -> str:
+    return str(value or "").upper().strip().replace("&", "_").replace("-", "_").replace(" ", "_")
+
+
+def _plain_symbol(value: str) -> str:
+    return str(value or "").upper().strip().replace(".NS", "")
+
+
+def _normalize_ohlc_frame(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    try:
+        if df is None or df.empty:
+            return None
+        out = df.copy()
+        if isinstance(out.columns, pd.MultiIndex):
+            out.columns = out.columns.get_level_values(0)
+        out.columns = [str(col).strip().title() for col in out.columns]
+        needed = ["Open", "High", "Low", "Close", "Volume"]
+        if not set(needed).issubset(out.columns):
+            return None
+        out = out[needed].copy()
+        dt_index = pd.to_datetime(out.index, errors="coerce")
+        mask = ~dt_index.isna()
+        out = out.loc[mask].copy()
+        out.index = dt_index[mask]
+        out = out[~out.index.duplicated(keep="last")].sort_index()
+        for col in needed:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+        out = out.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
+        out = out[(out["High"] >= out[["Open", "Close", "Low"]].max(axis=1))]
+        out = out[(out["Low"] <= out[["Open", "Close", "High"]].min(axis=1))]
+        return out if not out.empty else None
+    except Exception:
+        return None
+
+
+def _cache_sector_frame(all_data: dict, key: str, df: pd.DataFrame | None) -> None:
+    if df is None or df.empty:
+        return
+    try:
+        all_data[key] = df
+    except Exception:
+        pass
+    try:
+        from strategy_engines._engine_utils import ALL_DATA as _ALL_DATA, _ALL_DATA_LOCK
+        with _ALL_DATA_LOCK:
+            _ALL_DATA[key] = df
+    except Exception:
+        pass
+
+
+def _lookup_cached_frame(all_data: dict, *keys: str) -> pd.DataFrame | None:
+    for key in keys:
+        try:
+            cached = _normalize_ohlc_frame(all_data.get(key))
+            if cached is not None:
+                return cached
+        except Exception:
+            continue
+    try:
+        from strategy_engines._engine_utils import ALL_DATA as _ALL_DATA, _ALL_DATA_LOCK
+        with _ALL_DATA_LOCK:
+            for key in keys:
+                cached = _normalize_ohlc_frame(_ALL_DATA.get(key))
+                if cached is not None:
+                    return cached
+    except Exception:
+        pass
+    return None
+
+
+def _apply_time_travel_cutoff(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    try:
+        from strategy_engines._engine_utils import _apply_time_travel_cutoff_if_needed
+        return _normalize_ohlc_frame(_apply_time_travel_cutoff_if_needed(df))
+    except Exception:
+        return _normalize_ohlc_frame(df)
+
+
+def _fetch_sector_index_frame(symbol: str, all_data: dict) -> pd.DataFrame | None:
+    key = str(symbol or "").strip().upper()
+    cached = _lookup_cached_frame(all_data, key)
+    if cached is not None and len(cached) >= _MIN_ROWS:
+        return cached.tail(_TARGET_ROWS).copy()
+    try:
+        df = yf.download(
+            key,
+            period="6mo",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            timeout=15,
+            threads=False,
+        )
+    except Exception:
+        return None
+    normalized = _apply_time_travel_cutoff(df)
+    if normalized is None or len(normalized) < _MIN_ROWS:
+        return None
+    normalized = normalized.tail(_TARGET_ROWS).copy()
+    _cache_sector_frame(all_data, key, normalized)
+    return normalized
+
+
+def _fetch_stock_frame(symbol: str, all_data: dict) -> pd.DataFrame | None:
+    raw = str(symbol or "").strip()
+    plain = _plain_symbol(raw)
+    aliases = [*_SYMBOL_ALIASES.get(plain, []), plain]
+    cache_keys: list[str] = [raw]
+    for alias in aliases:
+        cache_keys.extend([alias, f"{alias}.NS"])
+    cached = _lookup_cached_frame(all_data, *cache_keys)
+    if cached is not None:
+        return cached
+    try:
+        from strategy_engines._engine_utils import get_df_for_ticker
+    except Exception:
+        return None
+    for alias in aliases:
+        try:
+            fetched = _normalize_ohlc_frame(get_df_for_ticker(alias))
+        except Exception:
+            fetched = None
+        if fetched is not None:
+            try:
+                all_data[f"{alias}.NS"] = fetched
+                all_data[plain] = fetched
+            except Exception:
+                pass
+            return fetched
+    return None
+
+
+def _rank_sector_tickers(tickers: list[str], scan_df: pd.DataFrame | None) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in tickers:
+        sym = _plain_symbol(item)
+        if not sym or sym in seen:
+            continue
+        seen.add(sym)
+        ordered.append(sym)
+
+    if scan_df is None or scan_df.empty:
+        return ordered
+
+    symbol_col = next((col for col in ("Symbol", "Ticker") if col in scan_df.columns), None)
+    score_col = next((col for col in ("Final Score", "Prediction Score", "Rank Score") if col in scan_df.columns), None)
+    if symbol_col is None or score_col is None:
+        return ordered
+
+    scores: dict[str, float] = {}
+    for _, row in scan_df[[symbol_col, score_col]].iterrows():
+        sym = _plain_symbol(row.get(symbol_col, ""))
+        score = pd.to_numeric(row.get(score_col, np.nan), errors="coerce")
+        if sym and pd.notna(score):
+            scores[sym] = float(score)
+
+    base_order = {sym: idx for idx, sym in enumerate(ordered)}
+    return sorted(
+        ordered,
+        key=lambda sym: (-scores.get(sym, -1e9), base_order.get(sym, 10_000)),
+    )
+
+
+def _aggregate_weighted_sector_ohlc(
+    ranked_tickers: list[str],
+    all_data: dict,
+    max_components: int = _MAX_AGGREGATION_STOCKS,
+) -> tuple[pd.DataFrame | None, list[str]]:
+    panels: list[tuple[str, pd.DataFrame]] = []
+    for symbol in ranked_tickers:
+        frame = _fetch_stock_frame(symbol, all_data)
+        if frame is None or len(frame) < _MIN_ROWS:
+            continue
+        panels.append((symbol, frame[["Open", "High", "Low", "Close", "Volume"]].copy()))
+
+    if len(panels) < _MIN_AGGREGATION_STOCKS:
+        return None, [sym for sym, _ in panels]
+
+    common_index = panels[0][1].index
+    for _, frame in panels[1:]:
+        common_index = common_index.intersection(frame.index)
+    common_index = common_index.sort_values()
+    if len(common_index) < _MIN_ROWS:
+        return None, [sym for sym, _ in panels]
+
+    close_panel = pd.concat(
+        [frame["Close"].reindex(common_index).rename(symbol) for symbol, frame in panels],
+        axis=1,
+    ).dropna(axis=1, how="any")
+    if close_panel.shape[1] < _MIN_AGGREGATION_STOCKS or len(close_panel) < _MIN_ROWS:
+        return None, [sym for sym, _ in panels]
+
+    aligned_symbols = list(close_panel.columns)
+    open_panel = pd.concat(
+        [frame["Open"].reindex(common_index).rename(symbol) for symbol, frame in panels if symbol in aligned_symbols],
+        axis=1,
+    )[aligned_symbols]
+    high_panel = pd.concat(
+        [frame["High"].reindex(common_index).rename(symbol) for symbol, frame in panels if symbol in aligned_symbols],
+        axis=1,
+    )[aligned_symbols]
+    low_panel = pd.concat(
+        [frame["Low"].reindex(common_index).rename(symbol) for symbol, frame in panels if symbol in aligned_symbols],
+        axis=1,
+    )[aligned_symbols]
+    volume_panel = pd.concat(
+        [frame["Volume"].reindex(common_index).rename(symbol) for symbol, frame in panels if symbol in aligned_symbols],
+        axis=1,
+    )[aligned_symbols]
+
+    turnover = (close_panel.tail(min(_WEIGHT_LOOKBACK, len(close_panel))) * volume_panel.tail(min(_WEIGHT_LOOKBACK, len(volume_panel)))).mean(axis=0)
+    turnover = pd.to_numeric(turnover, errors="coerce").clip(lower=0).fillna(0.0)
+    if turnover.sum() <= 0:
+        turnover = pd.Series(1.0, index=aligned_symbols)
+
+    if len(aligned_symbols) > max_components:
+        keep = turnover.sort_values(ascending=False).head(max_components).index.tolist()
+        close_panel = close_panel[keep]
+        open_panel = open_panel[keep]
+        high_panel = high_panel[keep]
+        low_panel = low_panel[keep]
+        volume_panel = volume_panel[keep]
+        turnover = turnover[keep]
+        aligned_symbols = keep
+
+    weights = turnover / max(turnover.sum(), 1e-9)
+    base_close = close_panel.iloc[0].replace(0, np.nan)
+    valid_cols = [col for col in aligned_symbols if pd.notna(base_close.get(col))]
+    if len(valid_cols) < _MIN_AGGREGATION_STOCKS:
+        return None, aligned_symbols
+
+    close_panel = close_panel[valid_cols]
+    open_panel = open_panel[valid_cols]
+    high_panel = high_panel[valid_cols]
+    low_panel = low_panel[valid_cols]
+    volume_panel = volume_panel[valid_cols]
+    weights = weights[valid_cols]
+    weights = weights / max(weights.sum(), 1e-9)
+
+    scale = 100.0 / base_close[valid_cols]
+    norm_open = open_panel.mul(scale, axis=1)
+    norm_high = high_panel.mul(scale, axis=1)
+    norm_low = low_panel.mul(scale, axis=1)
+    norm_close = close_panel.mul(scale, axis=1)
+
+    agg = pd.DataFrame(
+        {
+            "Open": norm_open.mul(weights, axis=1).sum(axis=1),
+            "High": norm_high.max(axis=1),
+            "Low": norm_low.min(axis=1),
+            "Close": norm_close.mul(weights, axis=1).sum(axis=1),
+            "Volume": volume_panel.sum(axis=1),
+        },
+        index=common_index,
+    )
+    agg = _normalize_ohlc_frame(agg)
+    if agg is None or len(agg) < _MIN_ROWS:
+        return None, valid_cols
+    return agg.tail(_TARGET_ROWS).copy(), valid_cols
 
 
 def _build_sector_ohlc(
+    sector_name: str,
     tickers: list[str],
+    scan_df: pd.DataFrame | None,
     all_data: dict,
-    max_stocks: int = 5,
-) -> tuple[pd.DataFrame | None, list[str]]:
-    frames, used = [], []
-    for raw in tickers[:max_stocks * 3]:
-        if len(used) >= max_stocks:
-            break
-        tk_ns = raw if raw.endswith(".NS") else f"{raw}.NS"
-        df = all_data.get(tk_ns)
-        if df is None or (hasattr(df, "empty") and df.empty):
-            df = all_data.get(raw)
-        if df is None or (hasattr(df, "empty") and df.empty):
-            continue
-        needed = {"Open", "High", "Low", "Close", "Volume"}
-        if not needed.issubset(df.columns) or len(df) < _MIN_ROWS:
-            continue
-        frames.append(df[list(needed)].copy())
-        used.append(raw)
+    max_components: int = _MAX_AGGREGATION_STOCKS,
+) -> tuple[pd.DataFrame | None, list[str], str, str, str]:
+    sector_key = _sector_key(sector_name)
+    ranked_tickers = _rank_sector_tickers(tickers, scan_df)
 
-    if not frames:
-        return None, []
+    for symbol in _SECTOR_INDEX_CANDIDATES.get(sector_key, []):
+        index_frame = _fetch_sector_index_frame(symbol, all_data)
+        if index_frame is not None and len(index_frame) >= _MIN_ROWS:
+            return index_frame, [symbol], "real_sector_index", symbol, ""
 
-    close_s = pd.concat([f["Close"].rename(str(i)) for i, f in enumerate(frames)], axis=1).dropna()
-    if close_s.empty or len(close_s) < _MIN_ROWS:
-        return None, used
+    basket_frame, used = _aggregate_weighted_sector_ohlc(
+        ranked_tickers,
+        all_data,
+        max_components=max_components,
+    )
+    if basket_frame is not None and len(basket_frame) >= _MIN_ROWS:
+        return basket_frame, used, "weighted_sector_basket", used[0] if used else "", ""
 
-    idx = close_s.index
-    agg = {c: pd.concat([f[c].reindex(idx) for f in frames], axis=1).mean(axis=1)
-           for c in ("Open", "High", "Low", "Close")}
-    agg["Volume"] = pd.concat([f["Volume"].reindex(idx) for f in frames], axis=1).sum(axis=1)
-    return pd.DataFrame(agg, index=idx).dropna(), used
+    for symbol in ranked_tickers:
+        leader_frame = _fetch_stock_frame(symbol, all_data)
+        if leader_frame is not None and len(leader_frame) >= _MIN_ROWS:
+            return leader_frame.tail(_TARGET_ROWS).copy(), [symbol], "leader_stock_fallback", symbol, ""
+
+    if used:
+        return None, used, "", "", (
+            f"Only {len(used)} constituents had usable OHLC for {sector_name}. "
+            f"Need at least {_MIN_ROWS} daily candles and {_MIN_AGGREGATION_STOCKS}+ stocks "
+            "to draw the sector chart safely."
+        )
+    if ranked_tickers:
+        return None, [], "", "", (
+            f"No valid daily OHLC series were available for {sector_name}. "
+            f"Need at least {_MIN_ROWS} daily candles to draw the sector chart safely."
+        )
+    return None, [], "", "", f"No stocks or index mapping found for {sector_name}."
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -303,18 +600,25 @@ def predict_sector(
         stocks = get_stocks_in_sector(sector_name)
     except Exception:
         stocks = []
-
-    if not stocks:
-        return SectorPrediction(sector=sector_name, direction="Sideways",
-                                confidence=50.0, raw_score=50.0,
-                                predicted_at=now_ts, note="No stocks found.")
-
-    ohlc, used = _build_sector_ohlc(stocks, all_data)
+    ohlc, used, ohlc_source, ohlc_symbol, ohlc_note = _build_sector_ohlc(
+        sector_name,
+        stocks,
+        scan_df,
+        all_data,
+    )
     if ohlc is None or len(ohlc) < _MIN_ROWS:
-        return SectorPrediction(sector=sector_name, direction="Sideways",
-                                confidence=50.0, raw_score=50.0,
-                                stocks_used=used, predicted_at=now_ts,
-                                note="Insufficient OHLC data.")
+        return SectorPrediction(
+            sector=sector_name,
+            direction="Sideways",
+            confidence=50.0,
+            raw_score=50.0,
+            stocks_used=used,
+            predicted_at=now_ts,
+            note=ohlc_note or "Insufficient OHLC data.",
+            ohlc_source=ohlc_source,
+            ohlc_symbol=ohlc_symbol,
+            ohlc_bars=0 if ohlc is None else len(ohlc),
+        )
 
     # ── Regime ───────────────────────────────────────────────────────
     if regime_state is None:
@@ -351,8 +655,9 @@ def predict_sector(
     # ── Signals ───────────────────────────────────────────────────────
     if scan_df is None or scan_df.empty:
         scan_df = pd.DataFrame()
+    stock_universe = stocks or used
     try:
-        signals = _compute_signals(ohlc, scan_df, stocks)
+        signals = _compute_signals(ohlc, scan_df, stock_universe)
     except Exception:
         signals = SignalBreakdown()
 
@@ -400,7 +705,7 @@ def predict_sector(
         raw_score         = round(raw_score, 1),
         signals           = signals,
         ohlc_df           = ohlc,
-        leader_ticker     = used[0] if used else "",
+        leader_ticker     = ohlc_symbol or (used[0] if used else ""),
         stocks_used       = used,
         predicted_at      = now_ts,
         entry_price       = round(float(ohlc["Close"].iloc[-1]), 2),
@@ -412,4 +717,7 @@ def predict_sector(
         dynamic_weights   = {k: round(v, 4) for k, v in weights.items()},
         sideways_forced   = sideways_forced,
         confidence_cap    = confidence_cap,
+        ohlc_source       = ohlc_source,
+        ohlc_symbol       = ohlc_symbol,
+        ohlc_bars         = len(ohlc),
     )

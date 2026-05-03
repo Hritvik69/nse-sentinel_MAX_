@@ -222,26 +222,6 @@ except Exception as _sector_explorer_exc:
             return None
 
 try:
-    from strategy_engines.app_sector_intelligence_section import (  # type: ignore[import]
-        render_sector_intelligence_section,
-    )
-    _SECTOR_INTELLIGENCE_UI_OK = True
-    _SECTOR_INTELLIGENCE_UI_ERR = ""
-except Exception as _sector_intel_exc:
-    try:
-        from app_sector_intelligence_section import (  # type: ignore[import]
-            render_sector_intelligence_section,
-        )
-        _SECTOR_INTELLIGENCE_UI_OK = True
-        _SECTOR_INTELLIGENCE_UI_ERR = ""
-    except Exception:
-        _SECTOR_INTELLIGENCE_UI_OK = False
-        _SECTOR_INTELLIGENCE_UI_ERR = str(_sector_intel_exc).strip() or "sector intelligence import failed"
-
-        def render_sector_intelligence_section() -> None:  # type: ignore[misc]
-            return None
-
-try:
     from app_sector_prediction_section import render_sector_prediction_section
     _SECTOR_PREDICTION_UI_OK = True
     _SECTOR_PREDICTION_UI_ERR = ""
@@ -251,6 +231,9 @@ except Exception as _sector_prediction_exc:
 
     def render_sector_prediction_section(*args, **kwargs) -> None:  # type: ignore[misc]
         return None
+
+_SECTOR_INTELLIGENCE_UI_OK = False
+_SECTOR_INTELLIGENCE_UI_ERR = ""
 
 try:
     from app_breakout_radar_section import render_breakout_radar_section
@@ -6644,10 +6627,7 @@ if st.session_state.get("show_sector_screener", False):
             f"Import error: {_SECTOR_EXPLORER_UI_ERR}"
         )
 
-    _sector_intel_df = st.session_state.get("last_scan_df", None)
-    _sector_intel_ready = (
-        isinstance(_sector_intel_df, pd.DataFrame) and not _sector_intel_df.empty
-    ) or bool(st.session_state.get("results"))
+    _sector_intel_ready = False
     if _SECTOR_INTELLIGENCE_UI_OK and _sector_intel_ready:
         render_sector_intelligence_section()
     elif _sector_intel_ready:
