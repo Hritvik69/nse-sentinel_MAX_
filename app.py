@@ -242,6 +242,17 @@ except Exception as _sector_intel_exc:
             return None
 
 try:
+    from app_sector_prediction_section import render_sector_prediction_section
+    _SECTOR_PREDICTION_UI_OK = True
+    _SECTOR_PREDICTION_UI_ERR = ""
+except Exception as _sector_prediction_exc:
+    _SECTOR_PREDICTION_UI_OK = False
+    _SECTOR_PREDICTION_UI_ERR = str(_sector_prediction_exc).strip() or "sector prediction import failed"
+
+    def render_sector_prediction_section(*args, **kwargs) -> None:  # type: ignore[misc]
+        return None
+
+try:
     from app_breakout_radar_section import render_breakout_radar_section
     _BREAKOUT_SECTION_OK = True
 except Exception:
@@ -6646,6 +6657,22 @@ if st.session_state.get("show_sector_screener", False):
         )
 
 # ── NEW: MARKET BIAS UI PANEL (Isolated) ──────────────────────────────
+    try:
+        from strategy_engines._engine_utils import ALL_DATA as _sector_prediction_all_data
+    except Exception:
+        _sector_prediction_all_data = {}
+
+    if _SECTOR_PREDICTION_UI_OK:
+        render_sector_prediction_section(
+            scan_df=st.session_state.get("last_scan_df"),
+            all_data=_sector_prediction_all_data,
+        )
+    else:
+        st.warning(
+            "Sector Prediction is unavailable because its UI module could not be imported. "
+            f"Import error: {_SECTOR_PREDICTION_UI_ERR}"
+        )
+
 if st.session_state.get("battle_show_panel", False):
     st.markdown("<hr>", unsafe_allow_html=True)
     _battle_hdr_col, _battle_close_col = st.columns([6, 1])

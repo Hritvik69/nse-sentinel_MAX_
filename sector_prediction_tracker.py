@@ -36,6 +36,7 @@ signal_bullish_pct float
 from __future__ import annotations
 
 import csv
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -52,8 +53,15 @@ _FIELDNAMES = [
     "predicted_at", "sector", "direction", "confidence", "raw_score",
     "entry_price", "exit_price", "return_pct", "correct",
     "leader_ticker",
-    "signal_ema_slope", "signal_momentum", "signal_volume",
-    "signal_sector_str", "signal_bullish_pct",
+    "regime", "regime_confidence", "mtf_score", "mtf_note",
+    "signal_agreement", "sideways_forced", "confidence_cap",
+    "dynamic_weights_json",
+    "signal_ema_slope", "signal_price_vs_ema", "signal_candle_direction",
+    "signal_body_strength", "signal_consecutive", "signal_volume_confirm",
+    "signal_volatility", "signal_momentum", "signal_sector_strength",
+    "signal_bullish_pct", "signal_money_flow", "signal_participation",
+    # Legacy aliases kept for backward compatibility with older readers.
+    "signal_volume", "signal_sector_str",
 ]
 
 # ── Calibration in-memory cache (rebuilt on demand) ──────────────────
@@ -64,6 +72,33 @@ _cache_built_at: str = ""
 def _ensure_dir() -> None:
     try:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+
+def _coerce_schema(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add any missing columns and preserve older logs when the schema evolves.
+    """
+    out = df.copy()
+    for col in _FIELDNAMES:
+        if col not in out.columns:
+            out[col] = ""
+    return out[_FIELDNAMES]
+
+
+def _ensure_schema() -> None:
+    """
+    Upgrade the CSV header in place when new columns are added.
+    """
+    try:
+        _ensure_dir()
+        if not _LOG_PATH.exists():
+            return
+        df = pd.read_csv(_LOG_PATH, dtype=str)
+        upgraded = _coerce_schema(df)
+        if list(upgraded.columns) != list(df.columns) or len(upgraded.columns) != len(df.columns):
+            upgraded.to_csv(_LOG_PATH, index=False)
     except Exception:
         pass
 
@@ -82,7 +117,8 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
     """
     try:
         _ensure_dir()
-        file_exists = _LOG_PATH.exists()
+        _ensure_schema()
+        file_exists = _LOG_PATH.exists() and _LOG_PATH.stat().st_size > 0
         sig = prediction.signals
 
         row = {
@@ -96,11 +132,31 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
             "return_pct":        "",
             "correct":           "",
             "leader_ticker":     prediction.leader_ticker,
+            "regime":            getattr(prediction, "regime", ""),
+            "regime_confidence": f"{float(getattr(prediction, 'regime_confidence', 0.0)):.2f}",
+            "mtf_score":         f"{float(getattr(prediction, 'mtf_score', 0.0)):.2f}",
+            "mtf_note":          str(getattr(prediction, "mtf_note", "") or ""),
+            "signal_agreement":  f"{float(getattr(prediction, 'signal_agreement', 0.0)):.2f}",
+            "sideways_forced":   str(bool(getattr(prediction, "sideways_forced", False))),
+            "confidence_cap":    f"{float(getattr(prediction, 'confidence_cap', 95.0)):.2f}",
+            "dynamic_weights_json": json.dumps(
+                getattr(prediction, "dynamic_weights", {}) or {},
+                sort_keys=True,
+            ),
             "signal_ema_slope":  f"{sig.ema_slope:.2f}",
+            "signal_price_vs_ema": f"{sig.price_vs_ema:.2f}",
+            "signal_candle_direction": f"{sig.candle_direction:.2f}",
+            "signal_body_strength": f"{sig.body_strength:.2f}",
+            "signal_consecutive": f"{sig.consecutive:.2f}",
+            "signal_volume_confirm": f"{sig.volume_confirm:.2f}",
+            "signal_volatility": f"{sig.volatility:.2f}",
             "signal_momentum":   f"{sig.momentum:.2f}",
+            "signal_sector_strength": f"{sig.sector_strength:.2f}",
+            "signal_bullish_pct":f"{sig.bullish_pct:.2f}",
+            "signal_money_flow": f"{sig.money_flow:.2f}",
+            "signal_participation": f"{sig.participation:.2f}",
             "signal_volume":     f"{sig.volume_confirm:.2f}",
             "signal_sector_str": f"{sig.sector_strength:.2f}",
-            "signal_bullish_pct":f"{sig.bullish_pct:.2f}",
         }
 
         with open(_LOG_PATH, "a", newline="", encoding="utf-8") as f:
@@ -125,9 +181,10 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
     Returns number of rows filled.
     """
     try:
+        _ensure_schema()
         if not _LOG_PATH.exists():
             return 0
-        df = pd.read_csv(_LOG_PATH, dtype=str)
+        df = _coerce_schema(pd.read_csv(_LOG_PATH, dtype=str))
         if df.empty:
             return 0
 
@@ -249,9 +306,10 @@ def read_log(sector: str | None = None) -> pd.DataFrame:
     If sector is given, filter to that sector only.
     """
     try:
+        _ensure_schema()
         if not _LOG_PATH.exists():
             return pd.DataFrame(columns=_FIELDNAMES)
-        df = pd.read_csv(_LOG_PATH, dtype=str)
+        df = _coerce_schema(pd.read_csv(_LOG_PATH, dtype=str))
         if sector:
             df = df[df["sector"] == sector].copy()
         return df

@@ -113,6 +113,10 @@ def _metric_card_html(label: str, value: str, color: str = "#f0b429", sub: str =
     )
 
 
+def _pretty_name(value: str) -> str:
+    return str(value or "").replace("_", " ").strip().title()
+
+
 # ══════════════════════════════════════════════════════════════════════
 # SECTION 1 — SECTOR PREDICTION DETAIL
 # ══════════════════════════════════════════════════════════════════════
@@ -175,6 +179,53 @@ def _render_prediction_detail(
         st.info("Install `plotly` to enable the candlestick chart.")
 
     # ── Two columns: signal breakdown + sector model accuracy ─────────
+    if getattr(pred, "mtf_note", ""):
+        st.caption(pred.mtf_note)
+    if getattr(pred, "sideways_forced", False):
+        st.info("Low signal agreement forced this call to Sideways.")
+
+    meta_1, meta_2, meta_3, meta_4 = st.columns(4)
+    with meta_1:
+        st.markdown(
+            _metric_card_html(
+                "Regime",
+                _pretty_name(getattr(pred, "regime", "Range Bound")),
+                "#8ab4d8",
+                f"Confidence {getattr(pred, 'regime_confidence', 50.0):.0f}%",
+            ),
+            unsafe_allow_html=True,
+        )
+    with meta_2:
+        st.markdown(
+            _metric_card_html(
+                "MTF Score",
+                f"{getattr(pred, 'mtf_score', 50.0):.0f}",
+                "#00d4a8" if getattr(pred, "mtf_score", 50.0) >= 60 else "#f0b429",
+                "Multi-timeframe alignment",
+            ),
+            unsafe_allow_html=True,
+        )
+    with meta_3:
+        st.markdown(
+            _metric_card_html(
+                "Agreement",
+                f"{getattr(pred, 'signal_agreement', 50.0):.0f}%",
+                "#00d4a8" if getattr(pred, "signal_agreement", 50.0) >= 60 else "#f0b429",
+                "Cross-signal consensus",
+            ),
+            unsafe_allow_html=True,
+        )
+    with meta_4:
+        st.markdown(
+            _metric_card_html(
+                "Confidence Cap",
+                f"{getattr(pred, 'confidence_cap', 95.0):.0f}%",
+                "#ff4d6d" if getattr(pred, "confidence_cap", 95.0) < 70 else "#8ab4d8",
+                "Regime-adjusted ceiling",
+            ),
+            unsafe_allow_html=True,
+        )
+
     col_sig, col_acc = st.columns([3, 2])
 
     with col_sig:
@@ -239,6 +290,21 @@ def _render_prediction_detail(
                 )
 
     # ── Log this prediction ───────────────────────────────────────────
+        weights = getattr(pred, "dynamic_weights", {}) or {}
+        if weights:
+            top_weights = pd.DataFrame(
+                [
+                    {"Signal": _pretty_name(name), "Weight %": round(weight * 100, 2)}
+                    for name, weight in sorted(weights.items(), key=lambda item: item[1], reverse=True)[:6]
+                ]
+            )
+            st.markdown(
+                '<div style="color:#8ab4d8;font-size:12px;text-transform:uppercase;'
+                'letter-spacing:1px;margin:16px 0 8px;">Active Weighting</div>',
+                unsafe_allow_html=True,
+            )
+            st.dataframe(top_weights, hide_index=True, use_container_width=True)
+
     if _TR_OK:
         key = f"_pred_logged_{sector}_{pred.predicted_at[:10]}"
         if not st.session_state.get(key, False):
@@ -329,10 +395,12 @@ def _render_performance_dashboard() -> None:
         return
 
     # ── Top metrics row ───────────────────────────────────────────────
-    m1, m2, m3, m4, m5 = st.columns(5)
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     acc_col = "#00d4a8" if ev.accuracy_pct >= 60 else ("#f0b429" if ev.accuracy_pct >= 45 else "#ff4d6d")
     ret_col = "#00d4a8" if ev.avg_return_pct > 0 else "#ff4d6d"
     dd_col  = "#ff4d6d" if ev.max_drawdown < -5 else "#f0b429"
+    sharpe_col = "#00d4a8" if ev.sharpe_approx > 0 else "#ff4d6d"
+    stability_col = "#00d4a8" if ev.wf_stability_score >= 60 else ("#f0b429" if ev.wf_stability_score >= 45 else "#ff4d6d")
 
     with m1:
         st.markdown(_metric_card_html("Total Predictions", str(ev.total_predictions),
@@ -349,6 +417,29 @@ def _render_performance_dashboard() -> None:
     with m5:
         st.markdown(_metric_card_html("Max Drawdown", f"{ev.max_drawdown:.1f}%",
                                       dd_col, f"σ {ev.return_volatility:.2f}%"), unsafe_allow_html=True)
+
+    with m6:
+        st.markdown(_metric_card_html("Stability", f"{ev.wf_stability_score:.1f}",
+                                      stability_col, ev.wf_note or "Walk-forward"), unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    r1, r2, r3, r4, r5 = st.columns(5)
+    with r1:
+        st.markdown(_metric_card_html("Sharpe", f"{ev.sharpe_approx:.2f}",
+                                      sharpe_col, f"Expectancy {ev.expectancy:+.2f}%"), unsafe_allow_html=True)
+    with r2:
+        st.markdown(_metric_card_html("Win Streak", str(ev.max_win_streak),
+                                      "#00d4a8", f"Loss streak {ev.max_loss_streak}"), unsafe_allow_html=True)
+    with r3:
+        st.markdown(_metric_card_html("Calibration", f"{ev.calibration_score:.1f}",
+                                      "#f0b429", "Lower is better"), unsafe_allow_html=True)
+    with r4:
+        st.markdown(_metric_card_html("W/F Accuracy", f"{ev.wf_overall_accuracy:.1f}%",
+                                      stability_col, "Walk-forward"), unsafe_allow_html=True)
+    with r5:
+        st.markdown(_metric_card_html("Best Trade", f"{ev.best_trade:+.1f}%",
+                                      ret_col, f"Worst {ev.worst_trade:+.1f}%"), unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -470,6 +561,76 @@ def _render_performance_dashboard() -> None:
             )
 
     # ── Last 10 trades ────────────────────────────────────────────────
+    if ev.wf_rolling_accuracy or (ev.signal_perf_df is not None and not ev.signal_perf_df.empty):
+        st.markdown("<br>", unsafe_allow_html=True)
+        wf_col, sig_col = st.columns([3, 2])
+
+        with wf_col:
+            st.markdown(
+                '<div style="color:#8ab4d8;font-size:12px;text-transform:uppercase;'
+                'letter-spacing:1px;margin-bottom:8px;">Walk-Forward Stability</div>',
+                unsafe_allow_html=True,
+            )
+            if ev.wf_rolling_accuracy:
+                try:
+                    import plotly.graph_objects as go
+
+                    wf_fig = go.Figure()
+                    wf_fig.add_trace(go.Scatter(
+                        x=ev.wf_fold_dates or list(range(1, len(ev.wf_rolling_accuracy) + 1)),
+                        y=ev.wf_rolling_accuracy,
+                        name="Accuracy",
+                        mode="lines+markers",
+                        line=dict(color="#00d4a8", width=2),
+                    ))
+                    if ev.wf_rolling_returns:
+                        wf_fig.add_trace(go.Bar(
+                            x=ev.wf_fold_dates or list(range(1, len(ev.wf_rolling_returns) + 1)),
+                            y=ev.wf_rolling_returns,
+                            name="Fold Return",
+                            marker_color="#f0b429",
+                            opacity=0.45,
+                            yaxis="y2",
+                        ))
+                    wf_fig.update_layout(
+                        height=280,
+                        paper_bgcolor="#0a0e1a",
+                        plot_bgcolor="#0d1117",
+                        font=dict(color="#8ab4d8", size=10),
+                        margin=dict(l=30, r=30, t=10, b=30),
+                        legend=dict(orientation="h", x=0, y=1.15, font=dict(size=9)),
+                        yaxis=dict(title="Accuracy %", range=[0, 100]),
+                        yaxis2=dict(title="Return %", overlaying="y", side="right"),
+                    )
+                    st.plotly_chart(wf_fig, use_container_width=True)
+                except Exception as exc:
+                    st.info(f"Walk-forward chart unavailable: {exc}")
+            else:
+                st.caption(ev.wf_note or "Walk-forward data will appear after more validated predictions.")
+
+        with sig_col:
+            st.markdown(
+                '<div style="color:#8ab4d8;font-size:12px;text-transform:uppercase;'
+                'letter-spacing:1px;margin-bottom:8px;">Signal Quality</div>',
+                unsafe_allow_html=True,
+            )
+            if ev.signal_perf_df is not None and not ev.signal_perf_df.empty:
+                sig_df = ev.signal_perf_df.copy()
+                if "Signal" in sig_df.columns:
+                    sig_df["Signal"] = sig_df["Signal"].apply(_pretty_name)
+                sig_df.columns = ["Delta Weight" if "Weight" in str(col) and "Î" in str(col) else col for col in sig_df.columns]
+                st.dataframe(sig_df, hide_index=True, use_container_width=True, height=280)
+            else:
+                st.caption("Signal reliability will populate after validated predictions accumulate.")
+
+    if ev.regime_perf_df is not None and not ev.regime_perf_df.empty:
+        st.markdown(
+            '<div style="color:#8ab4d8;font-size:12px;text-transform:uppercase;'
+            'letter-spacing:1px;margin:20px 0 8px;">Regime Split</div>',
+            unsafe_allow_html=True,
+        )
+        st.dataframe(ev.regime_perf_df, hide_index=True, use_container_width=True)
+
     if not ev.last_10.empty:
         st.markdown(
             '<div style="color:#8ab4d8;font-size:12px;text-transform:uppercase;'
@@ -477,16 +638,18 @@ def _render_performance_dashboard() -> None:
             unsafe_allow_html=True,
         )
         show_cols = [c for c in (
-            "predicted_at", "sector", "direction",
+            "predicted_at", "sector", "direction", "regime",
             "confidence", "return_pct", "correct",
         ) if c in ev.last_10.columns]
         d10 = ev.last_10[show_cols].rename(columns={
             "predicted_at": "Date", "sector": "Sector",
-            "direction": "Direction", "confidence": "Conf",
+            "direction": "Direction", "regime": "Regime", "confidence": "Conf",
             "return_pct": "Return %", "correct": "Correct",
         })
         if "Date" in d10.columns:
             d10["Date"] = d10["Date"].str[:10]
+        if "Regime" in d10.columns:
+            d10["Regime"] = d10["Regime"].apply(_pretty_name)
 
         def _t10_style(row):
             styles = []
