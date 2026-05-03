@@ -616,15 +616,28 @@ def build_chart(
     )
 
     # ── Vertical separator (prediction zone boundary) ─────────────────
-    sep_x = pc_date - half_day * 1.5
-    fig.add_vline(
+    sep_x = pd.Timestamp(pc_date - half_day * 1.5).to_pydatetime()
+    fig.add_shape(
+        type="line",
+        x0=sep_x,
+        x1=sep_x,
+        y0=0,
+        y1=1,
+        xref="x",
+        yref="paper",
+        line=dict(color="rgba(255,255,255,0.15)", width=1, dash="dot"),
+    )
+    fig.add_annotation(
         x=sep_x,
-        line_color="rgba(255,255,255,0.15)",
-        line_width=1,
-        line_dash="dot",
-        annotation_text="Prediction Zone",
-        annotation_font=dict(color="rgba(255,255,255,0.25)", size=9),
-        annotation_position="top left",
+        y=1,
+        xref="x",
+        yref="paper",
+        text="Prediction Zone",
+        font=dict(color="rgba(255,255,255,0.25)", size=9),
+        showarrow=False,
+        xanchor="left",
+        yanchor="top",
+        yshift=-4,
     )
 
     # ── Predicted candle — PART 3 upgrade ────────────────────────────
@@ -718,7 +731,6 @@ def build_chart(
             x=0, y=1.045,
             font=dict(color=LABEL, size=11),
             bgcolor="rgba(0,0,0,0)",
-            itemgap=18,
         ),
         xaxis_rangeslider_visible=False,
         title=dict(
