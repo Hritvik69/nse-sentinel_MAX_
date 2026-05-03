@@ -253,6 +253,8 @@ except Exception:
     def render_live_breakout_pulse(*args, **kwargs):  # type: ignore[misc]
         return None
 
+from app_prediction_chart_section import render_prediction_chart_section
+
 try:
     from nse_animations import inject_animations
     _NSE_ANIMATIONS_OK = True
@@ -5862,6 +5864,7 @@ _SIDEBAR_PANEL_KEYS = (
     "battle_show_panel",
     "aura_show_panel",
     "tomorrow_picks_show_panel",
+    "pred_chart_show_panel",
     "csv_next_day_show_panel",
     "live_pulse_show_panel",
 )
@@ -5965,6 +5968,8 @@ with st.sidebar:
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
     tomorrow_picks_clicked = st.button("📈 Tomorrow's Picks", key="tomorrow_picks_btn")
 
+    pred_chart_clicked = st.button("📊 Prediction Chart Tomorrow", key="pred_chart_btn")
+
     if sector_screener_clicked:
         _activate_sidebar_panel("show_sector_screener")
     if battle_compare_clicked:
@@ -5973,6 +5978,8 @@ with st.sidebar:
         _activate_sidebar_panel("aura_show_panel")
     if tomorrow_picks_clicked:
         _activate_sidebar_panel("tomorrow_picks_show_panel")
+    if pred_chart_clicked:
+        _activate_sidebar_panel("pred_chart_show_panel")
 
     st.markdown("<hr>", unsafe_allow_html=True)
 
@@ -6192,10 +6199,12 @@ _mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
 _show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
 _show_tomorrow_picks_panel = bool(st.session_state.get("tomorrow_picks_show_panel", False))
+_show_pred_chart_panel = bool(st.session_state.get("pred_chart_show_panel", False))
 _show_home_scanner = not (
     _show_sector_screener
     or _show_live_pulse_panel
     or _show_tomorrow_picks_panel
+    or _show_pred_chart_panel
 )
 
 st.markdown(
@@ -6292,6 +6301,10 @@ with st.sidebar:
             st.rerun()
     else:
         st.caption(f"✅ {ticker_count:,} tickers loaded")
+
+if _show_pred_chart_panel:
+    render_prediction_chart_section(ticker_list=all_tickers)
+    st.stop()
 
 if _show_home_scanner:
     c1, c2, c3, c4 = st.columns(4)
