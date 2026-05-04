@@ -180,9 +180,88 @@ from strategy_engines import (
     backtest_with_preloaded,
     get_df_for_ticker,
 )
-from strategy_engines._engine_utils import (
-    get_shared_market_frame as _get_shared_market_frame,
-    is_fresh_enough as _is_fresh_enough,
+try:
+    import strategy_engines._engine_utils as _engine_utils  # type: ignore[import]
+except Exception:
+    _engine_utils = None  # type: ignore[assignment]
+
+
+def _fallback_is_fresh_enough(df, strict: bool = False) -> bool:
+    if df is None or getattr(df, "empty", True):
+        return False
+    if not strict:
+        return True
+    try:
+        last_seen = pd.to_datetime(df.index[-1]).date()
+        return last_seen == get_expected_data_date()
+    except Exception:
+        return True
+
+
+def _fallback_get_shared_market_frame(
+    symbol: str,
+    *,
+    period: str = "6mo",
+    min_rows: int = 30,
+    append_nse_suffix: bool = True,
+    allow_csv_cache: bool | None = None,
+    require_volume: bool = True,
+) -> "pd.DataFrame | None":
+    raw = str(symbol or "").strip().upper()
+    if not raw:
+        return None
+
+    ticker = raw if (not append_nse_suffix or raw.endswith(".NS")) else f"{raw}.NS"
+
+    try:
+        cached = get_df_for_ticker(ticker)
+        if cached is not None and len(cached) >= max(1, int(min_rows)):
+            return cached
+    except Exception:
+        pass
+
+    try:
+        df = yf.download(
+            ticker,
+            period=period,
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            timeout=12,
+            threads=False,
+        )
+        if df is None or df.empty:
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.copy()
+        df.columns = [str(col).strip().title() for col in df.columns]
+        needed = ["Open", "High", "Low", "Close"]
+        if not set(needed).issubset(df.columns):
+            return None
+        if "Volume" not in df.columns:
+            if require_volume:
+                return None
+            df["Volume"] = 0.0
+        cols = needed + ["Volume"]
+        df = df[cols].copy()
+        for col in cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=needed)
+        if require_volume:
+            df = df.dropna(subset=["Volume"])
+        else:
+            df["Volume"] = df["Volume"].fillna(0.0)
+        return df.sort_index() if len(df) >= max(1, int(min_rows)) else None
+    except Exception:
+        return None
+
+
+_is_fresh_enough = getattr(_engine_utils, "is_fresh_enough", _fallback_is_fresh_enough)
+_get_shared_market_frame = getattr(
+    _engine_utils,
+    "get_shared_market_frame",
+    _fallback_get_shared_market_frame,
 )
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
