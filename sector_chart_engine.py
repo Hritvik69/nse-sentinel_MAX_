@@ -41,8 +41,10 @@ _EMA20_HEX = "#f5a623"
 _EMA50_HEX = "#3b82f6"
 _PRED_HEX = "#4da3ff"
 
-_PRED_FILL_ALPHA = 0.24
-_PRED_GLOW_ALPHA = 0.12
+_PRED_GLOW_ALPHA = 0.14
+_PRED_EDGE_HEX = "#dbeafe"
+_PRED_WICK_HEX = "#8ec5ff"
+_PRED_PATH_ALPHA = 0.78
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
@@ -193,7 +195,7 @@ def _projection_shapes(
             "x1": sep_x,
             "y0": 0.0,
             "y1": 1.0,
-            "line": {"color": "rgba(255,255,255,0.12)", "width": 1.0, "dash": "dot"},
+            "line": {"color": "rgba(142,197,255,0.28)", "width": 1.15, "dash": "dot"},
             "layer": "below",
         },
         {
@@ -204,7 +206,7 @@ def _projection_shapes(
             "x1": pred_date,
             "y0": last_close,
             "y1": pred_close,
-            "line": {"color": _rgba(_PRED_RGB, 0.56), "width": 1.7, "dash": "dot"},
+            "line": {"color": _rgba(_PRED_RGB, _PRED_PATH_ALPHA), "width": 2.0, "dash": "dot"},
             "layer": "above",
         },
         {
@@ -217,29 +219,6 @@ def _projection_shapes(
             "y1": body_y1,
             "fillcolor": _rgba(_PRED_RGB, _PRED_GLOW_ALPHA),
             "line": {"color": _rgba(_PRED_RGB, 0.0), "width": 0},
-            "layer": "above",
-        },
-        {
-            "type": "rect",
-            "xref": "x",
-            "yref": "y",
-            "x0": pred_date - half_day,
-            "x1": pred_date + half_day,
-            "y0": body_y0,
-            "y1": body_y1,
-            "fillcolor": _rgba(_PRED_RGB, _PRED_FILL_ALPHA),
-            "line": {"color": _PRED_HEX, "width": 3.0},
-            "layer": "above",
-        },
-        {
-            "type": "line",
-            "xref": "x",
-            "yref": "y",
-            "x0": pred_date,
-            "x1": pred_date,
-            "y0": pred_low,
-            "y1": pred_high,
-            "line": {"color": _PRED_HEX, "width": 2.8},
             "layer": "above",
         },
     ]
@@ -385,24 +364,65 @@ def build_sector_chart(prediction) -> "go.Figure | None":
         col=1,
     )
 
+    pred_date = pd.Timestamp(pred_candle["date"])
+    pred_open = float(pred_candle["open"])
+    pred_high = float(pred_candle["high"])
+    pred_low = float(pred_candle["low"])
+    pred_close = float(pred_candle["close"])
+
+    fig.add_trace(
+        go.Candlestick(
+            x=[pred_date],
+            open=[pred_open],
+            high=[pred_high],
+            low=[pred_low],
+            close=[pred_close],
+            increasing={
+                "fillcolor": _PRED_HEX,
+                "line": {"color": _PRED_EDGE_HEX, "width": 2.4},
+            },
+            decreasing={
+                "fillcolor": _PRED_HEX,
+                "line": {"color": _PRED_EDGE_HEX, "width": 2.4},
+            },
+            whiskerwidth=0.9,
+            name="Projection",
+            showlegend=True,
+            opacity=1.0,
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_shape(
+        type="line",
+        x0=pred_date,
+        x1=pred_date,
+        y0=pred_low,
+        y1=pred_high,
+        line={"color": _PRED_WICK_HEX, "width": 3.0},
+        row=1,
+        col=1,
+    )
+
     fig.add_trace(
         go.Scatter(
-            x=[pd.Timestamp(pred_candle["date"])],
-            y=[float(pred_candle["close"])],
+            x=[pred_date],
+            y=[pred_close],
             mode="markers",
             marker={
-                "size": 10,
+                "size": 11,
                 "color": _PRED_HEX,
-                "line": {"color": "#dbeafe", "width": 1.5},
+                "line": {"color": _PRED_EDGE_HEX, "width": 1.6},
                 "symbol": "diamond",
             },
             name="Projected Close",
             showlegend=False,
             hovertemplate=(
                 "Projected Close: %{y:.2f}<br>"
-                f"Projected Open: {float(pred_candle['open']):.2f}<br>"
-                f"Projected High: {float(pred_candle['high']):.2f}<br>"
-                f"Projected Low: {float(pred_candle['low']):.2f}<extra></extra>"
+                f"Projected Open: {pred_open:.2f}<br>"
+                f"Projected High: {pred_high:.2f}<br>"
+                f"Projected Low: {pred_low:.2f}<extra></extra>"
             ),
         ),
         row=1,

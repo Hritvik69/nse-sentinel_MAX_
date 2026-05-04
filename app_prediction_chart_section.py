@@ -7,7 +7,7 @@ UPGRADES FROM v1
 ────────────────
   PART 1  Candle visuals   whiskerwidth=0.8, body line_width=1.5, opacity=1.0
   PART 2  Multi-EMA        EMA20 (amber) + EMA50 (blue), alignment → confidence
-  PART 3  Predicted candle thick 3px dashed border + double-layer glow rect
+  PART 3  Predicted candle solid blue body + polished halo projection
   PART 4  Regime detection TRENDING / SIDEWAYS / HIGH VOLATILITY
   PART 5  Confidence       signal agreement bonus/penalty, EMA alignment weight
   PART 6  Zoom+interaction range buttons 1M / All, toolbar cleaned
@@ -110,9 +110,11 @@ LABEL      = "#ccd9e8"
 SUBTEXT    = "#8ab4d8"
 
 # Predicted candle
-PRED_GLOW_ALPHA = 0.10
-PRED_FILL_ALPHA = 0.25
-PRED_BORDER_W   = 3
+PRED_GLOW_ALPHA = 0.14
+PRED_BORDER_W   = 2.4
+PRED_EDGE_COL   = "#dbeafe"
+PRED_WICK_COL   = "#8ec5ff"
+PRED_PATH_COL   = "rgba(77,163,255,0.78)"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -576,7 +578,7 @@ def build_chart(
     • whiskerwidth=0.8  (thicker wicks)
     • Candlestick line_width=1.5 (thicker bodies)
     • EMA50 trace added (blue)
-    • Predicted candle: 3px dashed border + double-layer glow
+    • Predicted candle: solid blue projected candle with halo
     • Label: "Bullish (72%) — Strong Momentum"
     • Range buttons: 1M / All
     • Height 600, balanced margins
@@ -605,10 +607,11 @@ def build_chart(
     # Per-candle colours
     vol_col = [VOL_BULL if c >= o else VOL_BEAR for c, o in zip(closes, opens)]
 
-    # Predicted candle styling: always blue for a cleaner forecast zone
-    pc_fill   = f"rgba(77,163,255,{PRED_FILL_ALPHA})"
+    # Predicted candle styling: always solid blue for a cleaner forecast zone
+    pc_fill   = PRED_COL
     pc_glow   = f"rgba(77,163,255,{PRED_GLOW_ALPHA})"
-    pc_border = PRED_COL
+    pc_border = PRED_EDGE_COL
+    pc_wick   = PRED_WICK_COL
 
     pc_open  = pred_candle["open"]
     pc_close = pred_candle["close"]
@@ -699,7 +702,7 @@ def build_chart(
         y1=1,
         xref="x",
         yref="paper",
-        line=dict(color="rgba(255,255,255,0.15)", width=1, dash="dot"),
+        line=dict(color="rgba(142,197,255,0.28)", width=1.15, dash="dot"),
     )
 
     # ── Predicted candle — PART 3 upgrade ────────────────────────────
@@ -708,32 +711,42 @@ def build_chart(
     if body_y1 <= body_y0:
         body_y1 = body_y0 + abs(pc_high - pc_low) * 0.05 + 1e-6
 
-    # Layer 1: outer glow (wider, very transparent)
+    # Layer 1: outer glow beneath the projected candle
     fig.add_shape(
         type="rect",
         x0=pc_date - glow_day, x1=pc_date + glow_day,
         y0=body_y0, y1=body_y1,
         fillcolor=pc_glow,
-        line=dict(color=pc_border, width=0),
+        line=dict(color=pc_glow, width=0),
         row=1, col=1,
     )
 
-    # Layer 2: actual body (dashed 3px border)
-    fig.add_shape(
-        type="rect",
-        x0=pc_date - half_day, x1=pc_date + half_day,
-        y0=body_y0, y1=body_y1,
-        fillcolor=pc_fill,
-        line=dict(color=pc_border, width=PRED_BORDER_W, dash="dash"),
+    fig.add_trace(
+        go.Candlestick(
+            x=[pc_date],
+            open=[pc_open], high=[pc_high], low=[pc_low], close=[pc_close],
+            increasing=dict(
+                line=dict(color=pc_border, width=PRED_BORDER_W),
+                fillcolor=pc_fill,
+            ),
+            decreasing=dict(
+                line=dict(color=pc_border, width=PRED_BORDER_W),
+                fillcolor=pc_fill,
+            ),
+            whiskerwidth=0.9,
+            name="Projection",
+            showlegend=True,
+            opacity=1.0,
+        ),
         row=1, col=1,
     )
 
-    # Wick: high–low
+    # Wick reinforcement keeps the projected bar crisp above the glow.
     fig.add_shape(
         type="line",
         x0=pc_date, x1=pc_date,
         y0=pc_low, y1=pc_high,
-        line=dict(color=pc_border, width=2.5, dash="dot"),
+        line=dict(color=pc_wick, width=3.0),
         row=1, col=1,
     )
 
@@ -742,7 +755,7 @@ def build_chart(
         type="line",
         x0=dates[-1], x1=pc_date,
         y0=float(closes[-1]), y1=float(pc_close),
-        line=dict(color="rgba(77,163,255,0.55)", width=1.6, dash="dot"),
+        line=dict(color=PRED_PATH_COL, width=2.0, dash="dot"),
         row=1, col=1,
     )
     fig.add_trace(
@@ -751,9 +764,9 @@ def build_chart(
             y=[pc_close],
             mode="markers",
             marker=dict(
-                size=10,
-                color=pc_border,
-                line=dict(color="#dbeafe", width=1.4),
+                size=11,
+                color=pc_fill,
+                line=dict(color=pc_border, width=1.6),
                 symbol="diamond",
             ),
             name="Projected Close",
