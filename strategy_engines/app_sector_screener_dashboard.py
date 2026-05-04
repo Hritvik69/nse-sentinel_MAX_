@@ -8,6 +8,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Any
 
 try:
+    from feature_data_manager import get_current_window as _get_feature_window
+except Exception:
+    def _get_feature_window() -> str:
+        return "CLOSED"
+
+try:
     from zoneinfo import ZoneInfo
 except ImportError:
     ZoneInfo = None  # type: ignore[assignment]
@@ -1304,21 +1310,25 @@ def render_sector_screener_dashboard(
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    _live_refresh_window = _get_feature_window() == "LIVE"
     _act_close_col, _act_refresh_col, _act_refresh_all_col, _act_note_col = st.columns([1.0, 1.6, 1.8, 3.6])
     with _act_close_col:
         _close_clicked = st.button("Close Screener", key="ss_screener_close_btn", width="stretch")
     with _act_refresh_col:
-        _live_refresh_clicked = st.button(
+        if _live_refresh_window:
+            _live_refresh_clicked = st.button(f"Refresh Live {_refresh_scope}", key="ss_screener_refresh_live_btn", disabled=_tt_live_blocked, width="stretch")
             f"🔄 Refresh Live {_refresh_scope}",
-            key="ss_screener_refresh_live_btn",
-            disabled=_tt_live_blocked,
-            width="stretch",
-        )
+            # key="ss_screener_refresh_live_btn",
+            # disabled=_tt_live_blocked,
+            # width="stretch",
+        else:
+            _live_refresh_clicked = False
+            st.caption("Live refresh opens during market hours only.")
     with _act_refresh_all_col:
         _refresh_all_live_clicked = st.button(
             "📡 Refresh Live All Sectors",
             key="ss_screener_refresh_all_live_btn",
-            disabled=_tt_live_blocked,
+            disabled=(not _live_refresh_window) or _tt_live_blocked,
             width="stretch",
         )
     with _act_note_col:

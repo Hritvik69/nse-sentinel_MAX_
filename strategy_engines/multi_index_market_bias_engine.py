@@ -42,7 +42,7 @@ import yfinance as yf
 
 try:
     from strategy_engines._engine_utils import (
-        ema, rsi_vec, safe, get_df_for_ticker, preload_all, ALL_DATA, _ALL_DATA_LOCK,
+        ema, rsi_vec, safe, preload_all, ALL_DATA, _ALL_DATA_LOCK,
     )
     _EU_OK = True
 except Exception:
@@ -57,8 +57,14 @@ except Exception:
     def safe(v, default=0.0):         # type: ignore[misc]
         try: return float(v) if _np.isfinite(float(v)) else default  # type: ignore[arg-type]
         except Exception: return default
-    def get_df_for_ticker(ticker):    return None  # type: ignore[misc]
+try:
+    from feature_data_manager import feature_manager, get_current_window as _get_feature_window
+except Exception:
     def preload_all(tickers, **kw):   pass  # type: ignore[misc]
+    feature_manager = None  # type: ignore[assignment]
+
+    def _get_feature_window() -> str:
+        return "CLOSED"
 
 # ── Time Travel integration ────────────────────────────────────────────
 try:
@@ -182,6 +188,21 @@ def _download_index_ohlcv(ticker: str, period: str = "3mo") -> pd.DataFrame | No
     Separate from _engine_utils.download_history() to avoid .NS suffix logic.
     Returns None on failure or insufficient data (< 25 rows).
     """
+    if feature_manager is not None:
+        try:
+            df = feature_manager.get_symbol_data(
+                ticker,
+                period=period,
+                interval="1d",
+                force_refresh=False,
+                append_nse_suffix=False,
+                min_rows=25,
+                allow_snapshot=False,
+            )
+            if df is not None and len(df) >= 25:
+                return _tt_cutoff(df)
+        except Exception:
+            pass
     try:
         df = yf.download(
             ticker, period=period, interval="1d",
@@ -314,14 +335,14 @@ def _index_fallback() -> dict:
     }
 
 
-def _build_stock_row(ticker_ns: str, mode: int) -> dict | None:
+def _build_stock_row(ticker_ns: str, mode: int, df: pd.DataFrame | None = None) -> dict | None:
     """
     Build a raw indicator row for one stock using preloaded ALL_DATA.
     Mirrors the logic in battle_mode_engine._build_battle_row().
     Returns None on any failure.
     """
     try:
-        df = get_df_for_ticker(ticker_ns)
+        df = df.copy() if isinstance(df, pd.DataFrame) else None
         if df is None or df.empty:
             return None
 
@@ -415,7 +436,7 @@ def _build_stock_row_cached(ticker_ns: str, mode: int) -> dict | None:
                 cached = _DASHBOARD_STOCK_ROW_CACHE[cache_key]
                 return dict(cached) if isinstance(cached, dict) else None
 
-        row = _build_stock_row(ticker_ns, mode)
+        row = _build_stock_row(ticker_ns, mode, df)
         with _DASHBOARD_STOCK_ROW_CACHE_LOCK:
             _DASHBOARD_STOCK_ROW_CACHE[cache_key] = dict(row) if isinstance(row, dict) else None
         return row
@@ -1556,6 +1577,22 @@ def preload_dashboard_sector_data(
             return []
 
         tickers_ns = [sym if sym.endswith(".NS") else f"{sym}.NS" for sym in symbols]
+        if feature_manager is not None:
+            if force_live_refresh:
+                with _ALL_DATA_LOCK:
+                    for ticker_ns in tickers_ns:
+                        ALL_DATA.pop(ticker_ns, None)
+                _discard_dashboard_row_cache_for(tickers_ns)
+            try:
+                feature_manager.get_multiple_stocks(
+                    tickers_ns,
+                    period="6mo",
+                    interval="1d",
+                    force_refresh=force_live_refresh,
+                )
+            except Exception:
+                pass
+            return symbols
         if force_live_refresh:
             with _ALL_DATA_LOCK:
                 for ticker_ns in tickers_ns:
@@ -1659,7 +1696,23 @@ def build_raw_rows_for_tickers(
 
         tickers_ns = [t if t.endswith(".NS") else f"{t}.NS" for t in symbols]
         if preload_missing:
-            if force_live_refresh:
+            if feature_manager is not None:
+                if force_live_refresh:
+                    with _ALL_DATA_LOCK:
+                        for ticker_ns in tickers_ns:
+                            ALL_DATA.pop(ticker_ns, None)
+                    _discard_dashboard_row_cache_for(tickers_ns)
+                try:
+                    feature_manager.get_multiple_stocks(
+                        tickers_ns,
+                        period="6mo",
+                        interval="1d",
+                        force_refresh=force_live_refresh,
+                    )
+                except Exception:
+                    pass
+                missing = tickers_ns
+            elif force_live_refresh:
                 with _ALL_DATA_LOCK:
                     for ticker_ns in tickers_ns:
                         ALL_DATA.pop(ticker_ns, None)

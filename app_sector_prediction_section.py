@@ -24,6 +24,21 @@ import math
 import pandas as pd
 import streamlit as st
 
+try:
+    from feature_data_manager import (
+        feature_manager,
+        get_current_window as _get_feature_window,
+        render_data_status_badge as _render_data_status_badge,
+    )
+except Exception:
+    feature_manager = None  # type: ignore[assignment]
+
+    def _get_feature_window() -> str:
+        return "CLOSED"
+
+    def _render_data_status_badge(status, label: str = "") -> None:
+        return None
+
 # ── Engine imports (graceful) ─────────────────────────────────────────
 try:
     from sector_prediction_engine import predict_sector, SectorPrediction
@@ -215,8 +230,23 @@ def _render_prediction_detail(
         return
 
     # ── Run prediction ────────────────────────────────────────────────
+    force_refresh = False
+    if _get_feature_window() == "LIVE":
+        refresh_col, note_col = st.columns([1.2, 3.0])
+        with refresh_col:
+            force_refresh = st.button("Refresh Sector", key=f"sector_pred_refresh_{sector}", width="stretch")
+        with note_col:
+            st.caption("Live window: refresh rebuilds the sector chart inputs and prediction from the latest shared market data.")
+    else:
+        st.caption("Data locked until next market session.")
+
     with st.spinner(f"Analysing {sector}…"):
-        pred = predict_sector(sector, scan_df, all_data)
+        pred = predict_sector(sector, scan_df, all_data, force_refresh=force_refresh)
+    if feature_manager is not None:
+        _render_data_status_badge(
+            feature_manager.get_last_status(f"sector:{sector.strip().upper().replace(' ', '_')}"),
+            label=sector,
+        )
 
     # ── Backfill any outstanding outcomes ─────────────────────────────
     if _TR_OK:
@@ -226,23 +256,49 @@ def _render_prediction_detail(
     dir_col = _dir_color(pred.direction)
     icon    = _dir_icon(pred.direction)
     source_text = _prediction_source_text(pred)
+    ohlc_df = getattr(pred, "ohlc_df", None)
+    last_close = 0.0
+    if isinstance(ohlc_df, pd.DataFrame) and not ohlc_df.empty:
+        try:
+            last_close = float(ohlc_df["Close"].iloc[-1])
+        except Exception:
+            last_close = 0.0
+    candle_count = int(getattr(pred, "ohlc_bars", 0) or (len(ohlc_df) if isinstance(ohlc_df, pd.DataFrame) else 0))
+    regime_label = _pretty_name(getattr(pred, "regime", "Range Bound"))
+    last_close_chip = ""
+    if last_close > 0:
+        last_close_chip = (
+            '<span style="background:#101d33;border:1px solid rgba(255,255,255,0.08);'
+            f'border-radius:999px;padding:6px 12px;font-size:11px;color:#8ab4d8;">Last Close: ₹{last_close:,.2f}</span>'
+        )
 
     st.markdown(
-        f'<div style="background:#0d1626;border:2px solid {dir_col}40;border-radius:12px;'
-        f'padding:20px 24px;margin-bottom:16px;">'
-        f'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">'
+        f'<div style="background:linear-gradient(180deg,#0f1a2f 0%,#0a1220 100%);'
+        f'border:1.5px solid {dir_col}38;border-radius:18px;padding:22px 24px;'
+        f'margin-bottom:18px;box-shadow:0 18px 38px rgba(0,0,0,0.16);">'
+        f'<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;">'
         f'<div>'
-        f'<div style="color:#8ab4d8;font-size:11px;text-transform:uppercase;letter-spacing:2px;">Sector Prediction</div>'
-        f'<div style="color:{dir_col};font-size:36px;font-weight:800;letter-spacing:-1px;">'
+        f'<div style="color:#6f86a8;font-size:10px;text-transform:uppercase;letter-spacing:.16em;">Sector Prediction</div>'
+        f'<div style="color:#dce7f8;font-size:32px;font-weight:900;letter-spacing:-1px;line-height:1.04;margin-top:6px;">'
+        f'{_sector_label(sector)}</div>'
+        f'<div style="color:{dir_col};font-size:15px;font-weight:800;margin-top:8px;">'
         f'{icon} {pred.direction}</div>'
-        f'<div style="color:#6a8aad;font-size:12px;margin-top:2px;">'
+        f'<div style="color:#7f97b7;font-size:12px;margin-top:6px;">'
         f'{source_text}</div>'
         f'</div>'
-        f'<div style="text-align:right;">'
-        f'<div style="color:#8ab4d8;font-size:11px;text-transform:uppercase;">Confidence</div>'
-        f'<div style="color:{dir_col};font-size:48px;font-weight:900;">{pred.confidence:.0f}<span style="font-size:22px;">%</span></div>'
-        f'{_conf_bar_html(pred.confidence, dir_col)}'
+        f'<div style="min-width:190px;text-align:right;">'
+        f'<div style="color:#6f86a8;font-size:10px;text-transform:uppercase;letter-spacing:.16em;">Confidence</div>'
+        f'<div style="color:#dce7f8;font-size:46px;font-weight:900;line-height:1;margin-top:6px;">'
+        f'{pred.confidence:.0f}<span style="font-size:20px;color:#4da3ff;">%</span></div>'
+        f'{_conf_bar_html(pred.confidence, "#4da3ff")}'
         f'</div>'
+        f'</div>'
+        f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;">'
+        f'<span style="background:#101d33;border:1px solid rgba(77,163,255,0.28);border-radius:999px;padding:6px 12px;'
+        f'font-size:11px;color:#d8e7ff;">Regime: {regime_label}</span>'
+        f'<span style="background:#101d33;border:1px solid rgba(255,255,255,0.08);border-radius:999px;padding:6px 12px;'
+        f'font-size:11px;color:#8ab4d8;">Candles: {candle_count}</span>'
+        f'{last_close_chip}'
         f'</div>'
         f'</div>',
         unsafe_allow_html=True,

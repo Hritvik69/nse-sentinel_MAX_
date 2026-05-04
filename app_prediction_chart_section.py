@@ -34,6 +34,46 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+try:
+    from strategy_engines._engine_utils import get_market_data_signature as _get_market_data_signature
+except Exception:
+    def _get_market_data_signature(live_bucket_minutes: int = 5) -> str:
+        return "fallback"
+
+try:
+    from feature_data_manager import (
+        get_current_window as _get_feature_window,
+        get_time_travel_date as _get_feature_tt_date,
+        render_data_status_badge as _render_data_status_badge,
+    )
+except Exception:
+    def _get_feature_window() -> str:
+        return "CLOSED"
+
+    def _get_feature_tt_date():
+        return None
+
+    def _render_data_status_badge(status, label: str = "") -> None:
+        return None
+
+try:
+    from prediction_chart_engine import fetch_chart_data as _fetch_chart_data, get_chart_status as _get_chart_status
+    _PREDICTION_CHART_ENGINE_OK = True
+except Exception:
+    _PREDICTION_CHART_ENGINE_OK = False
+
+    def _fetch_chart_data(
+        symbol: str,
+        *,
+        period: str = "2mo",
+        interval: str = "1d",
+        force_refresh: bool = False,
+    ) -> pd.DataFrame | None:
+        return None
+
+    def _get_chart_status(symbol: str):
+        return None
+
 # ── yfinance ──────────────────────────────────────────────────────────────────
 _YF_OK = False
 try:
@@ -62,6 +102,7 @@ BEAR       = "#ff3b5c"
 SIDE       = "#8ab4d8"
 EMA20_COL  = "#f5a623"      # amber — short trend
 EMA50_COL  = "#2196f3"      # blue  — mid trend
+PRED_COL   = "#4da3ff"      # blue  — prediction candle
 VOL_BULL   = "rgba(0,255,136,0.35)"
 VOL_BEAR   = "rgba(255,59,92,0.35)"
 TICK       = "#4a6480"
@@ -122,21 +163,59 @@ def _clamp(v: float, lo: float = -1.0, hi: float = 1.0) -> float:
 # PART 1 — DATA ENGINE  (unchanged from v1, cache preserved)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_stock_data(symbol: str, timeframe: str = "1d") -> pd.DataFrame | None:
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_stock_data(
+    symbol: str,
+    timeframe: str = "1d",
+    data_signature: str = "",
+    time_context_key: str = "live",
+    force_refresh: bool = False,
+) -> pd.DataFrame | None:
     """
-    Fetch 2 months of OHLCV daily data via yfinance.
+    Fetch chart data via the shared feature-data pipeline when available.
+
+    data_signature and time_context_key are included so live/simulated panels
+    can refresh when either the market bucket or the selected simulation date changes.
+
     Returns clean DataFrame[Open,High,Low,Close,Volume] or None on failure.
     Minimum 30 candles required.
     """
+    ticker = _normalise_symbol(symbol)
+    if _PREDICTION_CHART_ENGINE_OK:
+        try:
+            shared = _fetch_chart_data(
+                ticker,
+                period="3mo",
+                interval=timeframe,
+                force_refresh=force_refresh,
+            )
+            if shared is not None and not shared.empty:
+                return shared
+        except Exception:
+            pass
+
     if not _YF_OK:
         return None
-    ticker = _normalise_symbol(symbol)
+    tt_cutoff = _get_feature_tt_date()
     try:
-        raw = yf.download(
-            ticker, period="3mo", interval=timeframe,
-            auto_adjust=True, progress=False, timeout=15,
-        )
+        if tt_cutoff is not None:
+            cutoff_ts = pd.Timestamp(tt_cutoff)
+            start = cutoff_ts - pd.Timedelta(days=110)
+            end = cutoff_ts + pd.Timedelta(days=1)
+            raw = yf.download(
+                ticker,
+                start=start.date().isoformat(),
+                end=end.date().isoformat(),
+                interval=timeframe,
+                auto_adjust=True,
+                progress=False,
+                timeout=15,
+            )
+        else:
+            raw = yf.download(
+                ticker, period="3mo", interval=timeframe,
+                auto_adjust=True, progress=False, timeout=15,
+            )
     except Exception:
         return None
 
@@ -152,6 +231,13 @@ def fetch_stock_data(symbol: str, timeframe: str = "1d") -> pd.DataFrame | None:
 
     df = raw[list(required)].copy().dropna(subset=["Open","High","Low","Close"])
     df = df.sort_index()
+    if tt_cutoff is not None:
+        try:
+            df = df.loc[pd.to_datetime(df.index).date <= tt_cutoff].copy()
+        except Exception:
+            pass
+        if df.empty:
+            return None
 
     if not isinstance(df.index, pd.DatetimeIndex):
         df.index = pd.to_datetime(df.index)
@@ -519,22 +605,10 @@ def build_chart(
     # Per-candle colours
     vol_col = [VOL_BULL if c >= o else VOL_BEAR for c, o in zip(closes, opens)]
 
-    # Predicted candle styling
-    if direction == "Bullish":
-        pc_fill   = f"rgba(0,255,136,{PRED_FILL_ALPHA})"
-        pc_glow   = f"rgba(0,255,136,{PRED_GLOW_ALPHA})"
-        pc_border = BULL
-    elif direction == "Bearish":
-        pc_fill   = f"rgba(255,59,92,{PRED_FILL_ALPHA})"
-        pc_glow   = f"rgba(255,59,92,{PRED_GLOW_ALPHA})"
-        pc_border = BEAR
-    else:
-        pc_fill   = f"rgba(138,180,216,{PRED_FILL_ALPHA})"
-        pc_glow   = f"rgba(138,180,216,{PRED_GLOW_ALPHA})"
-        pc_border = SIDE
-
-    p_icon    = {"Bullish": "▲", "Bearish": "▼", "Sideways": "●"}[direction]
-    p_label   = f"{p_icon} {direction} ({confidence:.0f}%) — {label_tag}"
+    # Predicted candle styling: always blue for a cleaner forecast zone
+    pc_fill   = f"rgba(77,163,255,{PRED_FILL_ALPHA})"
+    pc_glow   = f"rgba(77,163,255,{PRED_GLOW_ALPHA})"
+    pc_border = PRED_COL
 
     pc_open  = pred_candle["open"]
     pc_close = pred_candle["close"]
@@ -627,18 +701,6 @@ def build_chart(
         yref="paper",
         line=dict(color="rgba(255,255,255,0.15)", width=1, dash="dot"),
     )
-    fig.add_annotation(
-        x=sep_x,
-        y=1,
-        xref="x",
-        yref="paper",
-        text="Prediction Zone",
-        font=dict(color="rgba(255,255,255,0.25)", size=9),
-        showarrow=False,
-        xanchor="left",
-        yanchor="top",
-        yshift=-4,
-    )
 
     # ── Predicted candle — PART 3 upgrade ────────────────────────────
     body_y0 = min(pc_open, pc_close)
@@ -675,48 +737,35 @@ def build_chart(
         row=1, col=1,
     )
 
-    # ── Prediction label (PART 8) ─────────────────────────────────────
-    ann_y = float(pc_high) * 1.006
-    fig.add_annotation(
-        x=pc_date, y=ann_y,
-        text=p_label,
-        font=dict(color=pc_border, size=12, family="'JetBrains Mono', monospace"),
-        showarrow=True,
-        arrowhead=2,
-        arrowcolor=pc_border,
-        arrowsize=0.8,
-        arrowwidth=1.5,
-        ax=0, ay=-32,
-        xanchor="center",
-        yanchor="bottom",
-        bgcolor="rgba(10,14,26,0.85)",
-        bordercolor=pc_border,
-        borderwidth=1.5,
-        borderpad=5,
+    # ── Clean projection path marker ──────────────────────────────────
+    fig.add_shape(
+        type="line",
+        x0=dates[-1], x1=pc_date,
+        y0=float(closes[-1]), y1=float(pc_close),
+        line=dict(color="rgba(77,163,255,0.55)", width=1.6, dash="dot"),
         row=1, col=1,
     )
-
-    # ── "NOW ▶" marker on last real candle ────────────────────────────
-    fig.add_annotation(
-        x=dates[-1],
-        y=float(highs[-1]) * 1.005,
-        text="NOW ▶",
-        font=dict(color="rgba(255,255,255,0.35)", size=9, family="monospace"),
-        showarrow=False,
-        xanchor="left",
-        yanchor="bottom",
-    )
-
-    # ── EMA alignment label (regime) ──────────────────────────────────
-    ema_lbl_col = BULL if regime.get("ema_aligned") else BEAR
-    ema_lbl_txt = "EMA20>50 ✓" if regime.get("ema_aligned") else "EMA20<50 ✗"
-    fig.add_annotation(
-        x=dates[4], y=float(e20[4]),
-        text=f"  {ema_lbl_txt}",
-        font=dict(color=ema_lbl_col, size=9, family="monospace"),
-        showarrow=False,
-        xanchor="left",
-        yanchor="middle",
+    fig.add_trace(
+        go.Scatter(
+            x=[pc_date],
+            y=[pc_close],
+            mode="markers",
+            marker=dict(
+                size=10,
+                color=pc_border,
+                line=dict(color="#dbeafe", width=1.4),
+                symbol="diamond",
+            ),
+            name="Projected Close",
+            showlegend=False,
+            hovertemplate=(
+                "Projected Close: %{y:.2f}<br>"
+                f"Projected Open: {pc_open:.2f}<br>"
+                f"Projected High: {pc_high:.2f}<br>"
+                f"Projected Low: {pc_low:.2f}<extra></extra>"
+            ),
+        ),
+        row=1, col=1,
     )
 
     # ── Layout (PART 6+7) ─────────────────────────────────────────────
@@ -1028,15 +1077,13 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
     )
 
     # ── Symbol tracking ───────────────────────────────────────────────
+    st.caption("Shared flow: ALL_DATA first, feature cache second, yfinance last.")
     trigger_symbol = st.session_state.get("pc_loaded_symbol")
     if load_btn:
-        # PART 10: only clear cache if symbol changed
-        prev = st.session_state.get("pc_loaded_symbol")
-        if prev != selected_bare:
-            try:
-                fetch_stock_data.clear()
-            except Exception:
-                pass
+        try:
+            fetch_stock_data.clear()
+        except Exception:
+            pass
         st.session_state["pc_loaded_symbol"] = selected_bare
         trigger_symbol = selected_bare
 
@@ -1050,7 +1097,7 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
                 Select a stock and click Load Chart
               </div>
               <div style="font-size:12px;color:#4a6480;margin-top:6px;">
-                Fetches 3 months of real NSE daily data via yfinance
+                Uses shared market data with live/session-aware caching
               </div>
             </div>
             """,
@@ -1059,10 +1106,33 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         return
 
     symbol_ns = _normalise_symbol(trigger_symbol)
+    tt_key = str(_get_feature_tt_date() or "live")
+    data_signature = f"{_get_market_data_signature()}::{tt_key}"
+    force_refresh = False
+    if _get_feature_window() == "LIVE":
+        refresh_col, note_col = st.columns([1.2, 3.0])
+        with refresh_col:
+            force_refresh = st.button("Refresh Data", key=f"pc_refresh_{symbol_ns}", width="stretch")
+        with note_col:
+            st.caption("Live window: refresh clears the chart cache and reloads the latest shared market data.")
+        if force_refresh:
+            try:
+                fetch_stock_data.clear()
+            except Exception:
+                pass
+    else:
+        st.caption("Data locked until next market session.")
 
     # ── Fetch ──────────────────────────────────────────────────────────
     with st.spinner(f"Loading {trigger_symbol}…"):
-        df = fetch_stock_data(symbol_ns, timeframe="1d")
+        df = fetch_stock_data(
+            symbol_ns,
+            timeframe="1d",
+            data_signature=data_signature,
+            time_context_key=tt_key,
+            force_refresh=force_refresh,
+        )
+    _render_data_status_badge(_get_chart_status(symbol_ns), label=trigger_symbol)
 
     # PART 9: styled error cards
     if df is None:

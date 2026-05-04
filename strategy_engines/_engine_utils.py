@@ -441,6 +441,232 @@ def download_history(
         return None
 
 
+def get_market_data_signature(live_bucket_minutes: int = 5) -> str:
+    """
+    Return a short cache/signature token for the current market-data view.
+
+    Live sessions intentionally rotate on a short time bucket so UI panels can
+    refresh during the day instead of staying pinned to a stale first fetch.
+    """
+    try:
+        import time_travel_engine as _tt
+
+        tt_date = _tt.get_reference_date()
+        if tt_date is not None:
+            return f"tt:{tt_date.isoformat()}"
+    except Exception:
+        pass
+
+    try:
+        plan = _get_scan_data_plan()
+    except Exception:
+        plan = {}
+
+    window = str(plan.get("window", _get_current_window()) or _get_current_window()).upper()
+    expected_date = plan.get("expected_date", _expected_live_data_date())
+    day_text = ""
+    try:
+        if expected_date is not None:
+            day_text = pd.to_datetime(expected_date).date().isoformat()
+    except Exception:
+        day_text = str(expected_date or "")
+
+    if window == "LIVE":
+        now_ist = _now_ist()
+        bucket = max(1, int(live_bucket_minutes))
+        bucket_minute = (now_ist.minute // bucket) * bucket
+        return (
+            f"{window}:{now_ist.date().isoformat()}:"
+            f"{now_ist.hour:02d}:{bucket_minute:02d}"
+        )
+
+    return f"{window}:{day_text}"
+
+
+def _normalize_shared_market_frame(
+    df: pd.DataFrame | None,
+    *,
+    min_rows: int = 30,
+    require_volume: bool = True,
+) -> pd.DataFrame | None:
+    """Normalize OHLCV-ish frames for shared panel fetches."""
+    try:
+        if df is None or df.empty:
+            return None
+
+        out = df.copy()
+        if isinstance(out.columns, pd.MultiIndex):
+            out.columns = out.columns.get_level_values(0)
+        out.columns = [str(col).strip().title() for col in out.columns]
+
+        needed = ["Open", "High", "Low", "Close"]
+        if not set(needed).issubset(out.columns):
+            return None
+
+        if "Volume" not in out.columns:
+            if require_volume:
+                return None
+            out["Volume"] = 0.0
+
+        cols = needed + ["Volume"]
+        out = out[cols].copy()
+        dt_index = pd.to_datetime(out.index, errors="coerce")
+        valid_mask = ~dt_index.isna()
+        out = out.loc[valid_mask].copy()
+        out.index = dt_index[valid_mask]
+        out = out[~out.index.duplicated(keep="last")].sort_index()
+
+        for col in cols:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+
+        if require_volume:
+            out = out.dropna(subset=cols)
+        else:
+            out = out.dropna(subset=needed)
+            out["Volume"] = out["Volume"].fillna(0.0)
+
+        out = out[(out["High"] >= out[["Open", "Close", "Low"]].max(axis=1))]
+        out = out[(out["Low"] <= out[["Open", "Close", "High"]].min(axis=1))]
+        return out if len(out) >= max(1, int(min_rows)) else None
+    except Exception:
+        return None
+
+
+def get_shared_market_frame(
+    symbol: str,
+    *,
+    period: str = "6mo",
+    min_rows: int = 30,
+    append_nse_suffix: bool = True,
+    allow_csv_cache: bool | None = None,
+    require_volume: bool = True,
+) -> pd.DataFrame | None:
+    """
+    Shared market-window-aware fetch for UI panels and raw index consumers.
+
+    For regular NSE stocks this follows the same ALL_DATA / CSV / live-refresh
+    rules as the main scanner. For raw symbols such as '^NSEI', it still uses
+    the same staleness, Time Travel, and cache metadata rules, but skips CSV
+    unless explicitly enabled.
+    """
+    raw = str(symbol or "").strip().upper()
+    if not raw:
+        return None
+
+    cache_key = raw
+    if append_nse_suffix and not cache_key.endswith(".NS"):
+        cache_key = f"{cache_key}.NS"
+
+    if allow_csv_cache is None:
+        allow_csv_cache = append_nse_suffix and cache_key.endswith(".NS")
+
+    force_live_refresh = _should_force_live_refresh()
+    with _ALL_DATA_LOCK:
+        cached = ALL_DATA.get(cache_key)
+
+    stale_fallback = None
+    if cached is not None:
+        prepared_cached = _normalize_shared_market_frame(
+            cached,
+            min_rows=min_rows,
+            require_volume=require_volume,
+        )
+        if prepared_cached is not None:
+            if force_live_refresh:
+                if _is_live_sourced_frame(prepared_cached) and not _is_stale_live_frame(prepared_cached):
+                    return prepared_cached
+            elif not _is_stale_live_frame(prepared_cached):
+                return prepared_cached
+            stale_fallback = prepared_cached
+
+    if allow_csv_cache and not force_live_refresh:
+        try:
+            from data_downloader import load_csv
+
+            csv_df = load_csv(cache_key)
+            prepared_csv = _normalize_shared_market_frame(
+                csv_df,
+                min_rows=min_rows,
+                require_volume=require_volume,
+            )
+            if prepared_csv is not None:
+                prepared_csv = _stamp_frame_metadata(
+                    prepared_csv,
+                    source="csv_cache",
+                    window=_get_current_window(),
+                )
+                prepared_csv = _apply_time_travel_cutoff_if_needed(prepared_csv)
+                prepared_csv = _normalize_shared_market_frame(
+                    prepared_csv,
+                    min_rows=min_rows,
+                    require_volume=require_volume,
+                )
+                if prepared_csv is not None:
+                    if _is_stale_live_frame(prepared_csv):
+                        if stale_fallback is None:
+                            stale_fallback = prepared_csv
+                    else:
+                        _clear_no_data(cache_key)
+                        with _ALL_DATA_LOCK:
+                            ALL_DATA[cache_key] = prepared_csv
+                        return prepared_csv
+        except Exception:
+            pass
+
+    if not force_live_refresh and _has_recent_no_data(cache_key):
+        return stale_fallback
+
+    try:
+        with _SEM:
+            live_df = yf.download(
+                cache_key,
+                period=period,
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                timeout=15,
+                threads=False,
+            )
+    except Exception:
+        live_df = None
+
+    prepared_live = _normalize_shared_market_frame(
+        live_df,
+        min_rows=min_rows,
+        require_volume=require_volume,
+    )
+    if prepared_live is not None:
+        if _is_stale_live_frame(prepared_live):
+            prepared_live = None
+        else:
+            prepared_live = _stamp_frame_metadata(
+                prepared_live,
+                source="live_single",
+                window=_get_current_window(),
+            )
+            prepared_live = _apply_time_travel_cutoff_if_needed(prepared_live)
+            prepared_live = _normalize_shared_market_frame(
+                prepared_live,
+                min_rows=min_rows,
+                require_volume=require_volume,
+            )
+
+    if prepared_live is not None:
+        _clear_no_data(cache_key)
+        with _ALL_DATA_LOCK:
+            ALL_DATA[cache_key] = prepared_live
+        if allow_csv_cache:
+            _persist_frame_to_csv(cache_key, prepared_live)
+        return prepared_live
+
+    if not force_live_refresh:
+        _mark_no_data(cache_key)
+        if stale_fallback is not None:
+            with _ALL_DATA_LOCK:
+                ALL_DATA[cache_key] = stale_fallback
+    return None if force_live_refresh else stale_fallback
+
+
 def _fetch_one(ticker_ns: str, period: str) -> tuple[str, pd.DataFrame | None]:
     """Load one ticker for preloading; prefer CSV if available."""
     try:

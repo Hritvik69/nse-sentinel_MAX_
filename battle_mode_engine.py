@@ -36,8 +36,8 @@ import numpy as np
 import pandas as pd
 
 # ── Existing helpers — imported, never modified ───────────────────────
-from strategy_engines._engine_utils import ema, rsi_vec, preload_all
-from strategy_engines import get_df_for_ticker
+from strategy_engines._engine_utils import ema, rsi_vec
+from feature_data_manager import feature_manager
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ _MODE_LABELS = {
 }
 
 
-def _build_battle_row(ticker_ns: str, mode: int) -> dict | None:
+def _build_battle_row(ticker_ns: str, mode: int, df: pd.DataFrame | None = None) -> dict | None:
     """
     Build the same row structure that analyse() would return but WITHOUT
     applying any mode-specific filter conditions.
@@ -202,7 +202,7 @@ def _build_battle_row(ticker_ns: str, mode: int) -> dict | None:
     Never crashes.
     """
     try:
-        df = get_df_for_ticker(ticker_ns)
+        df = df.copy() if isinstance(df, pd.DataFrame) else None
         if df is None or df.empty:
             return None
 
@@ -336,15 +336,20 @@ def run_battle_mode(tickers: list[str], mode: int) -> list[dict]:
 
         # ── 2. Preload data using existing helper (zero new API logic) ─
         try:
-            preload_all(cleaned, period="6mo", workers=min(len(cleaned), 10))
+            frames = feature_manager.get_multiple_stocks(
+                cleaned,
+                period="6mo",
+                interval="1d",
+                force_refresh=False,
+            )
         except Exception:
-            pass   # fall through — get_df_for_ticker has its own fallback
+            frames = {}
 
         # ── 3. Build rows ─────────────────────────────────────────────
         rows: list[dict] = []
         for t_ns in cleaned:
             try:
-                row = _build_battle_row(t_ns, mode)
+                row = _build_battle_row(t_ns, mode, frames.get(t_ns))
                 if row is not None:
                     rows.append(row)
             except Exception:
