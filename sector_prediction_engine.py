@@ -31,6 +31,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from feature_data_manager import feature_manager, get_current_window
+
 
 # ══════════════════════════════════════════════════════════════════════
 # DATA STRUCTURES
@@ -77,6 +79,60 @@ class SectorPrediction:
     ohlc_source:       str = ""
     ohlc_symbol:       str = ""
     ohlc_bars:         int = 0
+
+
+def _prediction_to_payload(pred: SectorPrediction) -> dict:
+    return {
+        "sector": pred.sector,
+        "direction": pred.direction,
+        "confidence": pred.confidence,
+        "raw_score": pred.raw_score,
+        "signals": dict(vars(pred.signals)),
+        "leader_ticker": pred.leader_ticker,
+        "stocks_used": list(pred.stocks_used),
+        "predicted_at": pred.predicted_at,
+        "entry_price": pred.entry_price,
+        "note": pred.note,
+        "regime": pred.regime,
+        "regime_confidence": pred.regime_confidence,
+        "mtf_score": pred.mtf_score,
+        "mtf_note": pred.mtf_note,
+        "signal_agreement": pred.signal_agreement,
+        "dynamic_weights": dict(pred.dynamic_weights),
+        "sideways_forced": pred.sideways_forced,
+        "confidence_cap": pred.confidence_cap,
+        "ohlc_source": pred.ohlc_source,
+        "ohlc_symbol": pred.ohlc_symbol,
+        "ohlc_bars": pred.ohlc_bars,
+    }
+
+
+def _prediction_from_payload(payload: dict, ohlc_df: pd.DataFrame | None) -> SectorPrediction:
+    signal_payload = payload.get("signals", {}) if isinstance(payload.get("signals"), dict) else {}
+    return SectorPrediction(
+        sector=str(payload.get("sector", "") or ""),
+        direction=str(payload.get("direction", "Sideways") or "Sideways"),
+        confidence=float(payload.get("confidence", 50.0) or 50.0),
+        raw_score=float(payload.get("raw_score", 50.0) or 50.0),
+        signals=SignalBreakdown(**signal_payload),
+        ohlc_df=ohlc_df,
+        leader_ticker=str(payload.get("leader_ticker", "") or ""),
+        stocks_used=list(payload.get("stocks_used", []) or []),
+        predicted_at=str(payload.get("predicted_at", "") or ""),
+        entry_price=float(payload.get("entry_price", 0.0) or 0.0),
+        note=str(payload.get("note", "") or ""),
+        regime=str(payload.get("regime", "RANGE_BOUND") or "RANGE_BOUND"),
+        regime_confidence=float(payload.get("regime_confidence", 50.0) or 50.0),
+        mtf_score=float(payload.get("mtf_score", 50.0) or 50.0),
+        mtf_note=str(payload.get("mtf_note", "") or ""),
+        signal_agreement=float(payload.get("signal_agreement", 50.0) or 50.0),
+        dynamic_weights=dict(payload.get("dynamic_weights", {}) or {}),
+        sideways_forced=bool(payload.get("sideways_forced", False)),
+        confidence_cap=float(payload.get("confidence_cap", 95.0) or 95.0),
+        ohlc_source=str(payload.get("ohlc_source", "") or ""),
+        ohlc_symbol=str(payload.get("ohlc_symbol", "") or ""),
+        ohlc_bars=int(payload.get("ohlc_bars", 0) or 0),
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -188,11 +244,28 @@ def _apply_time_travel_cutoff(df: pd.DataFrame | None) -> pd.DataFrame | None:
         return _normalize_ohlc_frame(df)
 
 
-def _fetch_sector_index_frame(symbol: str, all_data: dict) -> pd.DataFrame | None:
+def _fetch_sector_index_frame(symbol: str, all_data: dict, force_refresh: bool = False) -> pd.DataFrame | None:
     key = str(symbol or "").strip().upper()
     cached = _lookup_cached_frame(all_data, key)
     if cached is not None and len(cached) >= _MIN_ROWS:
         return cached.tail(_TARGET_ROWS).copy()
+    try:
+        df = feature_manager.get_symbol_data(
+            key,
+            period="6mo",
+            interval="1d",
+            force_refresh=force_refresh,
+            append_nse_suffix=False,
+            min_rows=_MIN_ROWS,
+            allow_snapshot=False,
+        )
+        normalized = _apply_time_travel_cutoff(df)
+        if normalized is not None and len(normalized) >= _MIN_ROWS:
+            normalized = normalized.tail(_TARGET_ROWS).copy()
+            _cache_sector_frame(all_data, key, normalized)
+            return normalized
+    except Exception:
+        pass
     try:
         df = yf.download(
             key,
@@ -213,7 +286,7 @@ def _fetch_sector_index_frame(symbol: str, all_data: dict) -> pd.DataFrame | Non
     return normalized
 
 
-def _fetch_stock_frame(symbol: str, all_data: dict) -> pd.DataFrame | None:
+def _fetch_stock_frame(symbol: str, all_data: dict, force_refresh: bool = False) -> pd.DataFrame | None:
     raw = str(symbol or "").strip()
     plain = _plain_symbol(raw)
     aliases = [*_SYMBOL_ALIASES.get(plain, []), plain]
@@ -223,13 +296,15 @@ def _fetch_stock_frame(symbol: str, all_data: dict) -> pd.DataFrame | None:
     cached = _lookup_cached_frame(all_data, *cache_keys)
     if cached is not None:
         return cached
-    try:
-        from strategy_engines._engine_utils import get_df_for_ticker
-    except Exception:
-        return None
     for alias in aliases:
         try:
-            fetched = _normalize_ohlc_frame(get_df_for_ticker(alias))
+            fetched = feature_manager.get_stock_data(
+                alias,
+                period="6mo",
+                interval="1d",
+                force_refresh=force_refresh,
+            )
+            fetched = _normalize_ohlc_frame(fetched)
         except Exception:
             fetched = None
         if fetched is not None:
@@ -277,11 +352,12 @@ def _rank_sector_tickers(tickers: list[str], scan_df: pd.DataFrame | None) -> li
 def _aggregate_weighted_sector_ohlc(
     ranked_tickers: list[str],
     all_data: dict,
+    force_refresh: bool = False,
     max_components: int = _MAX_AGGREGATION_STOCKS,
 ) -> tuple[pd.DataFrame | None, list[str]]:
     panels: list[tuple[str, pd.DataFrame]] = []
     for symbol in ranked_tickers:
-        frame = _fetch_stock_frame(symbol, all_data)
+        frame = _fetch_stock_frame(symbol, all_data, force_refresh=force_refresh)
         if frame is None or len(frame) < _MIN_ROWS:
             continue
         panels.append((symbol, frame[["Open", "High", "Low", "Close", "Volume"]].copy()))
@@ -377,26 +453,34 @@ def _build_sector_ohlc(
     tickers: list[str],
     scan_df: pd.DataFrame | None,
     all_data: dict,
+    force_refresh: bool = False,
     max_components: int = _MAX_AGGREGATION_STOCKS,
 ) -> tuple[pd.DataFrame | None, list[str], str, str, str]:
     sector_key = _sector_key(sector_name)
     ranked_tickers = _rank_sector_tickers(tickers, scan_df)
 
+    if not force_refresh and get_current_window() != "LIVE":
+        cached_sector_df, _ = feature_manager.load_sector_ohlc_cache(sector_name)
+        cached_sector_df = _normalize_ohlc_frame(cached_sector_df)
+        if cached_sector_df is not None and len(cached_sector_df) >= _MIN_ROWS:
+            return cached_sector_df.tail(_TARGET_ROWS).copy(), ranked_tickers, "feature_sector_cache", sector_key, ""
+
     for symbol in _SECTOR_INDEX_CANDIDATES.get(sector_key, []):
-        index_frame = _fetch_sector_index_frame(symbol, all_data)
+        index_frame = _fetch_sector_index_frame(symbol, all_data, force_refresh=force_refresh)
         if index_frame is not None and len(index_frame) >= _MIN_ROWS:
             return index_frame, [symbol], "real_sector_index", symbol, ""
 
     basket_frame, used = _aggregate_weighted_sector_ohlc(
         ranked_tickers,
         all_data,
+        force_refresh=force_refresh,
         max_components=max_components,
     )
     if basket_frame is not None and len(basket_frame) >= _MIN_ROWS:
         return basket_frame, used, "weighted_sector_basket", used[0] if used else "", ""
 
     for symbol in ranked_tickers:
-        leader_frame = _fetch_stock_frame(symbol, all_data)
+        leader_frame = _fetch_stock_frame(symbol, all_data, force_refresh=force_refresh)
         if leader_frame is not None and len(leader_frame) >= _MIN_ROWS:
             return leader_frame.tail(_TARGET_ROWS).copy(), [symbol], "leader_stock_fallback", symbol, ""
 
@@ -591,9 +675,18 @@ def predict_sector(
     scan_df:       pd.DataFrame | None,
     all_data:      dict,
     regime_state=None,
+    force_refresh: bool = False,
 ) -> SectorPrediction:
 
     now_ts = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    if not force_refresh and get_current_window() != "LIVE":
+        try:
+            cached_payload = feature_manager.load_prediction_cache(sector_name)
+            if cached_payload:
+                cached_ohlc, _ = feature_manager.load_sector_ohlc_cache(sector_name)
+                return _prediction_from_payload(cached_payload, _normalize_ohlc_frame(cached_ohlc))
+        except Exception:
+            pass
 
     try:
         from sector_master import get_stocks_in_sector
@@ -605,6 +698,7 @@ def predict_sector(
         stocks,
         scan_df,
         all_data,
+        force_refresh=force_refresh,
     )
     if ohlc is None or len(ohlc) < _MIN_ROWS:
         return SectorPrediction(
@@ -698,7 +792,7 @@ def predict_sector(
     if signals.participation < 20.0 and direction != "Sideways":
         confidence = float(np.clip(confidence - 10.0, 35.0, confidence_cap))
 
-    return SectorPrediction(
+    prediction = SectorPrediction(
         sector            = sector_name,
         direction         = direction,
         confidence        = round(confidence, 1),
@@ -721,3 +815,9 @@ def predict_sector(
         ohlc_symbol       = ohlc_symbol,
         ohlc_bars         = len(ohlc),
     )
+    try:
+        feature_manager.save_sector_ohlc_cache(sector_name, ohlc, top_n=len(used) if used else len(stocks))
+        feature_manager.save_prediction_cache(sector_name, _prediction_to_payload(prediction))
+    except Exception:
+        pass
+    return prediction

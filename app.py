@@ -180,7 +180,10 @@ from strategy_engines import (
     backtest_with_preloaded,
     get_df_for_ticker,
 )
-from strategy_engines._engine_utils import is_fresh_enough as _is_fresh_enough
+from strategy_engines._engine_utils import (
+    get_shared_market_frame as _get_shared_market_frame,
+    is_fresh_enough as _is_fresh_enough,
+)
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
     render_nse_stock_input,
@@ -254,6 +257,13 @@ except Exception:
         return None
 
 from app_prediction_chart_section import render_prediction_chart_section
+from app_compare_stocks_section import (
+    build_compare_source_statuses as _build_compare_source_statuses,
+    load_compare_results as _load_compare_results,
+    normalize_compare_symbols as _normalize_compare_symbols,
+    save_compare_results as _save_compare_results,
+    summarize_compare_sources as _summarize_compare_sources,
+)
 
 try:
     from nse_animations import inject_animations
@@ -981,7 +991,14 @@ def _aura_fetch(symbol: str) -> "pd.DataFrame | None":
     # Note: after the get_df_for_ticker Bug 7 fix, the cached frame is already
     # truncated when TT is active, so _cut() is a belt-and-suspenders guard.
     try:
-        df = get_df_for_ticker(ticker_ns)
+        from feature_data_manager import feature_manager as _feature_manager
+
+        df = _feature_manager.get_stock_data(
+            ticker_ns,
+            period="6mo",
+            interval="1d",
+            force_refresh=False,
+        )
         if df is not None and len(df) >= 10:
             return _cut(df)
     except Exception:
@@ -991,17 +1008,15 @@ def _aura_fetch(symbol: str) -> "pd.DataFrame | None":
     # leaks. Also store the truncated frame back into ALL_DATA so subsequent
     # calls (backtest, signal, etc.) see the correct historical data.
     try:
-        df = yf.download(
-            ticker_ns, period="6mo", interval="1d",
-            auto_adjust=True, progress=False, timeout=15, threads=False,
+        df = _get_shared_market_frame(
+            ticker_ns,
+            period="6mo",
+            min_rows=10,
+            append_nse_suffix=False,
+            allow_csv_cache=True,
+            require_volume=True,
         )
-        if df is None or df.empty:
-            return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        df.columns = [c.strip().title() for c in df.columns]
-        df = df.dropna(subset=["Close", "Volume"])
-        if len(df) < 10:
+        if df is None or len(df) < 10:
             return None
         truncated = _cut(df)
         # BUG FIX: Cache the truncated (not the full) frame so that any
@@ -7385,38 +7400,57 @@ else:
             if _tt_battle_date is not None and _TIME_TRAVEL_OK:
                 _tt.activate(_tt_battle_date)
             try:
-                _battle_raw = run_battle_mode(_battle_request_tickers, _battle_mode)
-                if not _battle_raw:
-                    st.error("No valid data found. Check symbols and try again.")
-                    st.session_state["battle_results_df"] = pd.DataFrame()
+                _battle_symbols = _normalize_compare_symbols(_battle_request_tickers)
+                _battle_window = str(get_current_window() or "CLOSED").upper()
+                _cached_battle_df = None
+                _cached_battle_payload = None
+                if _battle_window != "LIVE" and _tt_battle_date is None:
+                    _cached_battle_df, _cached_battle_payload = _load_compare_results(_battle_symbols)
+
+                if isinstance(_cached_battle_df, pd.DataFrame) and not _cached_battle_df.empty:
+                    st.session_state["battle_results_df"] = _cached_battle_df
+                    st.session_state["battle_source_statuses"] = list(_cached_battle_payload.get("source_statuses", []) or [])
                 else:
-                    _battle_df = enhance_results(_battle_raw, _battle_mode)
-                    try:
-                        _battle_df = apply_enhanced_logic(_battle_df)
-                    except Exception:
-                        pass
-                    try:
-                        _mb = st.session_state.get("market_bias_result", None)
-                        _mb_ttkey = st.session_state.get("market_bias_tt_key", "live")
-                        _battle_ttkey = str(st.session_state.get("tt_date_val") or "live")
-                        if _mb is None or _mb_ttkey != _battle_ttkey:
-                            _mb = compute_market_bias()
-                            st.session_state["market_bias_result"]  = _mb
-                            st.session_state["market_bias_tt_key"]  = _battle_ttkey
-                        _battle_df = apply_universal_grading(_battle_df, _mb)
-                    except Exception:
-                        pass
-                    try:
-                        _mb2 = st.session_state.get("market_bias_result", None)
-                        _battle_df = apply_phase4_logic(_battle_df, _mb2)
-                        _battle_df = apply_phase42_logic(_battle_df)
-                    except Exception:
-                        pass
-                    _battle_df = compute_battle_scores(_battle_df)
-                    st.session_state["battle_results_df"] = _battle_df
+                    _battle_raw = run_battle_mode(_battle_request_tickers, _battle_mode)
+                    if not _battle_raw:
+                        st.error("No valid data found. Check symbols and try again.")
+                        st.session_state["battle_results_df"] = pd.DataFrame()
+                        st.session_state["battle_source_statuses"] = []
+                    else:
+                        _battle_df = enhance_results(_battle_raw, _battle_mode)
+                        try:
+                            _battle_df = apply_enhanced_logic(_battle_df)
+                        except Exception:
+                            pass
+                        try:
+                            _mb = st.session_state.get("market_bias_result", None)
+                            _mb_ttkey = st.session_state.get("market_bias_tt_key", "live")
+                            _battle_ttkey = str(st.session_state.get("tt_date_val") or "live")
+                            if _mb is None or _mb_ttkey != _battle_ttkey:
+                                _mb = compute_market_bias()
+                                st.session_state["market_bias_result"]  = _mb
+                                st.session_state["market_bias_tt_key"]  = _battle_ttkey
+                            _battle_df = apply_universal_grading(_battle_df, _mb)
+                        except Exception:
+                            pass
+                        try:
+                            _mb2 = st.session_state.get("market_bias_result", None)
+                            _battle_df = apply_phase4_logic(_battle_df, _mb2)
+                            _battle_df = apply_phase42_logic(_battle_df)
+                        except Exception:
+                            pass
+                        _battle_df = compute_battle_scores(_battle_df)
+                        st.session_state["battle_results_df"] = _battle_df
+                        _battle_statuses = _build_compare_source_statuses(_battle_symbols)
+                        st.session_state["battle_source_statuses"] = _battle_statuses
+                        try:
+                            _save_compare_results(_battle_symbols, _battle_df, statuses=_battle_statuses)
+                        except Exception:
+                            pass
             except Exception as _battle_err:
                 st.error(f"Battle Mode error: {_battle_err}. Check your tickers and try again.")
                 st.session_state["battle_results_df"] = pd.DataFrame()
+                st.session_state["battle_source_statuses"] = []
             finally:
                 st.session_state["battle_tickers_request"] = None
                 if _tt_battle_date is not None and _TIME_TRAVEL_OK:
@@ -7435,6 +7469,9 @@ else:
         # ── 🥇 Winner Card ────────────────────────────────
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown('<div class="section-lbl">🥇 Battle Winner</div>', unsafe_allow_html=True)
+        _battle_sources = _summarize_compare_sources(st.session_state.get("battle_source_statuses"))
+        if _battle_sources:
+            st.caption(f"Data sources: {_battle_sources}")
         _w = _battle_df.iloc[0]
         _w_sym    = _w.get("Symbol", "—")
         _w_score  = _w.get("Final Score", 0)
