@@ -1136,6 +1136,186 @@ def _render_add_in_picks_actions(
     if open_clicked:
         _activate_sidebar_panel("tomorrow_picks_show_panel")
 
+
+def _normalize_prediction_chart_imports(values: list[object] | tuple[object, ...] | None, limit: int = 40) -> list[str]:
+    return _normalize_tomorrow_symbols(values, limit=limit)
+
+
+def _pretty_learning_signal_name(signal: object) -> str:
+    try:
+        text = str(signal or "").strip().replace("_", " ")
+        return text.title() if text else "Momentum"
+    except Exception:
+        return "Momentum"
+
+
+def _import_symbols_into_ai_prediction(
+    symbols: list[object] | tuple[object, ...] | None,
+    *,
+    mode_value: object,
+    source_label: str,
+) -> dict[str, object]:
+    normalized = _normalize_prediction_chart_imports(symbols, limit=40)
+    if not normalized:
+        return {"symbols": [], "added": 0, "mode": None, "source_label": str(source_label or "")}
+
+    existing = _normalize_prediction_chart_imports(
+        st.session_state.get("prediction_chart_imported_symbols", []),
+        limit=40,
+    )
+    merged = list(existing)
+    added = 0
+    for symbol in normalized:
+        if symbol not in merged:
+            merged.append(symbol)
+            added += 1
+        if len(merged) >= 40:
+            break
+
+    focus_symbol = normalized[0]
+    st.session_state["prediction_chart_imported_symbols"] = merged
+    st.session_state["prediction_chart_import_origin"] = str(source_label or "Mode scan")
+    try:
+        st.session_state["prediction_chart_import_mode"] = int(mode_value)
+    except Exception:
+        st.session_state["prediction_chart_import_mode"] = mode_value
+    st.session_state["prediction_chart_focus_symbol"] = focus_symbol
+    st.session_state["pc_loaded_symbol"] = focus_symbol
+    st.session_state["pc_stock_select"] = focus_symbol
+    return {
+        "symbols": merged,
+        "added": added,
+        "mode": st.session_state.get("prediction_chart_import_mode"),
+        "source_label": st.session_state.get("prediction_chart_import_origin", str(source_label or "")),
+    }
+
+
+def _build_mode_ai_top3_preview(
+    symbols: list[object] | tuple[object, ...] | None,
+    mode_value: object,
+) -> dict[str, object]:
+    normalized = _normalize_tomorrow_symbols(symbols, limit=6)
+    default = {"table": pd.DataFrame(), "summary": {}}
+    if not normalized:
+        return default
+
+    try:
+        mode_int = int(mode_value)
+    except Exception:
+        mode_int = 0
+
+    preview_sig = (
+        tuple(normalized),
+        mode_int,
+        str(st.session_state.get("_learning_brain_signature", "")),
+        str(st.session_state.get("_learning_refresh_sig", "")),
+        str(st.session_state.get("tt_scan_date", "")),
+    )
+    cached = st.session_state.get("_mode_ai_top3_preview_cache")
+    if isinstance(cached, dict) and cached.get("sig") == preview_sig:
+        payload = cached.get("payload")
+        if isinstance(payload, dict):
+            return payload
+
+    preview = default.copy()
+    try:
+        from strategy_engines._engine_utils import ALL_DATA as _ai_all_data
+        from tomorrow_prediction_engine import summarize_tomorrow_predictions
+
+        summary = summarize_tomorrow_predictions(normalized, _ai_all_data, mode_int)
+    except Exception:
+        summary = {}
+
+    prediction_map: dict[str, dict] = {}
+    try:
+        for pred in list(summary.get("predictions", []) or []):
+            symbol = _normalize_tomorrow_symbol(pred.get("ticker"))
+            if symbol:
+                prediction_map[symbol] = dict(pred)
+    except Exception:
+        prediction_map = {}
+
+    if len(prediction_map) < len(normalized):
+        try:
+            from nse_learning_brain import get_cached_prediction
+
+            for symbol in normalized:
+                if symbol in prediction_map:
+                    continue
+                pred = get_cached_prediction(symbol)
+                if isinstance(pred, dict) and pred:
+                    prediction_map[symbol] = dict(pred)
+        except Exception:
+            pass
+
+    rows: list[dict[str, object]] = []
+    for symbol in normalized:
+        pred = dict(prediction_map.get(symbol) or {})
+        rows.append(
+            {
+                "Ticker": symbol,
+                "AI Direction": str(pred.get("direction", "Sideways") or "Sideways"),
+                "AI Confidence": round(_safe(pred.get("confidence", 0.0), 0.0), 1),
+                "AI Action": str(pred.get("action", "Wait") or "Wait").replace("???", "-"),
+                "AI Risk": str(pred.get("risk", "MEDIUM") or "MEDIUM").upper(),
+                "AI Hold": str(pred.get("hold_days", "-") or "-").replace("?", "-"),
+                "AI Key Signal": _pretty_learning_signal_name(pred.get("key_signal", "momentum")),
+                "AI Regime": str(pred.get("regime", "UNKNOWN") or "UNKNOWN").replace("_", " ").title(),
+            }
+        )
+
+    preview = {
+        "table": pd.DataFrame(rows),
+        "summary": summary if isinstance(summary, dict) else {},
+    }
+    st.session_state["_mode_ai_top3_preview_cache"] = {"sig": preview_sig, "payload": preview}
+    return preview
+
+
+def _render_ai_prediction_import_action(
+    symbols: list[object] | tuple[object, ...] | None,
+    *,
+    mode_value: object,
+    key_prefix: str,
+    source_label: str,
+    helper_text: str = "",
+) -> None:
+    normalized = _normalize_prediction_chart_imports(symbols, limit=12)
+    if helper_text:
+        st.markdown(
+            f'<div style="font-size:11px;color:#88a6c4;margin:8px 0 12px 0;">{helper_text}</div>',
+            unsafe_allow_html=True,
+        )
+
+    import_clicked = st.button(
+        "IMPORT IN AI PREDICTION",
+        key=f"{key_prefix}_import_ai_prediction",
+        width="stretch",
+        disabled=not normalized,
+        type="primary",
+    )
+    if not import_clicked:
+        return
+
+    if not normalized:
+        st.info("No valid stock is available to import right now.")
+        return
+
+    summary = _import_symbols_into_ai_prediction(
+        normalized,
+        mode_value=mode_value,
+        source_label=source_label,
+    )
+    imported = list(summary.get("symbols", []) or [])
+    if imported:
+        try:
+            st.toast(f"Imported {len(normalized)} stock(s) into AI Prediction.")
+        except Exception:
+            pass
+        _activate_sidebar_panel("pred_chart_show_panel")
+    else:
+        st.info("The AI prediction import list is empty right now.")
+
 try:
     import scan_diagnostics as _scan_diag
     _SCAN_DIAGNOSTICS_OK = True
@@ -7790,9 +7970,69 @@ if _show_home_scanner and "results" in st.session_state:
                 for symbol in _tomorrow_df.get("Symbol", pd.Series(dtype=object)).tolist()
                 if _normalize_tomorrow_symbol(symbol)
             ]
+            _ai_preview = _build_mode_ai_top3_preview(_tomorrow_symbols, stored_mode)
+            _ai_preview_df = _ai_preview.get("table") if isinstance(_ai_preview, dict) else pd.DataFrame()
+            _ai_summary = _ai_preview.get("summary", {}) if isinstance(_ai_preview, dict) else {}
+            if isinstance(_ai_preview_df, pd.DataFrame) and not _ai_preview_df.empty:
+                _ai_merge = _ai_preview_df.rename(columns={"Ticker": "Symbol"})
+                _tomorrow_df = _tomorrow_df.merge(_ai_merge, on="Symbol", how="left")
+
+                _brain_direction = str(_ai_summary.get("direction", "Sideways") or "Sideways")
+                _brain_conf = float(_safe(_ai_summary.get("confidence", 0.0), 0.0))
+                _brain_score = float(_safe(_ai_summary.get("score", 50.0), 50.0))
+                _brain_action = str(_ai_summary.get("action", "Watch") or "Watch")
+                _brain_risk = str(_ai_summary.get("risk", "MEDIUM") or "MEDIUM").upper()
+                _brain_hold = str(_ai_summary.get("hold_days", "-") or "-").replace("?", "-")
+                _brain_key_signal = _pretty_learning_signal_name(_ai_summary.get("key_signal", "momentum"))
+                _brain_regime = str(_ai_summary.get("regime", "UNKNOWN") or "UNKNOWN").replace("_", " ").title()
+                _brain_color = {"Bullish": "#00d4a8", "Bearish": "#ff4d6d", "Sideways": "#8ab4d8"}.get(_brain_direction, "#8ab4d8")
+                _action_color = (
+                    "#00d4a8" if "Buy Tomorrow" in _brain_action
+                    else "#ff4d6d" if "Avoid" in _brain_action
+                    else "#f0b429" if "Watch" in _brain_action
+                    else "#4da3ff"
+                )
+                st.markdown(
+                    f"""
+                    <div style="background:linear-gradient(135deg,#0b1017 56%,{_brain_color}12);border:1.5px solid #1e3a5f;border-radius:16px;padding:16px 18px;margin:12px 0 14px 0;">
+                      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+                        <div>
+                          <div style="font-size:10px;color:#4a6480;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Self-Learning Brain For This Mode</div>
+                          <div style="font-size:24px;font-weight:900;color:{_brain_color};">{html.escape(_brain_direction)} • {_brain_conf:.1f}%</div>
+                          <div style="font-size:12px;color:#8ab4d8;margin-top:4px;">Mode M{stored_mode} AI read on these top 3 candidates</div>
+                        </div>
+                        <div style="text-align:right;">
+                          <span style="background:{_action_color}22;border:1.5px solid {_action_color};border-radius:999px;padding:6px 12px;font-size:11px;font-weight:800;color:{_action_color};">{html.escape(_brain_action)}</span>
+                          <div style="font-size:12px;color:#8ab4d8;margin-top:8px;">AI Score: {_brain_score:.1f}</div>
+                        </div>
+                      </div>
+                      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;">
+                        <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                          <div style="font-size:10px;color:#4a6480;">Key Signal</div>
+                          <div style="font-size:13px;font-weight:800;color:#ccd9e8;margin-top:4px;">{html.escape(_brain_key_signal)}</div>
+                        </div>
+                        <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                          <div style="font-size:10px;color:#4a6480;">Risk</div>
+                          <div style="font-size:13px;font-weight:800;color:#ccd9e8;margin-top:4px;">{html.escape(_brain_risk)}</div>
+                        </div>
+                        <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                          <div style="font-size:10px;color:#4a6480;">Hold</div>
+                          <div style="font-size:13px;font-weight:800;color:#ccd9e8;margin-top:4px;">{html.escape(_brain_hold)}</div>
+                        </div>
+                        <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                          <div style="font-size:10px;color:#4a6480;">Regime</div>
+                          <div style="font-size:13px;font-weight:800;color:#ccd9e8;margin-top:4px;">{html.escape(_brain_regime)}</div>
+                        </div>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
             _tomorrow_cols = [
-                "Symbol", "Tomorrow Pick Score", "Final Score", "Prediction Score",
-                _signal_col, "Conviction Tier", "Trap Check", "Chart",
+                "Symbol", "Tomorrow Pick Score", "AI Confidence", "AI Direction",
+                "Final Score", "Prediction Score", _signal_col, "AI Action", "AI Key Signal",
+                "Conviction Tier", "Trap Check", "Chart",
                 "Action", "Hold Days",
             ]
             _tomorrow_cols = [c for c in _tomorrow_cols if c in _tomorrow_df.columns]
@@ -7802,10 +8042,14 @@ if _show_home_scanner and "results" in st.session_state:
                 column_config={
                     "Symbol": st.column_config.TextColumn("Ticker"),
                     "Tomorrow Pick Score": st.column_config.NumberColumn("Tomorrow Score", format="%.1f"),
+                    "AI Confidence": st.column_config.NumberColumn("AI Conf %", format="%.1f%%"),
+                    "AI Direction": st.column_config.TextColumn("AI Dir", width="small"),
                     "Final Score": st.column_config.NumberColumn("Final Score", format="%.1f"),
                     "Prediction Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
                     "Adjusted Signal": st.column_config.TextColumn("Signal", width="medium"),
                     "Next-Day Signal": st.column_config.TextColumn("Signal", width="medium"),
+                    "AI Action": st.column_config.TextColumn("AI Action", width="medium"),
+                    "AI Key Signal": st.column_config.TextColumn("AI Key", width="medium"),
                     "Conviction Tier": st.column_config.TextColumn("Conviction"),
                     "Trap Check": st.column_config.TextColumn("Trap Check"),
                     "Chart": st.column_config.LinkColumn("Chart", display_text="Open Chart"),
@@ -7821,6 +8065,13 @@ if _show_home_scanner and "results" in st.session_state:
                 scope_label="main scan",
                 bucket=_tomorrow_bucket_for_mode(stored_mode),
                 helper_text="Add these top scan picks into Tomorrow's Picks and keep them saved until you remove them.",
+            )
+            _render_ai_prediction_import_action(
+                _tomorrow_symbols,
+                mode_value=stored_mode,
+                key_prefix=f"scan_top3_mode_{stored_mode}",
+                source_label=f"Mode {stored_mode} Top 3",
+                helper_text="Import these mode picks into the self-learning prediction chart and open the first imported stock instantly.",
             )
 
     else:

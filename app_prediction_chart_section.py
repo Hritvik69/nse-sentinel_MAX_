@@ -922,6 +922,31 @@ def _css() -> None:
         st.session_state["_pc2_css"] = True
 
 
+def _normalize_prediction_chart_symbol(value: object) -> str:
+    try:
+        return str(value or "").strip().upper().replace(".NS", "")
+    except Exception:
+        return ""
+
+
+def _normalize_prediction_chart_imports(values: object, limit: int = 20) -> list[str]:
+    symbols: list[str] = []
+    seen: set[str] = set()
+    try:
+        raw_values = list(values or [])
+    except Exception:
+        raw_values = []
+    for raw in raw_values:
+        symbol = _normalize_prediction_chart_symbol(raw)
+        if not symbol or symbol in seen:
+            continue
+        symbols.append(symbol)
+        seen.add(symbol)
+        if len(symbols) >= limit:
+            break
+    return symbols
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SIGNAL BARS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1174,7 +1199,41 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
             "UPL","M&M",
         ]
 
-    display_tickers = sorted({t.replace(".NS","").upper() for t in ticker_list})
+    display_tickers = sorted(
+        {
+            _normalize_prediction_chart_symbol(t)
+            for t in ticker_list
+            if _normalize_prediction_chart_symbol(t)
+        }
+    )
+    imported_symbols = _normalize_prediction_chart_imports(
+        st.session_state.get("prediction_chart_imported_symbols", []),
+        limit=20,
+    )
+    if imported_symbols:
+        display_tickers = imported_symbols + [ticker for ticker in display_tickers if ticker not in imported_symbols]
+
+    focus_symbol = _normalize_prediction_chart_symbol(
+        st.session_state.pop("prediction_chart_focus_symbol", "")
+    )
+    if not focus_symbol:
+        focus_symbol = _normalize_prediction_chart_symbol(st.session_state.get("pc_loaded_symbol", ""))
+
+    if display_tickers:
+        default_symbol = (
+            focus_symbol
+            if focus_symbol in display_tickers
+            else imported_symbols[0]
+            if imported_symbols
+            else "RELIANCE"
+            if "RELIANCE" in display_tickers
+            else display_tickers[0]
+        )
+        current_selected = _normalize_prediction_chart_symbol(st.session_state.get("pc_stock_select", ""))
+        if current_selected not in display_tickers:
+            st.session_state["pc_stock_select"] = default_symbol
+        elif focus_symbol and focus_symbol in display_tickers and current_selected != focus_symbol:
+            st.session_state["pc_stock_select"] = focus_symbol
 
     # ── Header ────────────────────────────────────────────────────────
     st.markdown(
@@ -1225,9 +1284,44 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         return
 
     # ── Search row ────────────────────────────────────────────────────
+    if imported_symbols:
+        import_origin = str(st.session_state.get("prediction_chart_import_origin", "Mode scan") or "Mode scan")
+        import_mode = st.session_state.get("prediction_chart_import_mode", "")
+        import_mode_label = f" | Mode M{import_mode}" if str(import_mode).strip() else ""
+        visible_imports = imported_symbols[:6]
+        st.markdown(
+            f"""
+            <div style="background:#0b1017;border:1.5px solid #1e3a5f;border-radius:14px;padding:12px 14px;margin-bottom:14px;">
+              <div style="font-size:10px;color:#4a6480;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Imported AI Watchlist</div>
+              <div style="font-size:13px;color:#8ab4d8;">
+                Imported from <span style="color:#ccd9e8;font-weight:700;">{import_origin}</span>{import_mode_label}. Quick-load any imported symbol below.
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        quick_cols = st.columns(len(visible_imports) + 1, gap="small")
+        for idx, symbol in enumerate(visible_imports):
+            if quick_cols[idx].button(symbol, key=f"pc_imported_quick_{symbol}", width="stretch"):
+                st.session_state["pc_loaded_symbol"] = symbol
+                st.session_state["pc_stock_select"] = symbol
+                st.rerun()
+        if quick_cols[-1].button("Clear Imported", key="pc_imported_clear_btn", width="stretch"):
+            for key in (
+                "prediction_chart_imported_symbols",
+                "prediction_chart_import_origin",
+                "prediction_chart_import_mode",
+                "prediction_chart_focus_symbol",
+            ):
+                st.session_state.pop(key, None)
+            st.rerun()
+        if len(imported_symbols) > len(visible_imports):
+            st.caption(f"Showing {len(visible_imports)} of {len(imported_symbols)} imported symbols.")
+
     c_sel, c_btn = st.columns([4, 1])
     with c_sel:
-        default_idx = display_tickers.index("RELIANCE") if "RELIANCE" in display_tickers else 0
+        current_selected = _normalize_prediction_chart_symbol(st.session_state.get("pc_stock_select", ""))
+        default_idx = display_tickers.index(current_selected) if current_selected in display_tickers else 0
         selected_bare = st.selectbox(
             "stock",
             options=display_tickers,
