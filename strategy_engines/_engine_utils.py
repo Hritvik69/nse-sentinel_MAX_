@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
+import importlib.util
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, time as dtime, timedelta
 import numpy as np
@@ -54,13 +55,9 @@ def _apply_time_travel_cutoff_if_needed(df: pd.DataFrame | None) -> pd.DataFrame
 
 
 # ── optional sklearn ──────────────────────────────────────────────────
-try:
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import train_test_split
-    SKLEARN_OK = True
-except ImportError:
-    SKLEARN_OK = False
+# Presence check only. Importing sklearn here slows the first UI paint even
+# when no ML function is being used yet.
+SKLEARN_OK = importlib.util.find_spec("sklearn") is not None
 
 
 def _dsm_fallback_current_window() -> str:

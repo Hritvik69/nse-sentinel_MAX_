@@ -89,9 +89,6 @@ def _load_learning_engine_module():
     return None
 
 
-_learning_engine = _load_learning_engine_module()
-
-
 def _fallback_train_learning_model():
     return {
         "model": None,
@@ -117,18 +114,69 @@ import requests
 import streamlit as st
 import yfinance as yf
 
-if _learning_engine is not None:
-    get_training_status = getattr(_learning_engine, "get_training_status", _default_learning_status)
-    predict_success = getattr(_learning_engine, "predict_success", lambda row: 50.0)
-    restore_learning_bundle = getattr(_learning_engine, "restore_learning_bundle", lambda bundle: False)
-    train_learning_model = getattr(_learning_engine, "train_learning_model", _fallback_train_learning_model)
-else:
-    get_training_status = _default_learning_status
-    predict_success = lambda row: 50.0
-    restore_learning_bundle = lambda bundle: False
-    train_learning_model = _fallback_train_learning_model
+_learning_engine = None
+_run_learning_cycle = None
 
-from nse_learning_brain import run_learning_cycle
+
+def _get_learning_engine_module():
+    global _learning_engine
+    if _learning_engine_module_is_usable(_learning_engine):
+        return _learning_engine
+    _learning_engine = _load_learning_engine_module()
+    return _learning_engine
+
+
+def get_training_status():
+    try:
+        module = _get_learning_engine_module()
+        fn = getattr(module, "get_training_status", None) if module is not None else None
+        result = fn() if callable(fn) else _default_learning_status()
+        return result if isinstance(result, dict) else _default_learning_status()
+    except Exception:
+        return _default_learning_status()
+
+
+def predict_success(row):
+    try:
+        module = _get_learning_engine_module()
+        fn = getattr(module, "predict_success", None) if module is not None else None
+        return float(fn(row)) if callable(fn) else 50.0
+    except Exception:
+        return 50.0
+
+
+def restore_learning_bundle(bundle):
+    try:
+        module = _get_learning_engine_module()
+        fn = getattr(module, "restore_learning_bundle", None) if module is not None else None
+        return bool(fn(bundle)) if callable(fn) else False
+    except Exception:
+        return False
+
+
+def train_learning_model():
+    try:
+        module = _get_learning_engine_module()
+        fn = getattr(module, "train_learning_model", None) if module is not None else None
+        result = fn() if callable(fn) else _fallback_train_learning_model()
+        return result if isinstance(result, dict) else _fallback_train_learning_model()
+    except Exception:
+        return _fallback_train_learning_model()
+
+
+def _get_learning_cycle_runner():
+    global _run_learning_cycle
+    if callable(_run_learning_cycle):
+        return _run_learning_cycle
+    try:
+        from nse_learning_brain import run_learning_cycle as _brain_runner
+
+        _run_learning_cycle = _brain_runner
+    except Exception:
+        _run_learning_cycle = None
+    return _run_learning_cycle
+
+
 try:
     import data_session_manager as _dsm
 except Exception:
@@ -231,6 +279,7 @@ read_snapshot_metadata = getattr(_dsm, "read_snapshot_metadata", lambda *_args, 
 
 _PREDICTION_FEEDBACK_PATH = Path(_HERE) / "data" / "prediction_feedback_log.csv"
 _SECTOR_PREDICTION_PATH = Path(_HERE) / "data" / "sector_predictions.csv"
+_LEARNING_STATUS_SNAPSHOT_PATH = Path(_HERE) / "data" / "learning_status_snapshot.json"
 
 
 def _safe_file_mtime(path: Path) -> float:
@@ -238,6 +287,171 @@ def _safe_file_mtime(path: Path) -> float:
         return float(path.stat().st_mtime) if path.exists() else 0.0
     except Exception:
         return 0.0
+
+
+def _json_safe_snapshot(value):
+    try:
+        if value is None or isinstance(value, (str, bool, int, float)):
+            return value
+        if isinstance(value, (np.integer, np.floating)):
+            return value.item()
+        if isinstance(value, (datetime, pd.Timestamp)):
+            return str(value)
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, pd.DataFrame):
+            return [_json_safe_snapshot(row) for row in value.head(12).to_dict("records")]
+        if isinstance(value, dict):
+            return {str(key): _json_safe_snapshot(val) for key, val in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [_json_safe_snapshot(item) for item in value]
+        return str(value)
+    except Exception:
+        return str(value)
+
+
+def _compact_brain_status(brain_status: dict | None) -> dict:
+    try:
+        brain = brain_status if isinstance(brain_status, dict) else {}
+        compact = {
+            "started_at": brain.get("started_at", ""),
+            "completed_at": brain.get("completed_at", ""),
+            "feedback": brain.get("feedback", {}),
+            "feedback_summary": brain.get("feedback_summary", {}),
+            "meta_model": brain.get("meta_model", {}),
+            "mode_models": brain.get("mode_models", {}),
+            "sector_model": brain.get("sector_model", {}),
+            "weights": brain.get("weights", {}),
+            "regime": brain.get("regime", {}),
+            "calibration": brain.get("calibration", {}),
+            "predictions": brain.get("predictions", {}),
+            "error": brain.get("error", ""),
+        }
+        return _json_safe_snapshot(compact)
+    except Exception:
+        return {}
+
+
+def _serialize_signal_weight_status(status: dict | None) -> dict:
+    try:
+        payload = dict(status or {})
+        report = payload.pop("report", pd.DataFrame())
+        payload["report_rows"] = (
+            report.head(12).to_dict("records")
+            if isinstance(report, pd.DataFrame) and not report.empty
+            else []
+        )
+        return _json_safe_snapshot(payload)
+    except Exception:
+        return {"processed": 0, "top_signal": "", "top_weight": 0.0, "weakest_signal": "", "weakest_weight": 0.0, "report_rows": []}
+
+
+def _deserialize_signal_weight_status(payload: dict | None) -> dict:
+    default = {
+        "processed": 0,
+        "top_signal": "",
+        "top_weight": 0.0,
+        "weakest_signal": "",
+        "weakest_weight": 0.0,
+        "report": pd.DataFrame(),
+    }
+    try:
+        if not isinstance(payload, dict):
+            return default
+        out = dict(payload)
+        report_rows = out.pop("report_rows", [])
+        out["report"] = pd.DataFrame(report_rows) if isinstance(report_rows, list) else pd.DataFrame()
+        return out
+    except Exception:
+        return default
+
+
+def _write_learning_status_snapshot(
+    learning_status: dict,
+    signal_status: dict,
+    *,
+    signature: tuple[str, float, float],
+) -> None:
+    try:
+        _LEARNING_STATUS_SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "saved_at": datetime.now().isoformat(timespec="seconds"),
+            "signature": list(signature),
+            "learning_status": _json_safe_snapshot(learning_status),
+            "signal_weight_status": _serialize_signal_weight_status(signal_status),
+        }
+        _LEARNING_STATUS_SNAPSHOT_PATH.write_text(
+            json.dumps(payload, ensure_ascii=True, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        return
+
+
+def _read_learning_status_snapshot() -> dict:
+    try:
+        if not _LEARNING_STATUS_SNAPSHOT_PATH.exists():
+            return {}
+        payload = json.loads(_LEARNING_STATUS_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return {}
+        signature = payload.get("signature", [])
+        signature_tuple = tuple(signature[:3]) if isinstance(signature, list) else tuple()
+        return {
+            "saved_at": str(payload.get("saved_at", "") or ""),
+            "signature": signature_tuple,
+            "learning_status": payload.get("learning_status", {}) if isinstance(payload.get("learning_status"), dict) else {},
+            "signal_weight_status": _deserialize_signal_weight_status(payload.get("signal_weight_status")),
+        }
+    except Exception:
+        return {}
+
+
+def _bootstrap_learning_status() -> tuple[dict, dict]:
+    default_signal_status = {
+        "processed": 0,
+        "top_signal": "",
+        "top_weight": 0.0,
+        "weakest_signal": "",
+        "weakest_weight": 0.0,
+        "report": pd.DataFrame(),
+    }
+    current_sig = (
+        str(get_expected_data_date()),
+        round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+        round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+    )
+    cached_status = st.session_state.get("_learning_status")
+    cached_weights = st.session_state.get("_signal_weight_status")
+    if (
+        st.session_state.get("_learning_refresh_sig") == current_sig
+        and isinstance(cached_status, dict)
+        and isinstance(cached_weights, dict)
+    ):
+        return cached_status, cached_weights
+
+    snapshot = _read_learning_status_snapshot()
+    snapshot_status = snapshot.get("learning_status")
+    snapshot_weights = snapshot.get("signal_weight_status")
+    if isinstance(snapshot_status, dict):
+        st.session_state["_learning_status"] = snapshot_status
+        st.session_state["_learning_refresh_sig"] = snapshot.get("signature") or current_sig
+        st.session_state["learning_cycle_status"] = snapshot_status.get("brain_status", {})
+        if isinstance(snapshot_weights, dict):
+            st.session_state["_signal_weight_status"] = snapshot_weights
+            st.session_state["_signal_weight_sig"] = snapshot.get("signature") or current_sig
+            return snapshot_status, snapshot_weights
+        st.session_state["_signal_weight_status"] = default_signal_status
+        st.session_state["_signal_weight_sig"] = snapshot.get("signature") or current_sig
+        return snapshot_status, default_signal_status
+
+    fallback_status = _default_learning_status()
+    fallback_status["message"] = "Learning warm-up pending. Full refresh runs after the next scan."
+    st.session_state["_learning_status"] = fallback_status
+    st.session_state["_learning_refresh_sig"] = current_sig
+    st.session_state["_signal_weight_status"] = default_signal_status
+    st.session_state["_signal_weight_sig"] = current_sig
+    return fallback_status, default_signal_status
 
 
 def _weight_bar_html(label: str, value_pct: float, *, warn: bool = False) -> str:
@@ -388,7 +602,8 @@ def _refresh_feedback_learning_system(force: bool = False) -> dict:
         pass
 
     try:
-        brain_status = run_learning_cycle(ALL_DATA, force=force)
+        runner = _get_learning_cycle_runner()
+        brain_status = runner(ALL_DATA, force=force) if callable(runner) else {}
     except Exception:
         brain_status = {}
 
@@ -405,8 +620,13 @@ def _refresh_feedback_learning_system(force: bool = False) -> dict:
         round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
         round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
     )
+    signal_snapshot = _signal_weight_status_from_brain(brain_status)
     st.session_state["_learning_status"] = status
     st.session_state["_learning_refresh_sig"] = fresh_sig
+    st.session_state["_signal_weight_status"] = signal_snapshot
+    st.session_state["_signal_weight_sig"] = fresh_sig
+    status["brain_status"] = _compact_brain_status(brain_status)
+    _write_learning_status_snapshot(status, signal_snapshot, signature=fresh_sig)
 
     total_validated = int(status.get("validated_today", 0) or 0) + int(status.get("sector_validated_today", 0) or 0)
     if total_validated > 0:
@@ -541,52 +761,96 @@ except Exception:
     except Exception:
         _SECTOR_SCREENER_UI_OK = False
 
-try:
-    from strategy_engines.app_sector_explorer_section import (  # type: ignore[import]
-        render_sector_explorer_section,
-    )
-    _SECTOR_EXPLORER_UI_OK = True
-    _SECTOR_EXPLORER_UI_ERR = ""
-except Exception as _sector_explorer_exc:
+_SECTOR_EXPLORER_UI_OK = True
+_SECTOR_EXPLORER_UI_ERR = ""
+_sector_explorer_renderer = None
+
+
+def render_sector_explorer_section(ticker_universe=None) -> None:  # type: ignore[misc]
+    global _SECTOR_EXPLORER_UI_OK, _SECTOR_EXPLORER_UI_ERR, _sector_explorer_renderer
+    if callable(_sector_explorer_renderer):
+        return _sector_explorer_renderer(ticker_universe)
     try:
-        from app_sector_explorer_section import (  # type: ignore[import]
-            render_sector_explorer_section,
-        )
+        try:
+            from strategy_engines.app_sector_explorer_section import (  # type: ignore[import]
+                render_sector_explorer_section as _render_sector_explorer_section,
+            )
+        except Exception:
+            from app_sector_explorer_section import (  # type: ignore[import]
+                render_sector_explorer_section as _render_sector_explorer_section,
+            )
+        _sector_explorer_renderer = _render_sector_explorer_section
         _SECTOR_EXPLORER_UI_OK = True
         _SECTOR_EXPLORER_UI_ERR = ""
-    except Exception:
+        return _sector_explorer_renderer(ticker_universe)
+    except Exception as exc:
         _SECTOR_EXPLORER_UI_OK = False
-        _SECTOR_EXPLORER_UI_ERR = str(_sector_explorer_exc).strip() or "sector explorer import failed"
-
-        def render_sector_explorer_section(ticker_universe=None) -> None:  # type: ignore[misc]
-            return None
-
-try:
-    from app_sector_prediction_section import render_sector_prediction_section
-    _SECTOR_PREDICTION_UI_OK = True
-    _SECTOR_PREDICTION_UI_ERR = ""
-except Exception as _sector_prediction_exc:
-    _SECTOR_PREDICTION_UI_OK = False
-    _SECTOR_PREDICTION_UI_ERR = str(_sector_prediction_exc).strip() or "sector prediction import failed"
-
-    def render_sector_prediction_section(*args, **kwargs) -> None:  # type: ignore[misc]
+        _SECTOR_EXPLORER_UI_ERR = str(exc).strip() or "sector explorer import failed"
+        st.warning(
+            "Sector Explorer is unavailable because its UI module could not be imported. "
+            f"Import error: {_SECTOR_EXPLORER_UI_ERR}"
+        )
         return None
 
-try:
-    from strategy_engines.app_sector_intelligence_section import render_sector_intelligence_section
-    _SECTOR_INTELLIGENCE_UI_OK = True
-    _SECTOR_INTELLIGENCE_UI_ERR = ""
-except Exception as _sector_intelligence_exc:
+
+_SECTOR_PREDICTION_UI_OK = True
+_SECTOR_PREDICTION_UI_ERR = ""
+_sector_prediction_renderer = None
+
+
+def render_sector_prediction_section(*args, **kwargs) -> None:  # type: ignore[misc]
+    global _SECTOR_PREDICTION_UI_OK, _SECTOR_PREDICTION_UI_ERR, _sector_prediction_renderer
+    if callable(_sector_prediction_renderer):
+        return _sector_prediction_renderer(*args, **kwargs)
     try:
-        from app_sector_intelligence_section import render_sector_intelligence_section  # type: ignore[import]
+        from app_sector_prediction_section import (
+            render_sector_prediction_section as _render_sector_prediction_section,
+        )
+
+        _sector_prediction_renderer = _render_sector_prediction_section
+        _SECTOR_PREDICTION_UI_OK = True
+        _SECTOR_PREDICTION_UI_ERR = ""
+        return _sector_prediction_renderer(*args, **kwargs)
+    except Exception as exc:
+        _SECTOR_PREDICTION_UI_OK = False
+        _SECTOR_PREDICTION_UI_ERR = str(exc).strip() or "sector prediction import failed"
+        st.warning(
+            "Sector Prediction is unavailable because its UI module could not be imported. "
+            f"Import error: {_SECTOR_PREDICTION_UI_ERR}"
+        )
+        return None
+
+
+_SECTOR_INTELLIGENCE_UI_OK = True
+_SECTOR_INTELLIGENCE_UI_ERR = ""
+_sector_intelligence_renderer = None
+
+
+def render_sector_intelligence_section(*args, **kwargs) -> None:  # type: ignore[misc]
+    global _SECTOR_INTELLIGENCE_UI_OK, _SECTOR_INTELLIGENCE_UI_ERR, _sector_intelligence_renderer
+    if callable(_sector_intelligence_renderer):
+        return _sector_intelligence_renderer(*args, **kwargs)
+    try:
+        try:
+            from strategy_engines.app_sector_intelligence_section import (
+                render_sector_intelligence_section as _render_sector_intelligence_section,
+            )
+        except Exception:
+            from app_sector_intelligence_section import (  # type: ignore[import]
+                render_sector_intelligence_section as _render_sector_intelligence_section,
+            )
+        _sector_intelligence_renderer = _render_sector_intelligence_section
         _SECTOR_INTELLIGENCE_UI_OK = True
         _SECTOR_INTELLIGENCE_UI_ERR = ""
-    except Exception:
+        return _sector_intelligence_renderer(*args, **kwargs)
+    except Exception as exc:
         _SECTOR_INTELLIGENCE_UI_OK = False
-        _SECTOR_INTELLIGENCE_UI_ERR = str(_sector_intelligence_exc).strip() or "sector intelligence import failed"
-
-        def render_sector_intelligence_section(*args, **kwargs) -> None:  # type: ignore[misc]
-            return None
+        _SECTOR_INTELLIGENCE_UI_ERR = str(exc).strip() or "sector intelligence import failed"
+        st.warning(
+            "Sector Intelligence is unavailable because its UI module could not be imported. "
+            f"Import error: {_SECTOR_INTELLIGENCE_UI_ERR}"
+        )
+        return None
 
 try:
     from app_breakout_radar_section import render_breakout_radar_section
@@ -606,7 +870,6 @@ except Exception:
     def render_live_breakout_pulse(*args, **kwargs):  # type: ignore[misc]
         return None
 
-from app_prediction_chart_section import render_prediction_chart_section
 from app_compare_stocks_section import (
     build_compare_source_statuses as _build_compare_source_statuses,
     load_compare_results as _load_compare_results,
@@ -622,6 +885,29 @@ except Exception:
     _NSE_ANIMATIONS_OK = False
 
     def inject_animations() -> None:  # type: ignore[misc]
+        return None
+
+
+_prediction_chart_renderer = None
+
+
+def render_prediction_chart_section(*args, **kwargs):
+    """
+    Lazy-load the Prediction Chart panel so Plotly and its helpers do not block
+    the initial app shell render.
+    """
+    global _prediction_chart_renderer
+    if callable(_prediction_chart_renderer):
+        return _prediction_chart_renderer(*args, **kwargs)
+    try:
+        from app_prediction_chart_section import (
+            render_prediction_chart_section as _render_prediction_chart_section,
+        )
+
+        _prediction_chart_renderer = _render_prediction_chart_section
+        return _prediction_chart_renderer(*args, **kwargs)
+    except Exception:
+        _prediction_chart_renderer = None
         return None
 
 # AFTER the csv_next_day import block, add:
@@ -1101,14 +1387,14 @@ def _render_add_in_picks_actions(
         add_clicked = st.button(
             "ADD IN PICKS",
             key=f"{key_prefix}_add_in_picks",
-            use_container_width=True,
+            width="stretch",
             disabled=not normalized,
         )
     with open_col:
         open_clicked = st.button(
             "OPEN PICKS",
             key=f"{key_prefix}_open_picks",
-            use_container_width=True,
+            width="stretch",
         )
 
     if add_clicked:
@@ -1830,7 +2116,7 @@ def render_stock_aura_panel() -> None:
             with c_btn:
                 analyze_clicked = st.form_submit_button(
                     "🧠 Analyze Aura",
-                    use_container_width=True,
+                    width="stretch",
                 )
     with c_cls:
         if st.button("✕ Close", key="aura_close_btn"):
@@ -2011,7 +2297,7 @@ def render_stock_aura_panel() -> None:
             with button_col:
                 analyze_clicked = st.form_submit_button(
                     "Analyze Aura",
-                    use_container_width=True,
+                    width="stretch",
                 )
     with close_col:
         if st.button("Close", key="aura_close_btn"):
@@ -2589,7 +2875,7 @@ def render_tomorrow_picks_panel() -> None:
                         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                         add_clicked = st.form_submit_button(
                             "＋ Add",
-                            use_container_width=True,
+                            width="stretch",
                             disabled=len(store["picks"]) >= 20,
                         )
 
@@ -2632,7 +2918,7 @@ def render_tomorrow_picks_panel() -> None:
                                 remove_clicked = st.button(
                                     "✕",
                                     key=f"tmr_remove_{idx}",
-                                    use_container_width=True,
+                                    width="stretch",
                                 )
                             if remove_clicked:
                                 del store["picks"][idx]
@@ -2687,12 +2973,12 @@ def render_tomorrow_picks_panel() -> None:
                     with notes_btn_col:
                         save_notes_clicked = st.form_submit_button(
                             "Save Notes",
-                            use_container_width=True,
+                            width="stretch",
                         )
                     with notes_reset_col:
                         reset_notes_clicked = st.form_submit_button(
                             "Revert Saved",
-                            use_container_width=True,
+                            width="stretch",
                         )
                 if reset_notes_clicked:
                     st.session_state["tmr_notes_area"] = saved_notes
@@ -2720,7 +3006,7 @@ def render_tomorrow_picks_panel() -> None:
         st.button(
             "Close",
             key="tmr_picks_close_btn",
-            use_container_width=True,
+            width="stretch",
             on_click=_close_tomorrow_picks_panel,
         )
 
@@ -2773,12 +3059,7 @@ def render_tomorrow_picks_ticker_strip() -> None:
 _STOCK_AURA_OK = True   # always True — no external dependency
 
 # ── optional sklearn (graceful fallback if missing) ───────────────────
-try:
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-    _SKLEARN_OK = True
-except ImportError:
-    _SKLEARN_OK = False
+_SKLEARN_OK = _importlib.util.find_spec("sklearn") is not None
 
 # NOTE:
 # External module imports (scoring_engine/backtest_engine/ml_engine/ui_components)
@@ -3280,7 +3561,7 @@ def render_tomorrow_picks_panel() -> None:
                         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                         add_clicked = st.form_submit_button(
                             "Add",
-                            use_container_width=True,
+                            width="stretch",
                             disabled=saved_count >= 20,
                         )
 
@@ -3361,7 +3642,7 @@ def render_tomorrow_picks_panel() -> None:
                             remove_clicked = st.button(
                                 "Remove",
                                 key=f"tmr_v2_remove_{bucket}_{idx}",
-                                use_container_width=True,
+                                width="stretch",
                             )
                         if remove_clicked:
                             updated_sections = {
@@ -3424,12 +3705,12 @@ def render_tomorrow_picks_panel() -> None:
                     with notes_btn_col:
                         save_notes_clicked = st.form_submit_button(
                             "Save Notes",
-                            use_container_width=True,
+                            width="stretch",
                         )
                     with notes_reset_col:
                         reset_notes_clicked = st.form_submit_button(
                             "Revert Saved",
-                            use_container_width=True,
+                            width="stretch",
                         )
 
                 if reset_notes_clicked:
@@ -3459,7 +3740,7 @@ def render_tomorrow_picks_panel() -> None:
         st.button(
             "Close",
             key="tmr_picks_close_btn_v2",
-            use_container_width=True,
+            width="stretch",
             on_click=_close_tomorrow_picks_panel,
         )
 
@@ -5903,6 +6184,11 @@ def train_model_once(tickers_sample: list[str] | None = None) -> bool:
 
     if not _SKLEARN_OK:
         return False
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+    except Exception:
+        return False
 
     with _ML_LOCK:
         if _ML_MODEL is not None:
@@ -6825,16 +7111,15 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────────────────────────────
-# FIX 1 — Startup background ML training (fires once on app boot)
-# Non-blocking daemon thread — UI never waits for this.
-# The scan handler still has its own fallback call if model isn't ready.
+# FIX 1 — Startup learning status bootstrap
+# Fast snapshot restore for first paint.
+# The heavy learning cycle still runs after scans and other explicit refresh paths.
 # ─────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────
 # MAIN PAGE
 # ─────────────────────────────────────────────────────────────────────
-learning_status = _refresh_feedback_learning_system(force=False)
-signal_weight_status = _refresh_signal_weight_status(force_update=False)
+learning_status, signal_weight_status = _bootstrap_learning_status()
 
 mc = mode_colors[mode]
 _mc_soft = _hex_to_rgba(mc, 0.10)
@@ -7455,7 +7740,7 @@ if st.session_state.get("battle_show_panel", False):
         )
     with _battle_close_col:
         st.markdown("<br>", unsafe_allow_html=True)
-        _battle_close_panel = st.button("Close", key="battle_close_panel_btn", use_container_width=True)
+        _battle_close_panel = st.button("Close", key="battle_close_panel_btn", width="stretch")
 
     if _battle_close_panel:
         st.session_state["battle_show_panel"] = False
@@ -7477,7 +7762,7 @@ if st.session_state.get("battle_show_panel", False):
             _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
             _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
 
-        _battle_main_run = st.form_submit_button("Run Battle Analysis", use_container_width=True)
+        _battle_main_run = st.form_submit_button("Run Battle Analysis", width="stretch")
     if _battle_main_run:
         _all_inputs = [_t1, _t2, _t3, _t4, _t5, _t6, _t7, _t8, _t9, _t10]
         _battle_tickers = [t.strip() for t in _all_inputs if t and t.strip()][:10]
@@ -7775,7 +8060,7 @@ if _show_home_scanner and "results" in st.session_state:
                     f'</div>{_sl_tgt_html}{trap_html}</div>',
                     unsafe_allow_html=True,
                 )
-                st.link_button("📈 TradingView", tv_link, use_container_width=True)
+                st.link_button("📈 TradingView", tv_link, width="stretch")
 
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown('<h2>📊 Full Rankings</h2>', unsafe_allow_html=True)
@@ -7823,7 +8108,7 @@ if _show_home_scanner and "results" in st.session_state:
                 "Action": st.column_config.TextColumn("Action"),
                 "Hold Days": st.column_config.TextColumn("Hold Days"),
             },
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -7936,7 +8221,7 @@ if _show_home_scanner and "results" in st.session_state:
                 data=_csv_buf.getvalue().encode("utf-8-sig"),
                 file_name=f"nse_scan_{datetime.now().strftime('%Y%m%d_%H%M')}_mode{stored_mode}.csv",
                 mime="text/csv",
-                use_container_width=True,
+                width="stretch",
                 key="main_scan_csv_download",
             )
 
@@ -8056,7 +8341,7 @@ if _show_home_scanner and "results" in st.session_state:
                     "Action": st.column_config.TextColumn("Action"),
                     "Hold Days": st.column_config.TextColumn("Hold Days"),
                 },
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
             _render_add_in_picks_actions(
@@ -8235,7 +8520,7 @@ else:
                         "Action":           st.column_config.TextColumn("Action"),
                         "Hold Days":        st.column_config.TextColumn("Hold Days"),
                     },
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
             elif not csv_last_error:
@@ -8442,11 +8727,11 @@ else:
                 "⚠️ Trap Check": st.column_config.TextColumn("⚠️ Trap Check"),
                 "Notes":        st.column_config.TextColumn("Notes", width="large"),
             },
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         with st.expander("🧾 Full Battle Diagnostics", expanded=False):
-            st.dataframe(_battle_df, use_container_width=True, hide_index=True)
+            st.dataframe(_battle_df, width="stretch", hide_index=True)
 
         # ── ⚠️ Trap Warnings ─────────────────────────────
         _trap_stocks = [

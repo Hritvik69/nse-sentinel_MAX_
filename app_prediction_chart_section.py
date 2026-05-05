@@ -1137,7 +1137,7 @@ def _render_feedback_overlay(symbol: str, latest_prediction: dict) -> None:
             display = recent[["Date", "_direction", "Confidence", "Return %", "Correct"]].rename(
                 columns={"_direction": "Direction"}
             )
-            st.dataframe(display, hide_index=True, use_container_width=True)
+            st.dataframe(display, hide_index=True, width="stretch")
 
             st.markdown(
                 f"""
@@ -1333,7 +1333,7 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         load_btn = st.button(
             "Load Chart",
             key="pc_load_btn",
-            use_container_width=True,
+            width="stretch",
             type="primary",
         )
 
@@ -1493,7 +1493,7 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
 
     st.plotly_chart(
         fig,
-        use_container_width=True,
+        width="stretch",
         config={
             "displayModeBar": True,
             "modeBarButtonsToRemove": [

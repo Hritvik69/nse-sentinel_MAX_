@@ -165,7 +165,7 @@ else:
         _t10 = render_nse_stock_input("Stock 10", key="bm_t10", placeholder="e.g. MARUTI")
 
     _battle_clicked = st.button(
-        "⚔️ Run Battle Analysis", key="battle_btn", use_container_width=False
+        "⚔️ Run Battle Analysis", key="battle_btn", width="content"
     )
 
     if _battle_clicked:
@@ -349,7 +349,7 @@ else:
                                 unsafe_allow_html=True,
                             )
                             _fig = _build_battle_chart(_battle_df)
-                            st.plotly_chart(_fig, use_container_width=True)
+                            st.plotly_chart(_fig, width="stretch")
 
                             # ════════════════════════════════════════════
                             # 📋 HEAD-TO-HEAD COMPARISON TABLE
@@ -425,7 +425,7 @@ else:
                                     "⚠️ Trap Check": st.column_config.TextColumn("⚠️ Trap Check"),
                                     "Notes":         st.column_config.TextColumn("Notes", width="large"),
                                 },
-                                use_container_width=True,
+                                width="stretch",
                                 hide_index=True,
                             )
 
@@ -441,7 +441,7 @@ else:
 
                             # ── Full diagnostics expander ─────────────────
                             with st.expander("🧾 Full Battle Diagnostics", expanded=False):
-                                st.dataframe(_battle_df, use_container_width=True, hide_index=True)
+                                st.dataframe(_battle_df, width="stretch", hide_index=True)
 
                             # ════════════════════════════════════════════
                             # ⚠️ TRAP WARNINGS

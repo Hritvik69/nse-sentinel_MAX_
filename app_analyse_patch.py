@@ -388,7 +388,7 @@ def render_scan_diagnostics() -> None:
         ]
         if rows:
             df_reasons = pd.DataFrame(rows)
-            st.dataframe(df_reasons, use_container_width=True, hide_index=True)
+            st.dataframe(df_reasons, width="stretch", hide_index=True)
         else:
             st.success("No data problems detected. All failures were clean scan filters.")
 
@@ -415,7 +415,7 @@ def render_scan_diagnostics() -> None:
             df_fail["Meaning"] = df_fail["Reason"].map(
                 lambda r: _reason_meanings.get(r, r)
             )
-            st.dataframe(df_fail, use_container_width=True, hide_index=True)
+            st.dataframe(df_fail, width="stretch", hide_index=True)
 
 
 _reason_meanings: dict[str, str] = {

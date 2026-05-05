@@ -171,7 +171,7 @@ else:
                 if st.button(
                     f"🔍 Scan {_sec}",
                     key=f"ss_scan_{_sec}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.session_state["ss_active_sector"] = _sec
                     st.session_state["ss_sector_result"]  = None
@@ -338,7 +338,7 @@ else:
                     ]
                     st.dataframe(
                         _sec_df[_disp_cols] if _disp_cols else _sec_df,
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -359,7 +359,7 @@ else:
         _scan_all_btn = st.button(
             "🚀 Scan All Sectors",
             key="ss_scan_all_btn",
-            use_container_width=True,
+            width="stretch",
         )
     with _scan_all_col2:
         st.markdown(

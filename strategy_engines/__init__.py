@@ -24,7 +24,6 @@ from strategy_engines._engine_utils import (
     get_df_for_ticker,
     preload_history_batch,
 )
-from strategy_engines._df_extensions import backtest_with_preloaded
 
 
 # ── lazy imports — only load the engine for the requested mode ────────
@@ -101,3 +100,16 @@ def get_train_function(mode: int) -> Callable:
     import importlib
     mod = importlib.import_module(module_path)
     return getattr(mod, fn_name)
+
+
+def backtest_with_preloaded(mode: int, row: dict, ticker: str) -> float:
+    """
+    Lazy wrapper so the dataframe backtest helpers do not load during the
+    initial app shell render. Import them only when a scan actually needs them.
+    """
+    try:
+        from strategy_engines._df_extensions import backtest_with_preloaded as _bt_with_preloaded
+
+        return _bt_with_preloaded(mode, row, ticker)
+    except Exception:
+        return 50.0

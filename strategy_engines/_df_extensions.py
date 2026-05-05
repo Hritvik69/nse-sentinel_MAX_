@@ -22,10 +22,6 @@ import pandas as pd
 from strategy_engines._engine_utils import (
     safe, ema, rsi_vec, SKLEARN_OK, ALL_DATA,
 )
-if SKLEARN_OK:
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import train_test_split
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -84,6 +80,12 @@ def _train_from_data(
     model_holder = [model_ref, scaler_ref]  — updated in-place
     """
     if not SKLEARN_OK:
+        return False
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.model_selection import train_test_split
+        from sklearn.preprocessing import StandardScaler
+    except Exception:
         return False
     with model_lock:
         if model_holder[0] is not None:

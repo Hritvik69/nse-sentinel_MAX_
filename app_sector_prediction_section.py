@@ -272,7 +272,7 @@ def _render_sector_picker(sectors: list[str]) -> str:
                     if st.button(
                         _sector_label(sector),
                         key=f"sector_card_{sector}",
-                        use_container_width=True,
+                        width="stretch",
                         type="primary" if selected == sector else "secondary",
                     ):
                         selected = sector
@@ -393,7 +393,7 @@ def _render_prediction_detail(
     if _CE_OK:
         fig = build_sector_chart(pred)
         if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.info("Chart could not be built (insufficient OHLC data).")
     else:
@@ -526,7 +526,7 @@ def _render_prediction_detail(
                 'letter-spacing:1px;margin:16px 0 8px;">Active Weighting</div>',
                 unsafe_allow_html=True,
             )
-            st.dataframe(top_weights, hide_index=True, use_container_width=True)
+            st.dataframe(top_weights, hide_index=True, width="stretch")
 
     if _TR_OK:
         key = f"_pred_logged_{sector}_{pred.predicted_at[:10]}"
@@ -588,10 +588,10 @@ def _render_prediction_detail(
                 st.dataframe(
                     disp.style.apply(_style_row, axis=1),
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                 )
             except Exception:
-                st.dataframe(disp, hide_index=True, use_container_width=True)
+                st.dataframe(disp, hide_index=True, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -714,11 +714,11 @@ def _render_performance_dashboard() -> None:
                 st.dataframe(
                     sdf.style.apply(_sector_style, axis=1),
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                     height=min(400, 36 * len(ev.per_sector) + 38),
                 )
             except Exception:
-                st.dataframe(sdf, hide_index=True, use_container_width=True)
+                st.dataframe(sdf, hide_index=True, width="stretch")
 
             st.markdown(
                 f'<div style="font-size:11px;color:#6a8aad;margin-top:4px;">'
@@ -767,7 +767,7 @@ def _render_performance_dashboard() -> None:
                     ),
                     yaxis=dict(range=[0, 100], ticksuffix="%"),
                 )
-                st.plotly_chart(cal_fig, use_container_width=True)
+                st.plotly_chart(cal_fig, width="stretch")
                 st.markdown(
                     f'<div style="font-size:11px;color:#6a8aad;">Calibration MAE: '
                     f'<b style="color:#f0b429;">{ev.calibration_score:.1f}%</b> '
@@ -825,7 +825,7 @@ def _render_performance_dashboard() -> None:
                         yaxis=dict(title="Accuracy %", range=[0, 100]),
                         yaxis2=dict(title="Return %", overlaying="y", side="right"),
                     )
-                    st.plotly_chart(wf_fig, use_container_width=True)
+                    st.plotly_chart(wf_fig, width="stretch")
                 except Exception as exc:
                     st.info(f"Walk-forward chart unavailable: {exc}")
             else:
@@ -842,7 +842,7 @@ def _render_performance_dashboard() -> None:
                 if "Signal" in sig_df.columns:
                     sig_df["Signal"] = sig_df["Signal"].apply(_pretty_name)
                 sig_df.columns = ["Delta Weight" if "Weight" in str(col) and "Î" in str(col) else col for col in sig_df.columns]
-                st.dataframe(sig_df, hide_index=True, use_container_width=True, height=280)
+                st.dataframe(sig_df, hide_index=True, width="stretch", height=280)
             else:
                 st.caption("Signal reliability will populate after validated predictions accumulate.")
 
@@ -852,7 +852,7 @@ def _render_performance_dashboard() -> None:
             'letter-spacing:1px;margin:20px 0 8px;">Regime Split</div>',
             unsafe_allow_html=True,
         )
-        st.dataframe(ev.regime_perf_df, hide_index=True, use_container_width=True)
+        st.dataframe(ev.regime_perf_df, hide_index=True, width="stretch")
 
     if not ev.last_10.empty:
         st.markdown(
@@ -897,10 +897,10 @@ def _render_performance_dashboard() -> None:
             st.dataframe(
                 d10.style.apply(_t10_style, axis=1),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
             )
         except Exception:
-            st.dataframe(d10, hide_index=True, use_container_width=True)
+            st.dataframe(d10, hide_index=True, width="stretch")
 
 
 # ══════════════════════════════════════════════════════════════════════
