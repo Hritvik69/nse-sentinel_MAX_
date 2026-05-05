@@ -37,12 +37,39 @@ _FIELDNAMES = [
     "outcome_label",
 ]
 
+_LOG_CACHE_SIG: tuple[int, int] | None = None
+_LOG_CACHE_DF: pd.DataFrame | None = None
+
 
 def _ensure_data_dir() -> None:
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
+
+
+def _file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        if not path.exists():
+            return None
+        stat = path.stat()
+        return int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))), int(stat.st_size)
+    except Exception:
+        return None
+
+
+def _set_cached_log(df: pd.DataFrame | None) -> pd.DataFrame:
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF
+    cached = _coerce_schema(df)
+    _LOG_CACHE_SIG = _file_signature(LOG_PATH)
+    _LOG_CACHE_DF = cached.copy()
+    return cached.copy()
+
+
+def _invalidate_cache() -> None:
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF
+    _LOG_CACHE_SIG = None
+    _LOG_CACHE_DF = None
 
 
 def _is_blank(value: object) -> bool:
@@ -148,19 +175,27 @@ def _ensure_schema() -> None:
     try:
         _ensure_data_dir()
         if not LOG_PATH.exists():
+            _invalidate_cache()
             return
         upgraded = _coerce_schema(pd.read_csv(LOG_PATH, dtype=str))
         upgraded.to_csv(LOG_PATH, index=False)
+        _set_cached_log(upgraded)
     except Exception:
         pass
 
 
 def read_feedback_log() -> pd.DataFrame:
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF
     try:
         _ensure_schema()
         if not LOG_PATH.exists():
+            _invalidate_cache()
             return pd.DataFrame(columns=_FIELDNAMES)
-        return _coerce_schema(pd.read_csv(LOG_PATH, dtype=str))
+        current_sig = _file_signature(LOG_PATH)
+        if current_sig is not None and _LOG_CACHE_SIG == current_sig and isinstance(_LOG_CACHE_DF, pd.DataFrame):
+            return _LOG_CACHE_DF.copy()
+        fresh = _coerce_schema(pd.read_csv(LOG_PATH, dtype=str))
+        return _set_cached_log(fresh)
     except Exception:
         return pd.DataFrame(columns=_FIELDNAMES)
 
@@ -211,6 +246,7 @@ def log_scan_predictions(
     try:
         if df is None or not isinstance(df, pd.DataFrame) or df.empty:
             return
+        _invalidate_cache()
         _ensure_schema()
         mb = market_bias if isinstance(market_bias, dict) else {}
         bias_s = str(mb.get("bias", ""))[:160]
@@ -277,6 +313,10 @@ def log_scan_predictions(
                     )
                 except Exception:
                     continue
+        try:
+            read_feedback_log()
+        except Exception:
+            pass
     except Exception:
         return
 
@@ -409,6 +449,7 @@ def backfill_actual_returns(all_data: dict) -> int:
 
         if changed:
             df.to_csv(LOG_PATH, index=False)
+            _set_cached_log(df)
         return validated
     except Exception:
         return 0

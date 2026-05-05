@@ -67,6 +67,8 @@ _FIELDNAMES = [
 # ── Calibration in-memory cache (rebuilt on demand) ──────────────────
 _calibration_cache: dict[str, dict[str, float]] = {}   # sector → dir → factor
 _cache_built_at: str = ""
+_LOG_CACHE_SIG: tuple[int, int] | None = None
+_LOG_CACHE_DF: pd.DataFrame | None = None
 
 
 def _ensure_dir() -> None:
@@ -74,6 +76,30 @@ def _ensure_dir() -> None:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
+
+
+def _file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        if not path.exists():
+            return None
+        stat = path.stat()
+        return int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))), int(stat.st_size)
+    except Exception:
+        return None
+
+
+def _invalidate_log_cache() -> None:
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF
+    _LOG_CACHE_SIG = None
+    _LOG_CACHE_DF = None
+
+
+def _set_cached_log(df: pd.DataFrame | None) -> pd.DataFrame:
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF
+    cached = _coerce_schema(df if isinstance(df, pd.DataFrame) else pd.DataFrame())
+    _LOG_CACHE_SIG = _file_signature(_LOG_PATH)
+    _LOG_CACHE_DF = cached.copy()
+    return cached.copy()
 
 
 def _coerce_schema(df: pd.DataFrame) -> pd.DataFrame:
@@ -94,11 +120,13 @@ def _ensure_schema() -> None:
     try:
         _ensure_dir()
         if not _LOG_PATH.exists():
+            _invalidate_log_cache()
             return
         df = pd.read_csv(_LOG_PATH, dtype=str)
         upgraded = _coerce_schema(df)
         if list(upgraded.columns) != list(df.columns) or len(upgraded.columns) != len(df.columns):
             upgraded.to_csv(_LOG_PATH, index=False)
+        _set_cached_log(upgraded)
     except Exception:
         pass
 
@@ -221,6 +249,7 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
     """
     try:
         _ensure_dir()
+        _invalidate_log_cache()
         _ensure_schema()
         file_exists = _LOG_PATH.exists() and _LOG_PATH.stat().st_size > 0
         sig = prediction.signals
@@ -271,6 +300,10 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
+        try:
+            read_log()
+        except Exception:
+            pass
         return True
     except Exception:
         return False
@@ -290,8 +323,9 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
     try:
         _ensure_schema()
         if not _LOG_PATH.exists():
+            _invalidate_log_cache()
             return 0
-        df = _coerce_schema(pd.read_csv(_LOG_PATH, dtype=str))
+        df = read_log()
         if df.empty:
             return 0
 
@@ -367,6 +401,7 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
 
         if filled > 0:
             df.to_csv(_LOG_PATH, index=False)
+            _set_cached_log(df)
             _rebuild_calibration_cache(df)
         return filled
     except Exception:
@@ -433,8 +468,13 @@ def read_log(sector: str | None = None) -> pd.DataFrame:
     try:
         _ensure_schema()
         if not _LOG_PATH.exists():
+            _invalidate_log_cache()
             return pd.DataFrame(columns=_FIELDNAMES)
-        df = _coerce_schema(pd.read_csv(_LOG_PATH, dtype=str))
+        current_sig = _file_signature(_LOG_PATH)
+        if current_sig is not None and _LOG_CACHE_SIG == current_sig and isinstance(_LOG_CACHE_DF, pd.DataFrame):
+            df = _LOG_CACHE_DF.copy()
+        else:
+            df = _set_cached_log(pd.read_csv(_LOG_PATH, dtype=str))
         if sector:
             df = df[df["sector"] == sector].copy()
         return df

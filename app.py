@@ -51,15 +51,32 @@ def _default_learning_status() -> dict:
     }
 
 
+def _learning_engine_module_is_usable(module) -> bool:
+    try:
+        required = (
+            "get_training_status",
+            "predict_success",
+            "restore_learning_bundle",
+            "train_learning_model",
+        )
+        return module is not None and all(callable(getattr(module, name, None)) for name in required)
+    except Exception:
+        return False
+
+
 def _load_learning_engine_module():
     """
     Load the project learning engine without leaving a half-imported module
     behind in sys.modules. Streamlit Cloud can otherwise surface that as
     "cannot import name ..." on reruns.
     """
+    existing = _sys.modules.get("learning_engine")
+    if _learning_engine_module_is_usable(existing):
+        return existing
+
     for module_name in ("learning_engine", "trade_decision_engine"):
         try:
-            if module_name == "learning_engine":
+            if module_name == "learning_engine" and module_name in _sys.modules:
                 _sys.modules.pop("learning_engine", None)
             module = _importlib.import_module(module_name)
             if module_name != "learning_engine":
@@ -98,7 +115,6 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 import yfinance as yf
 
 if _learning_engine is not None:
@@ -1619,7 +1635,7 @@ def render_stock_aura_panel() -> None:
         )
 
     # Input row
-    configure_nse_stock_search(fetch_nse_tickers())
+    configure_nse_stock_search(_get_cached_nse_tickers())
     c_form, c_cls = st.columns([4, 1])
     with c_form:
         with st.form("stock_aura_form", clear_on_submit=False):
@@ -1800,7 +1816,7 @@ def render_stock_aura_panel() -> None:
             unsafe_allow_html=True,
         )
 
-    configure_nse_stock_search(fetch_nse_tickers())
+    configure_nse_stock_search(_get_cached_nse_tickers())
     form_col, close_col = st.columns([4, 1])
     with form_col:
         with st.form("stock_aura_form", clear_on_submit=False):
@@ -3712,31 +3728,6 @@ hr { border-color:var(--border) !important; }
 </style>
 """, unsafe_allow_html=True)
 
-components.html(
-    """
-    <script>
-    const wireAnimatedButtons = () => {
-      const selectors = [".stButton > button", ".stDownloadButton > button"];
-      document.querySelectorAll(selectors.join(",")).forEach((btn) => {
-        if (btn.dataset.animReady === "1") return;
-        btn.dataset.animReady = "1";
-        btn.addEventListener("click", () => {
-          btn.classList.remove("btn-clicked");
-          void btn.offsetWidth;
-          btn.classList.add("btn-clicked");
-          window.setTimeout(() => btn.classList.remove("btn-clicked"), 650);
-        });
-      });
-    };
-    wireAnimatedButtons();
-    const observer = new MutationObserver(() => wireAnimatedButtons());
-    observer.observe(document.body, { childList: true, subtree: true });
-    </script>
-    """,
-    height=0,
-    width=0,
-)
-
 inject_animations()
 
 st.markdown(
@@ -4482,6 +4473,125 @@ def fetch_nse_tickers() -> list:
             _save_tickers_to_gsheets(best_known)
 
     return best_known
+
+
+def _get_cached_nse_tickers(*, show_spinner: bool = False, force_refresh: bool = False) -> list[str]:
+    try:
+        if force_refresh:
+            st.session_state.pop("_ui_all_tickers", None)
+        cached = st.session_state.get("_ui_all_tickers", [])
+        if isinstance(cached, list) and cached:
+            return list(cached)
+    except Exception:
+        pass
+
+    try:
+        if show_spinner:
+            with st.spinner("Loading NSE ticker list..."):
+                tickers = fetch_nse_tickers()
+        else:
+            tickers = fetch_nse_tickers()
+    except Exception:
+        tickers = []
+
+    try:
+        if isinstance(tickers, list) and tickers:
+            st.session_state["_ui_all_tickers"] = list(tickers)
+    except Exception:
+        pass
+    return list(tickers or [])
+
+
+def _invalidate_sidebar_data_status_cache() -> None:
+    try:
+        st.session_state["_data_status_cache_version"] = int(
+            st.session_state.get("_data_status_cache_version", 0) or 0
+        ) + 1
+        st.session_state.pop("_sidebar_data_status", None)
+        st.session_state.pop("_sidebar_data_status_sig", None)
+    except Exception:
+        pass
+
+
+def _get_sidebar_data_status(tickers: list[str]) -> dict:
+    default = {"fresh": 0, "stale": 0, "missing": 0, "total": len(tickers or [])}
+    try:
+        tickers_ns = [
+            str(t).strip().upper() if str(t).strip().upper().endswith(".NS")
+            else f"{str(t).strip().upper()}.NS"
+            for t in (tickers or [])
+            if str(t).strip()
+        ]
+        version = int(st.session_state.get("_data_status_cache_version", 0) or 0)
+        sig = (
+            version,
+            len(tickers_ns),
+            tuple(tickers_ns[:3]),
+            tuple(tickers_ns[-3:]) if len(tickers_ns) >= 3 else tuple(tickers_ns),
+            str(get_expected_data_date()),
+        )
+        cached_sig = st.session_state.get("_sidebar_data_status_sig")
+        cached_status = st.session_state.get("_sidebar_data_status")
+        if cached_sig == sig and isinstance(cached_status, dict):
+            return cached_status
+
+        data_dir = Path(_HERE) / "data"
+        now_ts = time.time()
+        max_staleness_hours = 24.0
+        file_mtimes: dict[str, float] = {}
+        if data_dir.exists():
+            try:
+                for entry in _os.scandir(data_dir):
+                    if entry.is_file() and entry.name.lower().endswith(".csv"):
+                        file_mtimes[entry.name[:-4].upper()] = float(entry.stat().st_mtime)
+            except Exception:
+                file_mtimes = {}
+
+        fresh = 0
+        stale = 0
+        missing = 0
+        for ticker_ns in tickers_ns:
+            safe_name = ticker_ns.replace(":", "_").replace("/", "_").upper()
+            mtime = file_mtimes.get(safe_name)
+            if not mtime:
+                missing += 1
+                continue
+            age_hours = max((now_ts - mtime) / 3600.0, 0.0)
+            if age_hours > max_staleness_hours:
+                stale += 1
+            else:
+                fresh += 1
+
+        status = {
+            "total": len(tickers_ns),
+            "fresh": fresh,
+            "stale": stale,
+            "missing": missing,
+        }
+        st.session_state["_sidebar_data_status"] = status
+        st.session_state["_sidebar_data_status_sig"] = sig
+        return status
+    except Exception:
+        return default
+
+
+def _build_scan_results_signature(results: list[dict], mode: int, scan_time: str, tt_scan_date: str) -> tuple:
+    try:
+        compact_rows = []
+        for row in results or []:
+            symbol = str(row.get("Ticker") or row.get("Symbol") or "").upper().strip()
+            price = round(_safe(row.get("Price (₹)", 0.0), 0.0), 4)
+            rsi_value = round(_safe(row.get("RSI", 0.0), 0.0), 2)
+            compact_rows.append((symbol, price, rsi_value))
+        return (
+            int(mode or 0),
+            str(scan_time or ""),
+            str(tt_scan_date or ""),
+            len(compact_rows),
+            tuple(compact_rows),
+        )
+    except Exception:
+        return (int(mode or 0), str(scan_time or ""), str(tt_scan_date or ""), len(results or []))
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -6464,8 +6574,9 @@ with st.sidebar:
         if st.button("🔄 Refresh Local Data Cache", key="refresh_data_btn"):
             with st.spinner("Updating data..."):
                 try:
-                    _tickers_for_dl = fetch_nse_tickers()
+                    _tickers_for_dl = _get_cached_nse_tickers()
                     update_all_data(_tickers_for_dl)
+                    _invalidate_sidebar_data_status_cache()
                     st.success("Data updated")
                 except Exception as _e:
                     st.error(f"Data update failed: {_e}")
@@ -6489,7 +6600,7 @@ with st.sidebar:
         )
         # Show cache status
         try:
-            _status = data_status_summary(fetch_nse_tickers())
+            _status = _get_sidebar_data_status(_get_cached_nse_tickers())
             st.markdown(
                 f'<div style="font-size:11px;color:#4a6480;line-height:1.9;">'
                 f'Fresh: <b style="color:#00d4a8">{_status.get("fresh", "?")}</b> &nbsp;'
@@ -6635,7 +6746,7 @@ if isinstance(_ui_cached_tickers, list) and _ui_cached_tickers:
     all_tickers = list(_ui_cached_tickers)
 else:
     with st.spinner("Loading NSE ticker list..."):
-        all_tickers = fetch_nse_tickers()
+        all_tickers = _get_cached_nse_tickers(show_spinner=True)
     st.session_state["_ui_all_tickers"] = list(all_tickers)
 n = len(all_tickers)
 
@@ -6650,6 +6761,7 @@ with st.sidebar:
             st.cache_data.clear()
             st.session_state.pop("_ticker_master_list", None)
             st.session_state.pop("_ui_all_tickers", None)
+            _invalidate_sidebar_data_status_cache()
             st.rerun()
     else:
         st.caption(f"✅ {ticker_count:,} tickers loaded")
@@ -6876,13 +6988,13 @@ if scan_clicked or main_scan_clicked:
                 total_universe = len(all_tickers)
                 missing = max(0, total_universe - loaded)
                 if missing > 0:
-                    # Snapshot is partial -- preload_all fills the gaps via
-                    # historical OHLCV (CSV cache / yfinance period=6mo).
-                    # Tickers already in ALL_DATA are cache hits; skipped.
+                    # Snapshot is partial -- preload_all fills what it can from
+                    # the local CSV cache and skips the rest so closed-market
+                    # scans stay fast instead of triggering a large live fetch.
                     st.info(
                         f"📂 Loaded {loaded} tickers from "
                         f"{expected_date} snapshot. "
-                        f"Fetching history for {missing} remaining tickers..."
+                        f"Checking local history for {missing} remaining tickers..."
                     )
                     skip_preload = False
                 else:
@@ -7054,6 +7166,8 @@ if scan_clicked or main_scan_clicked:
         "tt_was_active": _tt_active_date is not None,
         "tt_scan_date":  str(_tt_active_date) if _tt_active_date else "",
     })
+    st.session_state.pop("last_scan_df", None)
+    st.session_state.pop("_last_scan_df_sig", None)
 
     # FIX 6 — Auto-backfill actual returns for past predictions (background)
     st.rerun()
@@ -7116,7 +7230,7 @@ if st.session_state.get("show_sector_screener", False):
             )
 
     if _SECTOR_EXPLORER_UI_OK:
-        render_sector_explorer_section(fetch_nse_tickers())
+        render_sector_explorer_section(_get_cached_nse_tickers())
     else:
         st.warning(
             "Sector Explorer is unavailable because its UI module could not be imported. "
@@ -7167,7 +7281,7 @@ if st.session_state.get("battle_show_panel", False):
         st.session_state["battle_show_panel"] = False
         st.rerun()
 
-    configure_nse_stock_search(fetch_nse_tickers())
+    configure_nse_stock_search(_get_cached_nse_tickers())
     with st.form("battle_mode_form", clear_on_submit=False):
         _battle_input_col1, _battle_input_col2 = st.columns(2)
         with _battle_input_col1:
@@ -7248,82 +7362,109 @@ if _show_home_scanner and "results" in st.session_state:
         with i3: st.metric("⚡ Avg Vol / Avg", f"{df_raw['Vol / Avg'].mean():.2f}×")
 
         # ── Enhance with scoring / backtest / ML ─────────────────────
-        with st.spinner("🔢 Computing Smart Scores, Backtest & ML probabilities …"):
-            df = enhance_results(results, stored_mode)
+        _scan_df_sig = _build_scan_results_signature(
+            results,
+            stored_mode,
+            scan_time_d,
+            str(st.session_state.get("tt_scan_date", "") or ""),
+        )
+        _cached_scan_df = st.session_state.get("last_scan_df")
+        _using_cached_scan_df = (
+            isinstance(_cached_scan_df, pd.DataFrame)
+            and not _cached_scan_df.empty
+            and st.session_state.get("_last_scan_df_sig") == _scan_df_sig
+        )
+        if _using_cached_scan_df:
+            df = _cached_scan_df.copy()
+        else:
+            with st.spinner("🔢 Computing Smart Scores, Backtest & ML probabilities ..."):
+                df = enhance_results(results, stored_mode)
 
         # ── Enhanced Logic Engine — runs FIRST so Setup Quality /
         # ── Volume Trend / Trap Risk are available for Prediction Score
-        try:
-            df = apply_enhanced_logic(df)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                df = apply_enhanced_logic(df)
+            except Exception:
+                pass
 
         # ── Universal Grading Engine ──────────────────────────────────
-        try:
-            # FIX 2: reuse cached bias if younger than 30 min
-            _now_ts = time.time()
-            _cached_mb   = st.session_state.get("market_bias_result")
-            _cached_ts   = st.session_state.get("market_bias_ts", 0.0)
-            _cached_ttkey = st.session_state.get("market_bias_tt_key", "live")
-            _cur_ttkey   = str(st.session_state.get("tt_date_val") or "live")
-            _cache_valid = (
-                _cached_mb
-                and (_now_ts - float(_cached_ts)) < 1800
-                and _cached_ttkey == _cur_ttkey   # bust cache on TT date change
-            )
-            if _cache_valid:
-                _mb = _cached_mb
-            else:
-                _mb = compute_market_bias()
-                st.session_state["market_bias_result"]  = _mb
-                st.session_state["market_bias_ts"]      = _now_ts
-                st.session_state["market_bias_tt_key"]  = _cur_ttkey
-            df = apply_universal_grading(df, _mb)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                # FIX 2: reuse cached bias if younger than 30 min
+                _now_ts = time.time()
+                _cached_mb   = st.session_state.get("market_bias_result")
+                _cached_ts   = st.session_state.get("market_bias_ts", 0.0)
+                _cached_ttkey = st.session_state.get("market_bias_tt_key", "live")
+                _cur_ttkey   = str(st.session_state.get("tt_date_val") or "live")
+                _cache_valid = (
+                    _cached_mb
+                    and (_now_ts - float(_cached_ts)) < 1800
+                    and _cached_ttkey == _cur_ttkey   # bust cache on TT date change
+                )
+                if _cache_valid:
+                    _mb = _cached_mb
+                else:
+                    _mb = compute_market_bias()
+                    st.session_state["market_bias_result"]  = _mb
+                    st.session_state["market_bias_ts"]      = _now_ts
+                    st.session_state["market_bias_tt_key"]  = _cur_ttkey
+                df = apply_universal_grading(df, _mb)
+            except Exception:
+                _mb = st.session_state.get("market_bias_result", {})
+        else:
+            _mb = st.session_state.get("market_bias_result", {})
 
         # ── Phase 4 Logic Engine (Setup Type, Reason, Risk, Final Signal)
-        try:
-            df = apply_phase4_logic(df, _mb)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                df = apply_phase4_logic(df, _mb)
+            except Exception:
+                pass
 
-        try:
-            from trade_decision_simple import apply_trade_decision_simple
-            df = apply_trade_decision_simple(df)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                from trade_decision_simple import apply_trade_decision_simple
+                df = apply_trade_decision_simple(df)
+            except Exception:
+                pass
 
         # ── Learning prediction (added column only) ───────────────────
-        try:
-            from learning_engine import predict_success
-            df["Learned Prob %"] = df.apply(lambda row: predict_success(row), axis=1)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                from learning_engine import predict_success
+                df["Learned Prob %"] = df.apply(lambda row: predict_success(row), axis=1)
+            except Exception:
+                pass
 
         # ── Phase 4.2 Logic Engine (Advanced Trap, Expected Move, Adjusted Signal)
-        try:
-            df = apply_phase42_logic(df)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                df = apply_phase42_logic(df)
+            except Exception:
+                pass
 
-        try:
-            df["Trap Check"] = df.apply(_trap_check_label, axis=1)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                df["Trap Check"] = df.apply(_trap_check_label, axis=1)
+            except Exception:
+                pass
 
         # ── Phase 4.3/4.4 (Dynamic Intelligence + Feedback Tracking) ─
-        try:
-            df = apply_phase43_logic(df)
-        except Exception:
-            pass
-        try:
-            df = apply_phase44_logic(df)
-        except Exception:
-            pass
+        if not _using_cached_scan_df:
+            try:
+                df = apply_phase43_logic(df)
+            except Exception:
+                pass
+            try:
+                df = apply_phase44_logic(df)
+            except Exception:
+                pass
 
-        st.session_state["last_scan_df"] = df.copy()
+            st.session_state["last_scan_df"] = df.copy()
+            st.session_state["_last_scan_df_sig"] = _scan_df_sig
 
+        _did_log_predictions = False
         try:
             from prediction_feedback_store import feedback_summary, log_scan_predictions
 
@@ -7331,6 +7472,7 @@ if _show_home_scanner and "results" in st.session_state:
             if st.session_state.get("_prediction_log_key") != _log_key:
                 log_scan_predictions(df, stored_mode, st.session_state.get("market_bias_result"))
                 st.session_state["_prediction_log_key"] = _log_key
+                _did_log_predictions = True
             _fs = feedback_summary()
             if _fs.get("total_logged", 0):
                 _cap = f"📒 Prediction log: {_fs['total_logged']} row(s) stored"
@@ -7343,14 +7485,15 @@ if _show_home_scanner and "results" in st.session_state:
         except Exception:
             pass
 
-        try:
-            learning_status = _refresh_feedback_learning_system(force=True)
-        except Exception:
-            pass
-        try:
-            signal_weight_status = _refresh_signal_weight_status(force_update=True)
-        except Exception:
-            pass
+        if _did_log_predictions:
+            try:
+                learning_status = _refresh_feedback_learning_system(force=True)
+            except Exception:
+                pass
+            try:
+                signal_weight_status = _refresh_signal_weight_status(force_update=True)
+            except Exception:
+                pass
 
         if "Next-Day Signal" in df.columns:
             with st.sidebar:

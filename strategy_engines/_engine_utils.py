@@ -290,6 +290,27 @@ def _should_force_live_refresh(force_live_refresh: bool | None = None) -> bool:
         return False
 
 
+def _should_allow_live_fallback(force_live_refresh: bool | None = None) -> bool:
+    if _should_force_live_refresh(force_live_refresh):
+        return True
+
+    try:
+        import time_travel_engine as _tt
+
+        if _tt.is_active():
+            return False
+    except Exception:
+        pass
+
+    try:
+        plan = _get_scan_data_plan()
+        if bool(plan.get("use_snapshot", False)):
+            return False
+    except Exception:
+        pass
+    return True
+
+
 def _is_live_sourced_frame(df: pd.DataFrame | None) -> bool:
     try:
         if df is None:
@@ -769,6 +790,7 @@ def preload_all(
     """
     _reset_live_caches_if_market_day_changed()
     force_live_refresh = _should_force_live_refresh(force_live_refresh)
+    allow_live_fallback = _should_allow_live_fallback(force_live_refresh)
 
     tickers_ns = [t if t.endswith(".NS") else f"{t}.NS" for t in tickers]
     total = len(tickers_ns)
@@ -839,7 +861,16 @@ def preload_all(
                 download_queue.append(ticker_ns)
             elif _is_stale_live_frame(csv_df):
                 stale_fallbacks.setdefault(ticker_ns, csv_df)
-                download_queue.append(ticker_ns)
+                if allow_live_fallback:
+                    download_queue.append(ticker_ns)
+                else:
+                    with _ALL_DATA_LOCK:
+                        ALL_DATA[ticker_ns] = csv_df
+                    _clear_no_data(ticker_ns)
+                    done += 1
+                    loaded += 1
+                    fallback_used += 1
+                    _emit_progress()
             else:
                 with _ALL_DATA_LOCK:
                     ALL_DATA[ticker_ns] = csv_df
@@ -849,7 +880,20 @@ def preload_all(
                 cache_hits += 1
                 _emit_progress()
         else:
-            download_queue.append(ticker_ns)
+            if allow_live_fallback:
+                download_queue.append(ticker_ns)
+            else:
+                fallback = stale_fallbacks.get(ticker_ns)
+                if fallback is not None:
+                    with _ALL_DATA_LOCK:
+                        ALL_DATA[ticker_ns] = fallback
+                    _clear_no_data(ticker_ns)
+                    loaded += 1
+                    fallback_used += 1
+                else:
+                    _mark_no_data(ticker_ns)
+                done += 1
+                _emit_progress()
 
     if not download_queue:
         return {
@@ -969,6 +1013,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     """
     ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
     force_live_refresh = _should_force_live_refresh()
+    allow_live_fallback = _should_allow_live_fallback(force_live_refresh)
     with _ALL_DATA_LOCK:
         df = ALL_DATA.get(ticker_ns)
     stale_fallback = None
@@ -1001,6 +1046,12 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
                     return csv_df
     except Exception:
         pass
+
+    if not allow_live_fallback:
+        if stale_fallback is not None and not force_live_refresh:
+            with _ALL_DATA_LOCK:
+                ALL_DATA[ticker_ns] = stale_fallback
+        return None if force_live_refresh else stale_fallback
 
     fetched = download_history(
         ticker_ns,

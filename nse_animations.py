@@ -36,7 +36,6 @@ JS side (Intersection Observer + direct DOM tweaks)
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS BLOCK
@@ -649,5 +648,7 @@ def inject_animations() -> None:
     # CSS injected via st.markdown (rendered in every rerun)
     st.markdown(_CSS, unsafe_allow_html=True)
 
-    # JS injected via components.html (height=0 so it's invisible)
-    components.html(_JS, height=0, width=0)
+    # Skip iframe-style JS injection to keep reruns lighter and quieter.
+    # The CSS layer still preserves the visual language without the extra
+    # Streamlit deprecation noise.
+    return None
