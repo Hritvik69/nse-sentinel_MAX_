@@ -1475,6 +1475,173 @@ def _import_symbols_into_ai_prediction(
     }
 
 
+def _log_imported_symbols_for_self_learning() -> dict[str, object]:
+    result: dict[str, object] = {
+        "symbols": [],
+        "matched_symbols": [],
+        "missing_symbols": [],
+        "added": 0,
+        "already_logged": 0,
+        "message": "",
+        "mode": 0,
+    }
+    try:
+        imported = _normalize_prediction_chart_imports(
+            st.session_state.get("prediction_chart_imported_symbols", []),
+            limit=40,
+        )
+        result["symbols"] = imported
+        st.session_state["self_learning_imported_symbols"] = imported
+        if not imported:
+            result["message"] = "Import stocks into AI Prediction first."
+            return result
+
+        scan_df = st.session_state.get("last_scan_df")
+        if not isinstance(scan_df, pd.DataFrame) or scan_df.empty:
+            result["message"] = "Imported stocks are saved, but no recent scan rows are available to log yet."
+            return result
+
+        symbol_col = "Symbol" if "Symbol" in scan_df.columns else "Ticker" if "Ticker" in scan_df.columns else ""
+        if not symbol_col:
+            result["message"] = "Recent scan rows do not contain stock symbols."
+            return result
+
+        working = scan_df.copy()
+        working["_learn_symbol"] = working[symbol_col].map(_normalize_tomorrow_symbol)
+        working = working[working["_learn_symbol"].isin(imported)].copy()
+        if working.empty:
+            result["missing_symbols"] = imported
+            result["message"] = "These imported stocks are not present in the latest scan results."
+            return result
+
+        working = working.drop_duplicates(subset=["_learn_symbol"], keep="first")
+        matched_symbols = [sym for sym in working["_learn_symbol"].tolist() if sym]
+        result["matched_symbols"] = matched_symbols
+        result["missing_symbols"] = [sym for sym in imported if sym not in matched_symbols]
+
+        mode_value = st.session_state.get(
+            "prediction_chart_import_mode",
+            st.session_state.get("mode", 0),
+        )
+        try:
+            mode_int = int(mode_value)
+        except Exception:
+            mode_int = 0
+        result["mode"] = mode_int
+
+        existing_today: set[str] = set()
+        try:
+            from prediction_feedback_store import read_feedback_log
+
+            existing_log = read_feedback_log()
+            if isinstance(existing_log, pd.DataFrame) and not existing_log.empty:
+                existing = existing_log.copy()
+                existing["_symbol_norm"] = existing.get("symbol", "").map(_normalize_tomorrow_symbol)
+                existing["_mode_norm"] = pd.to_numeric(existing.get("mode", 0), errors="coerce").fillna(0).astype(int)
+                existing["_logged_date"] = pd.to_datetime(existing.get("logged_at", ""), errors="coerce").dt.date
+                target_date = get_expected_data_date()
+                existing_today = {
+                    sym
+                    for sym in existing.loc[
+                        (existing["_mode_norm"] == mode_int) & (existing["_logged_date"] == target_date),
+                        "_symbol_norm",
+                    ].tolist()
+                    if sym
+                }
+        except Exception:
+            existing_today = set()
+
+        to_log = working[~working["_learn_symbol"].isin(existing_today)].copy()
+        result["already_logged"] = int(len(working) - len(to_log))
+        if to_log.empty:
+            result["message"] = "These imported stocks are already being tracked by the self-learning engine."
+            return result
+
+        try:
+            from prediction_feedback_store import log_scan_predictions
+
+            log_scan_predictions(
+                to_log.drop(columns=["_learn_symbol"], errors="ignore"),
+                mode_int,
+                st.session_state.get("market_bias_result"),
+            )
+            result["added"] = int(len(to_log))
+        except Exception:
+            result["message"] = "The learning log could not be updated right now."
+            return result
+
+        try:
+            _refresh_feedback_learning_system(force=True)
+        except Exception:
+            pass
+        try:
+            _refresh_signal_weight_status(force_update=True)
+        except Exception:
+            pass
+
+        if result["added"]:
+            result["message"] = f"Added {result['added']} imported stock(s) to self-learning."
+        else:
+            result["message"] = "Imported stocks were reviewed, but nothing new needed to be logged."
+        return result
+    except Exception:
+        result["message"] = "Imported AI stocks could not be sent to self-learning."
+        return result
+
+
+def _render_sidebar_imported_ai_learning_button() -> None:
+    imported = _normalize_prediction_chart_imports(
+        st.session_state.get("prediction_chart_imported_symbols", []),
+        limit=40,
+    )
+    count = len(imported)
+    preview = ", ".join(imported[:4])
+    if count > 4:
+        preview = f"{preview} +{count - 4} more"
+    origin = str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports")
+    helper_text = (
+        f"Ready for self-learning: <b style='color:#ccd9e8;'>{count}</b><br>"
+        f"<span style='color:#8ab4d8;'>{preview}</span>"
+        if count
+        else "Import stocks into AI Prediction first, then send that imported basket into self-learning from here."
+    )
+    st.markdown(
+        '<div style="margin-top:14px;padding:12px 12px 10px 12px;'
+        'border:1px solid rgba(0,212,255,0.20);border-radius:14px;'
+        'background:linear-gradient(180deg, rgba(8,16,28,0.96), rgba(8,13,20,0.92));">'
+        '<div style="font-size:10px;color:#4a6480;letter-spacing:1.3px;'
+        'text-transform:uppercase;margin-bottom:6px;">Imported AI Learning</div>'
+        f'<div style="font-size:11px;color:#4a6480;line-height:1.7;margin-bottom:10px;">'
+        f'Source: <span style="color:#8ab4d8;">{origin}</span><br>{helper_text}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button(
+        "🧠 Use Imported Stocks For Self-Learning",
+        key="sidebar_imported_ai_learning_btn",
+        width="stretch",
+        disabled=not imported,
+        type="secondary",
+    ):
+        summary = _log_imported_symbols_for_self_learning()
+        added = int(summary.get("added", 0) or 0)
+        already_logged = int(summary.get("already_logged", 0) or 0)
+        missing = int(len(list(summary.get("missing_symbols", []) or [])))
+        message = str(summary.get("message", "") or "Self-learning update finished.")
+        if added > 0:
+            try:
+                st.toast(message)
+            except Exception:
+                pass
+            st.success(message)
+        elif already_logged > 0 and added == 0:
+            st.info(message)
+        elif missing > 0:
+            st.warning(message)
+        else:
+            st.info(message)
+
+
 def _build_mode_ai_top3_preview(
     symbols: list[object] | tuple[object, ...] | None,
     mode_value: object,
@@ -7145,6 +7312,7 @@ with st.sidebar:
             )
         except Exception:
             pass
+        _render_sidebar_imported_ai_learning_button()
     else:
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;">'
@@ -7169,6 +7337,9 @@ with st.sidebar:
             '📡 Uses live market data directly</div>',
             unsafe_allow_html=True,
         )
+
+    if not _DATA_DOWNLOADER_OK:
+        _render_sidebar_imported_ai_learning_button()
 
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(
