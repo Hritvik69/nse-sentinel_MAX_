@@ -11,7 +11,25 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from learning_engine import predict_success, train_learning_model
+try:
+    import learning_engine as _learning_engine
+except Exception:
+    _learning_engine = None  # type: ignore[assignment]
+
+if _learning_engine is not None:
+    predict_success = getattr(_learning_engine, "predict_success", lambda row: 50.0)
+    train_learning_model = getattr(
+        _learning_engine,
+        "train_learning_model",
+        lambda: {"model": None, "scaler": None, "status": {"trained": False, "message": "Learning engine unavailable."}},
+    )
+else:
+    def predict_success(row: dict) -> float:  # type: ignore[misc]
+        return 50.0
+
+    def train_learning_model():  # type: ignore[misc]
+        return {"model": None, "scaler": None, "status": {"trained": False, "message": "Learning engine unavailable."}}
+
 from prediction_feedback_store import backfill_actual_returns, feedback_summary, read_feedback_log
 from sector_dynamic_weights import (
     get_dynamic_weights,

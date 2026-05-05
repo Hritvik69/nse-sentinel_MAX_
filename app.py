@@ -25,6 +25,7 @@ from __future__ import annotations
 # ── PATH FIX: ensure this file's own directory is always on sys.path ──
 # Fixes "No module named 'app_sector_screener_dashboard'" and similar
 # errors when Streamlit is launched from a different working directory.
+import importlib as _importlib
 import os as _os, sys as _sys
 _HERE = _os.path.dirname(_os.path.abspath(__file__))
 if _HERE not in _sys.path:
@@ -35,17 +36,51 @@ _PARENT = _os.path.dirname(_HERE)
 if _os.path.isdir(_os.path.join(_PARENT, "strategy_engines")) and _PARENT not in _sys.path:
     _sys.path.insert(0, _PARENT)
 
-# ── Compatibility alias: allow `from learning_engine import ...` ─────────
-# (In this project, the learning engine code currently lives in
-# `trade_decision_engine.py`.)
-try:
-    import learning_engine as _learning_engine  # type: ignore[import]
-except Exception:
-    try:
-        import trade_decision_engine as _learning_engine  # type: ignore[import]
-        _sys.modules.setdefault("learning_engine", _learning_engine)
-    except Exception:
-        pass
+def _default_learning_status() -> dict:
+    return {
+        "trained": False,
+        "samples": 0,
+        "stock_samples": 0,
+        "sector_samples": 0,
+        "accuracy_pct": None,
+        "last_trained": "",
+        "source": "none",
+        "message": "Learning engine unavailable.",
+        "regime_encoder": {},
+        "sector_encoder": {},
+    }
+
+
+def _load_learning_engine_module():
+    """
+    Load the project learning engine without leaving a half-imported module
+    behind in sys.modules. Streamlit Cloud can otherwise surface that as
+    "cannot import name ..." on reruns.
+    """
+    for module_name in ("learning_engine", "trade_decision_engine"):
+        try:
+            if module_name == "learning_engine":
+                _sys.modules.pop("learning_engine", None)
+            module = _importlib.import_module(module_name)
+            if module_name != "learning_engine":
+                _sys.modules["learning_engine"] = module
+            return module
+        except Exception:
+            if module_name == "learning_engine":
+                _sys.modules.pop("learning_engine", None)
+            continue
+    return None
+
+
+_learning_engine = _load_learning_engine_module()
+
+
+def _fallback_train_learning_model():
+    return {
+        "model": None,
+        "scaler": None,
+        "status": _default_learning_status(),
+    }
 
 import io
 import html
@@ -65,12 +100,18 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
-from learning_engine import (
-    get_training_status,
-    predict_success,
-    restore_learning_bundle,
-    train_learning_model,
-)
+
+if _learning_engine is not None:
+    get_training_status = getattr(_learning_engine, "get_training_status", _default_learning_status)
+    predict_success = getattr(_learning_engine, "predict_success", lambda row: 50.0)
+    restore_learning_bundle = getattr(_learning_engine, "restore_learning_bundle", lambda bundle: False)
+    train_learning_model = getattr(_learning_engine, "train_learning_model", _fallback_train_learning_model)
+else:
+    get_training_status = _default_learning_status
+    predict_success = lambda row: 50.0
+    restore_learning_bundle = lambda bundle: False
+    train_learning_model = _fallback_train_learning_model
+
 from nse_learning_brain import run_learning_cycle
 try:
     import data_session_manager as _dsm
