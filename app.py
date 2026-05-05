@@ -1673,6 +1673,269 @@ def _render_sidebar_imported_ai_learning_button() -> None:
             st.info(message)
 
 
+def _render_sidebar_imported_ai_learning_entry_button() -> None:
+    imported = _normalize_prediction_chart_imports(
+        st.session_state.get("prediction_chart_imported_symbols", []),
+        limit=40,
+    )
+    count = len(imported)
+    preview = ", ".join(imported[:4])
+    if count > 4:
+        preview = f"{preview} +{count - 4} more"
+    origin = str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports")
+    helper_text = (
+        f"Stored imported stocks: <b style='color:#ccd9e8;'>{count}</b><br>"
+        f"<span style='color:#8ab4d8;'>{preview}</span>"
+        if count
+        else "Import stocks into AI Prediction first, then open the stored imported basket from here."
+    )
+    st.markdown(
+        '<div style="margin-top:14px;padding:12px 12px 10px 12px;'
+        'border:1px solid rgba(0,212,255,0.20);border-radius:14px;'
+        'background:linear-gradient(180deg, rgba(8,16,28,0.96), rgba(8,13,20,0.92));">'
+        '<div style="font-size:10px;color:#4a6480;letter-spacing:1.3px;'
+        'text-transform:uppercase;margin-bottom:6px;">Imported AI Learning</div>'
+        f'<div style="font-size:11px;color:#4a6480;line-height:1.7;margin-bottom:10px;">'
+        f'Source: <span style="color:#8ab4d8;">{origin}</span><br>{helper_text}</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    if st.button(
+        "Open Imported AI Stocks",
+        key="sidebar_imported_ai_learning_entry_btn",
+        width="stretch",
+        type="secondary",
+    ):
+        _activate_sidebar_panel("imported_ai_learning_show_panel")
+
+
+def _build_imported_ai_learning_panel_data() -> dict[str, object]:
+    payload: dict[str, object] = {
+        "imported": [],
+        "origin": str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports"),
+        "mode": st.session_state.get("prediction_chart_import_mode", st.session_state.get("mode", 0)),
+        "table": pd.DataFrame(),
+        "matched_count": 0,
+        "logged_today_count": 0,
+        "validated_count": 0,
+        "missing_symbols": [],
+    }
+    try:
+        imported = _normalize_prediction_chart_imports(
+            st.session_state.get("prediction_chart_imported_symbols", []),
+            limit=40,
+        )
+        payload["imported"] = imported
+        if not imported:
+            return payload
+
+        scan_df = st.session_state.get("last_scan_df")
+        scan_map: dict[str, dict[str, object]] = {}
+        if isinstance(scan_df, pd.DataFrame) and not scan_df.empty:
+            symbol_col = "Symbol" if "Symbol" in scan_df.columns else "Ticker" if "Ticker" in scan_df.columns else ""
+            if symbol_col:
+                working = scan_df.copy()
+                working["_panel_symbol"] = working[symbol_col].map(_normalize_tomorrow_symbol)
+                working = working[working["_panel_symbol"].isin(imported)].copy()
+                working = working.drop_duplicates(subset=["_panel_symbol"], keep="first")
+                payload["matched_count"] = int(len(working))
+                for _, row in working.iterrows():
+                    symbol = _normalize_tomorrow_symbol(row.get("_panel_symbol"))
+                    if symbol:
+                        scan_map[symbol] = row.to_dict()
+
+        latest_log_map: dict[str, dict[str, object]] = {}
+        today_logged: set[str] = set()
+        try:
+            from prediction_feedback_store import read_feedback_log
+
+            log_df = read_feedback_log()
+            if isinstance(log_df, pd.DataFrame) and not log_df.empty:
+                log_work = log_df.copy()
+                log_work["_panel_symbol"] = log_work.get("symbol", "").map(_normalize_tomorrow_symbol)
+                log_work["_logged_dt"] = pd.to_datetime(log_work.get("logged_at", ""), errors="coerce")
+                log_work["_logged_date"] = log_work["_logged_dt"].dt.date
+                log_work["_mode_norm"] = pd.to_numeric(log_work.get("mode", 0), errors="coerce").fillna(0).astype(int)
+                try:
+                    mode_int = int(payload.get("mode", 0) or 0)
+                except Exception:
+                    mode_int = 0
+                target_date = get_expected_data_date()
+                today_logged = {
+                    sym
+                    for sym in log_work.loc[
+                        (log_work["_mode_norm"] == mode_int) & (log_work["_logged_date"] == target_date),
+                        "_panel_symbol",
+                    ].tolist()
+                    if sym
+                }
+                latest = log_work.sort_values("_logged_dt").drop_duplicates("_panel_symbol", keep="last")
+                for _, row in latest.iterrows():
+                    symbol = _normalize_tomorrow_symbol(row.get("_panel_symbol"))
+                    if symbol:
+                        latest_log_map[symbol] = row.to_dict()
+                payload["logged_today_count"] = int(len(today_logged & set(imported)))
+                payload["validated_count"] = int(
+                    sum(
+                        1
+                        for sym in imported
+                        if str((latest_log_map.get(sym) or {}).get("correct", "")).strip() in ("True", "False")
+                    )
+                )
+        except Exception:
+            latest_log_map = {}
+
+        rows: list[dict[str, object]] = []
+        for symbol in imported:
+            scan_row = dict(scan_map.get(symbol) or {})
+            log_row = dict(latest_log_map.get(symbol) or {})
+            actual_return = _to_float(log_row.get("actual_next_return_pct"))
+            rows.append(
+                {
+                    "Ticker": symbol,
+                    "Stored Data": "Stored" if symbol in scan_map else "Imported Only",
+                    "Sector": str(scan_row.get("Sector", "-") or "-"),
+                    "Final Score": round(_safe(scan_row.get("Final Score", np.nan), np.nan), 1) if symbol in scan_map else np.nan,
+                    "Pred Score": round(_safe(scan_row.get("Prediction Score", np.nan), np.nan), 1) if symbol in scan_map else np.nan,
+                    "Signal": str(scan_row.get("Signal", "-") or "-"),
+                    "Conviction": str(scan_row.get("Conviction Tier", "-") or "-"),
+                    "Trap": str(_first_present(scan_row, ["Trap Risk", "Trap Check", "Trap"], "-") or "-"),
+                    "Logged Today": "Yes" if symbol in today_logged else "No",
+                    "Last Outcome": f"{actual_return:.2f}%" if actual_return is not None else "-",
+                    "Correct": str(log_row.get("correct", "-") or "-"),
+                }
+            )
+
+        payload["missing_symbols"] = [sym for sym in imported if sym not in scan_map]
+        payload["table"] = pd.DataFrame(rows)
+        return payload
+    except Exception:
+        return payload
+
+
+def render_imported_ai_learning_panel() -> None:
+    if not st.session_state.get("imported_ai_learning_show_panel", False):
+        return
+
+    panel = _build_imported_ai_learning_panel_data()
+    imported = list(panel.get("imported", []) or [])
+    table = panel.get("table")
+    if not isinstance(table, pd.DataFrame):
+        table = pd.DataFrame()
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    _hdr_col, _close_col = st.columns([6, 1])
+    with _hdr_col:
+        st.markdown('<h2>Imported AI Stocks</h2>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
+            'This screen shows the imported AI stocks already stored in your session, their saved scan data, '
+            'and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine.</div>',
+            unsafe_allow_html=True,
+        )
+    with _close_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Close", key="imported_ai_learning_close_btn", width="stretch"):
+            _activate_sidebar_panel(None)
+
+    _mode_value = panel.get("mode", 0)
+    try:
+        _mode_int = int(_mode_value or 0)
+    except Exception:
+        _mode_int = 0
+    _mode_label = f"Mode M{_mode_int}" if _mode_int else "Mode -"
+    st.caption(
+        f"Source: {panel.get('origin', 'AI Prediction imports')} | {_mode_label} | Imported stocks: {len(imported)}"
+    )
+
+    _m1, _m2, _m3, _m4 = st.columns(4)
+    with _m1:
+        st.metric("Imported", f"{len(imported):,}")
+    with _m2:
+        st.metric("Stored Scan Rows", f"{int(panel.get('matched_count', 0) or 0):,}")
+    with _m3:
+        st.metric("Logged Today", f"{int(panel.get('logged_today_count', 0) or 0):,}")
+    with _m4:
+        st.metric("Validated", f"{int(panel.get('validated_count', 0) or 0):,}")
+
+    _action1, _action2, _action3, _action4 = st.columns(4)
+    with _action1:
+        _self_improve_clicked = st.button(
+            "Self Improve",
+            key="imported_ai_learning_self_improve_btn",
+            width="stretch",
+            type="primary",
+        )
+    with _action2:
+        if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", width="stretch"):
+            _activate_sidebar_panel("pred_chart_show_panel")
+    with _action3:
+        if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
+            for key in (
+                "prediction_chart_imported_symbols",
+                "prediction_chart_import_origin",
+                "prediction_chart_import_mode",
+                "prediction_chart_focus_symbol",
+            ):
+                st.session_state.pop(key, None)
+            st.rerun()
+    with _action4:
+        if st.button("Back To Scanner", key="imported_ai_learning_back_btn", width="stretch"):
+            _activate_sidebar_panel(None)
+
+    if _self_improve_clicked:
+        summary = _log_imported_symbols_for_self_learning()
+        added = int(summary.get("added", 0) or 0)
+        already_logged = int(summary.get("already_logged", 0) or 0)
+        missing = int(len(list(summary.get("missing_symbols", []) or [])))
+        message = str(summary.get("message", "") or "Self-learning update finished.")
+        if added > 0:
+            try:
+                st.toast(message)
+            except Exception:
+                pass
+            st.success(message)
+        elif already_logged > 0 and added == 0:
+            st.info(message)
+        elif missing > 0:
+            st.warning(message)
+        else:
+            st.info(message)
+
+    if not imported:
+        st.info("No imported AI stocks are stored yet. Import some stocks from a mode Top 3 table first.")
+        return
+
+    missing_symbols = list(panel.get("missing_symbols", []) or [])
+    if missing_symbols:
+        _missing_preview = ", ".join(missing_symbols[:8])
+        if len(missing_symbols) > 8:
+            _missing_preview += " ..."
+        st.caption(
+            f"Stored scan data is missing for some imported symbols in the latest scan: {_missing_preview}"
+        )
+
+    if not table.empty:
+        st.dataframe(
+            table,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Ticker"),
+                "Stored Data": st.column_config.TextColumn("Stored Data"),
+                "Sector": st.column_config.TextColumn("Sector"),
+                "Final Score": st.column_config.NumberColumn("Final Score", format="%.1f"),
+                "Pred Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
+                "Signal": st.column_config.TextColumn("Signal"),
+                "Conviction": st.column_config.TextColumn("Conviction"),
+                "Trap": st.column_config.TextColumn("Trap"),
+                "Logged Today": st.column_config.TextColumn("Logged Today"),
+                "Last Outcome": st.column_config.TextColumn("Last Outcome"),
+                "Correct": st.column_config.TextColumn("Correct"),
+            },
+            width="stretch",
+            hide_index=True,
+        )
+
+
 def _build_mode_ai_top3_preview(
     symbols: list[object] | tuple[object, ...] | None,
     mode_value: object,
@@ -7064,6 +7327,7 @@ _SIDEBAR_PANEL_KEYS = (
     "aura_show_panel",
     "tomorrow_picks_show_panel",
     "pred_chart_show_panel",
+    "imported_ai_learning_show_panel",
     "csv_next_day_show_panel",
     "live_pulse_show_panel",
 )
@@ -7350,7 +7614,7 @@ with st.sidebar:
             )
         except Exception:
             pass
-        _render_sidebar_imported_ai_learning_button()
+        _render_sidebar_imported_ai_learning_entry_button()
     else:
         st.markdown(
             '<div style="font-size:11px;color:#4a6480;">'
@@ -7377,7 +7641,7 @@ with st.sidebar:
         )
 
     if not _DATA_DOWNLOADER_OK:
-        _render_sidebar_imported_ai_learning_button()
+        _render_sidebar_imported_ai_learning_entry_button()
 
     st.markdown("<hr>", unsafe_allow_html=True)
     st.markdown(
@@ -7406,11 +7670,13 @@ _show_sector_screener = st.session_state.get("show_sector_screener", False) or s
 _show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
 _show_tomorrow_picks_panel = bool(st.session_state.get("tomorrow_picks_show_panel", False))
 _show_pred_chart_panel = bool(st.session_state.get("pred_chart_show_panel", False))
+_show_imported_ai_learning_panel = bool(st.session_state.get("imported_ai_learning_show_panel", False))
 _show_home_scanner = not (
     _show_sector_screener
     or _show_live_pulse_panel
     or _show_tomorrow_picks_panel
     or _show_pred_chart_panel
+    or _show_imported_ai_learning_panel
 )
 
 st.markdown(
@@ -7659,6 +7925,10 @@ with st.sidebar:
 
 if _show_pred_chart_panel:
     render_prediction_chart_section(ticker_list=all_tickers)
+    st.stop()
+
+if _show_imported_ai_learning_panel:
+    render_imported_ai_learning_panel()
     st.stop()
 
 if _show_home_scanner:
