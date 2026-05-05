@@ -1467,7 +1467,6 @@ def _import_symbols_into_ai_prediction(
         st.session_state["prediction_chart_import_mode"] = mode_value
     st.session_state["prediction_chart_focus_symbol"] = focus_symbol
     st.session_state["pc_loaded_symbol"] = focus_symbol
-    st.session_state["pc_stock_select"] = focus_symbol
     return {
         "symbols": merged,
         "added": added,

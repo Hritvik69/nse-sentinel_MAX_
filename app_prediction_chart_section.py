@@ -1229,11 +1229,6 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
             if "RELIANCE" in display_tickers
             else display_tickers[0]
         )
-        current_selected = _normalize_prediction_chart_symbol(st.session_state.get("pc_stock_select", ""))
-        if current_selected not in display_tickers:
-            st.session_state["pc_stock_select"] = default_symbol
-        elif focus_symbol and focus_symbol in display_tickers and current_selected != focus_symbol:
-            st.session_state["pc_stock_select"] = focus_symbol
 
     # ── Header ────────────────────────────────────────────────────────
     st.markdown(
@@ -1304,7 +1299,7 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         for idx, symbol in enumerate(visible_imports):
             if quick_cols[idx].button(symbol, key=f"pc_imported_quick_{symbol}", width="stretch"):
                 st.session_state["pc_loaded_symbol"] = symbol
-                st.session_state["pc_stock_select"] = symbol
+                st.session_state["prediction_chart_focus_symbol"] = symbol
                 st.rerun()
         if quick_cols[-1].button("Clear Imported", key="pc_imported_clear_btn", width="stretch"):
             for key in (
@@ -1320,15 +1315,28 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
 
     c_sel, c_btn = st.columns([4, 1])
     with c_sel:
-        current_selected = _normalize_prediction_chart_symbol(st.session_state.get("pc_stock_select", ""))
-        default_idx = display_tickers.index(current_selected) if current_selected in display_tickers else 0
-        selected_bare = st.selectbox(
-            "stock",
-            options=display_tickers,
-            index=default_idx,
-            key="pc_stock_select",
-            label_visibility="collapsed",
-        )
+        widget_key = "pc_stock_select"
+        current_selected = _normalize_prediction_chart_symbol(st.session_state.get(widget_key, ""))
+        initial_symbol = current_selected if current_selected in display_tickers else default_symbol
+        needs_reset = False
+        if current_selected not in display_tickers:
+            needs_reset = True
+        elif focus_symbol and focus_symbol in display_tickers and current_selected != focus_symbol:
+            initial_symbol = focus_symbol
+            needs_reset = True
+
+        if needs_reset:
+            st.session_state.pop(widget_key, None)
+
+        selectbox_kwargs = {
+            "label": "stock",
+            "options": display_tickers,
+            "key": widget_key,
+            "label_visibility": "collapsed",
+        }
+        if widget_key not in st.session_state:
+            selectbox_kwargs["index"] = display_tickers.index(initial_symbol)
+        selected_bare = st.selectbox(**selectbox_kwargs)
     with c_btn:
         load_btn = st.button(
             "Load Chart",
