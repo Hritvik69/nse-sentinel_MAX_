@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from functools import lru_cache
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 
@@ -21,6 +22,16 @@ _FRAME_SOURCE_ATTR = "_nse_data_source"
 _FRAME_DATE_ATTR = "_nse_market_date"
 _FRAME_WINDOW_ATTR = "_nse_window"
 _FRAME_CAPTURED_AT_ATTR = "_nse_captured_at"
+
+
+def _invalidate_snapshot_caches() -> None:
+    try:
+        _snapshot_exists_cached.cache_clear()
+        _available_snapshot_dates_cached.cache_clear()
+        _latest_snapshot_on_or_before_cached.cache_clear()
+        _acceptable_data_dates_cached.cache_clear()
+    except Exception:
+        pass
 
 
 def _snapshot_meta_path(market_date) -> Path:
@@ -67,11 +78,12 @@ def _recent_market_days(anchor: date, count: int = 3) -> list[date]:
     return days
 
 
-def _available_snapshot_dates() -> list[date]:
+@lru_cache(maxsize=1)
+def _available_snapshot_dates_cached() -> tuple[date, ...]:
     dates: list[date] = []
     try:
         if not _SNAPSHOT_ROOT.exists():
-            return dates
+            return tuple()
         for child in _SNAPSHOT_ROOT.iterdir():
             if not child.is_dir():
                 continue
@@ -82,19 +94,34 @@ def _available_snapshot_dates() -> list[date]:
             if snapshot_exists(snap_day):
                 dates.append(snap_day)
     except Exception:
-        return []
-    return sorted(dates)
+        return tuple()
+    return tuple(sorted(dates))
 
 
-def _latest_snapshot_on_or_before(day: date) -> date | None:
+def _available_snapshot_dates() -> list[date]:
+    return list(_available_snapshot_dates_cached())
+
+
+@lru_cache(maxsize=64)
+def _latest_snapshot_on_or_before_cached(day_iso: str) -> date | None:
+    day = date.fromisoformat(day_iso)
     latest: date | None = None
     try:
-        for snap_day in _available_snapshot_dates():
+        for snap_day in _available_snapshot_dates_cached():
             if snap_day <= day:
                 latest = snap_day
+            else:
+                break
     except Exception:
         return None
     return latest
+
+
+def _latest_snapshot_on_or_before(day: date) -> date | None:
+    try:
+        return _latest_snapshot_on_or_before_cached(day.isoformat())
+    except Exception:
+        return None
 
 
 def get_current_window() -> str:
@@ -132,6 +159,37 @@ def get_expected_data_date() -> date:
     return fallback or baseline
 
 
+@lru_cache(maxsize=32)
+def _acceptable_data_dates_cached(
+    today_iso: str,
+    window: str,
+    snapshot_fallback_iso: str,
+) -> tuple[date, ...]:
+    today = date.fromisoformat(today_iso)
+    window = str(window or "").upper()
+    snapshot_fallback = date.fromisoformat(snapshot_fallback_iso) if snapshot_fallback_iso else None
+
+    if window in ("LIVE", "CLOSED"):
+        primary = _recent_market_days(today, count=3)
+    elif window == "PRE_MARKET":
+        primary = _recent_market_days(_previous_weekday(today - timedelta(days=1)), count=3)
+    else:
+        primary = _recent_market_days(_previous_weekday(today), count=3)
+
+    snapshot_days = []
+    if snapshot_fallback is not None and (today - snapshot_fallback).days <= 7:
+        snapshot_days = _recent_market_days(snapshot_fallback, count=2)
+
+    ordered: list[date] = []
+    seen: set[date] = set()
+    for day in primary + snapshot_days:
+        if day in seen:
+            continue
+        seen.add(day)
+        ordered.append(day)
+    return tuple(ordered)
+
+
 def get_acceptable_data_dates() -> list[date]:
     """
     Return a short list of valid market dates for daily OHLCV freshness checks.
@@ -144,26 +202,14 @@ def get_acceptable_data_dates() -> list[date]:
     today = now_ist.date()
     window = get_current_window()
 
-    if window in ("LIVE", "CLOSED"):
-        primary = _recent_market_days(today, count=3)
-    elif window == "PRE_MARKET":
-        primary = _recent_market_days(_previous_weekday(today - timedelta(days=1)), count=3)
-    else:
-        primary = _recent_market_days(_previous_weekday(today), count=3)
-
     snapshot_fallback = _latest_snapshot_on_or_before(today)
-    snapshot_days = []
-    if snapshot_fallback is not None and (today - snapshot_fallback).days <= 7:
-        snapshot_days = _recent_market_days(snapshot_fallback, count=2)
-
-    ordered: list[date] = []
-    seen: set[date] = set()
-    for day in primary + snapshot_days:
-        if day in seen:
-            continue
-        seen.add(day)
-        ordered.append(day)
-    return ordered
+    return list(
+        _acceptable_data_dates_cached(
+            today.isoformat(),
+            window,
+            snapshot_fallback.isoformat() if snapshot_fallback is not None else "",
+        )
+    )
 
 
 def stamp_frame_metadata(
@@ -395,7 +441,11 @@ def is_data_fresh(df: pd.DataFrame) -> bool:
         return True
 
     try:
-        last_seen = pd.to_datetime(df.index[-1]).date()
+        tagged_day = df.attrs.get(_FRAME_DATE_ATTR) if hasattr(df, "attrs") else None
+        if tagged_day:
+            last_seen = _coerce_date(tagged_day)
+        else:
+            last_seen = pd.to_datetime(df.index[-1]).date()
     except Exception:
         return False
 
@@ -415,7 +465,16 @@ def get_snapshot_path(market_date) -> Path:
 
 def snapshot_exists(market_date) -> bool:
     try:
-        snap_dir = get_snapshot_path(market_date)
+        snap_day = _coerce_date(market_date)
+        return _snapshot_exists_cached(snap_day.isoformat())
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=64)
+def _snapshot_exists_cached(day_iso: str) -> bool:
+    try:
+        snap_dir = _SNAPSHOT_ROOT / day_iso
         if not snap_dir.exists():
             return False
         return len(list(snap_dir.glob("*.csv"))) >= 100
@@ -437,6 +496,7 @@ def _cleanup_old_snapshots(reference_date: date) -> None:
                 continue
             if snap_day < cutoff:
                 shutil.rmtree(child, ignore_errors=True)
+        _invalidate_snapshot_caches()
     except Exception:
         pass
 
@@ -482,6 +542,7 @@ def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool
                 json.dumps(meta, indent=2),
                 encoding="utf-8",
             )
+            _invalidate_snapshot_caches()
 
         _cleanup_old_snapshots(snap_day)
         return saved

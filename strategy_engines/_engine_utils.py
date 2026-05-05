@@ -1022,6 +1022,9 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
             return df
         stale_fallback = df
 
+    if not force_live_refresh and _has_recent_no_data(ticker_ns):
+        return stale_fallback
+
     try:
         if not force_live_refresh:
             from data_downloader import load_csv

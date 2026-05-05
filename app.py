@@ -5829,6 +5829,76 @@ def _render_scan_diagnostics_panel() -> None:
             st.dataframe(fail_df, width="stretch", hide_index=True)
 
 
+def _build_ready_scan_tickers(tickers, *, strict: bool = True) -> tuple[list[str], dict[str, int]]:
+    """
+    Shrink the stage-2 scan universe to symbols that already have usable data
+    in memory after preload/snapshot restore.
+    """
+    tickers_list = list(tickers or [])
+    summary = {
+        "requested": len(tickers_list),
+        "ready": len(tickers_list),
+        "skipped_no_data": 0,
+        "skipped_short": 0,
+        "skipped_stale": 0,
+    }
+    try:
+        if not tickers_list or _engine_utils is None:
+            return tickers_list, summary
+
+        tickers_ns = [
+            ticker if str(ticker).endswith(".NS") else f"{ticker}.NS"
+            for ticker in tickers_list
+        ]
+
+        all_data_lock = getattr(_engine_utils, "_ALL_DATA_LOCK", None)
+        if all_data_lock is not None:
+            with all_data_lock:
+                cached_frames = {ticker_ns: _engine_utils.ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
+        else:
+            cached_frames = {ticker_ns: _engine_utils.ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
+
+        no_data_lock = getattr(_engine_utils, "_NO_DATA_LOCK", None)
+        no_data_fn = getattr(_engine_utils, "_coerce_no_data_tickers", None)
+        if callable(no_data_fn):
+            if no_data_lock is not None:
+                with no_data_lock:
+                    known_no_data = set(no_data_fn())
+            else:
+                known_no_data = set(no_data_fn())
+        else:
+            known_no_data = set()
+
+        ready: list[str] = []
+        for raw_ticker, ticker_ns in zip(tickers_list, tickers_ns):
+            if ticker_ns in known_no_data:
+                summary["skipped_no_data"] += 1
+                continue
+
+            df = cached_frames.get(ticker_ns)
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                summary["skipped_no_data"] += 1
+                continue
+            if len(df) < 30:
+                summary["skipped_short"] += 1
+                continue
+            if strict:
+                try:
+                    if not _is_fresh_enough(df, strict=True):
+                        summary["skipped_stale"] += 1
+                        continue
+                except Exception:
+                    pass
+            ready.append(raw_ticker)
+
+        if ready:
+            summary["ready"] = len(ready)
+            return ready, summary
+        return tickers_list, summary
+    except Exception:
+        return tickers_list, summary
+
+
 def run_scan(tickers, mode, workers=20):
     results = []
     total   = len(tickers)
@@ -7609,8 +7679,38 @@ if scan_clicked or main_scan_clicked:
         except Exception:
             pass
 
+    scan_tickers = list(all_tickers)
+    scan_scope = {
+        "requested": len(scan_tickers),
+        "ready": len(scan_tickers),
+        "skipped_no_data": 0,
+        "skipped_short": 0,
+        "skipped_stale": 0,
+    }
     try:
-        results, elapsed = run_scan(all_tickers, mode, workers=workers)
+        scan_tickers, scan_scope = _build_ready_scan_tickers(
+            all_tickers,
+            strict=(_tt_active_date is None),
+        )
+        skipped_total = max(
+            0,
+            int(scan_scope.get("requested", 0) or 0) - int(scan_scope.get("ready", 0) or 0),
+        )
+        if skipped_total > 0 and int(scan_scope.get("ready", 0) or 0) > 0:
+            stale_note = ""
+            if int(scan_scope.get("skipped_stale", 0) or 0) > 0:
+                stale_note = f" | stale skipped: {int(scan_scope.get('skipped_stale', 0) or 0):,}"
+            st.caption(
+                f"⚡ Fast scan mode: running stage 2 on {int(scan_scope.get('ready', 0) or 0):,} ready tickers "
+                f"and skipping {skipped_total:,} unusable names "
+                f"(no data: {int(scan_scope.get('skipped_no_data', 0) or 0):,}, "
+                f"short history: {int(scan_scope.get('skipped_short', 0) or 0):,}{stale_note})."
+            )
+    except Exception:
+        scan_tickers = list(all_tickers)
+
+    try:
+        results, elapsed = run_scan(scan_tickers, mode, workers=workers)
     finally:
         # Always restore — even if scan raised an exception
         if _tt_active_date is not None and _TIME_TRAVEL_OK:
