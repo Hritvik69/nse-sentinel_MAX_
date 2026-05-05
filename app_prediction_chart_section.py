@@ -35,6 +35,24 @@ import pandas as pd
 import streamlit as st
 
 try:
+    from prediction_feedback_store import read_feedback_log as _read_feedback_log
+except Exception:
+    def _read_feedback_log() -> pd.DataFrame:
+        return pd.DataFrame()
+
+try:
+    from tomorrow_prediction_engine import get_tomorrow_prediction as _get_tomorrow_prediction
+except Exception:
+    def _get_tomorrow_prediction(ticker, all_data, mode):  # type: ignore[misc]
+        return {}
+
+try:
+    from nse_learning_brain import get_cached_prediction as _get_cached_prediction
+except Exception:
+    def _get_cached_prediction(ticker):  # type: ignore[misc]
+        return {}
+
+try:
     from strategy_engines._engine_utils import get_market_data_signature as _get_market_data_signature
 except Exception:
     def _get_market_data_signature(live_bucket_minutes: int = 5) -> str:
@@ -910,30 +928,51 @@ def _css() -> None:
 
 _SIG_LABELS = {
     "ema20_slope":      "EMA20 Slope",
+    "ema_slope":        "EMA Slope",
     "ema_alignment":    "EMA20 vs EMA50",
     "price_vs_ema20":   "Price vs EMA20",
+    "price_vs_ema":     "Price vs EMA20",
     "candle_direction": "Last 3 Candles",
+    "body_strength":    "Body Strength",
     "volume_trend":     "Volume Trend",
+    "volume_confirm":   "Volume Confirm",
     "volatility":       "Volatility",
+    "momentum":         "Momentum",
+    "sector_strength":  "MTF Strength",
+    "bullish_pct":      "Bullish Breadth",
+    "money_flow":       "Money Flow",
+    "participation":    "Participation",
 }
 _SIG_WEIGHTS = {
     "ema20_slope": 0.25, "ema_alignment": 0.20, "price_vs_ema20": 0.15,
     "candle_direction": 0.20, "volume_trend": 0.12, "volatility": 0.08,
+    "ema_slope": 0.10, "price_vs_ema": 0.08, "body_strength": 0.07,
+    "volume_confirm": 0.10, "momentum": 0.04, "sector_strength": 0.12,
+    "bullish_pct": 0.12, "money_flow": 0.08, "participation": 0.08,
 }
 
 
-def _render_signal_bars(signals: dict) -> None:
+def _center_signal_value(value: float) -> float:
+    value_f = _sf(value, 0.0)
+    if abs(value_f) <= 1.5:
+        return _clamp(value_f)
+    return _clamp((value_f - 50.0) / 50.0)
+
+
+def _render_signal_bars(signals: dict, weights: dict | None = None) -> None:
     st.markdown("<div class='pc-h3'>Signal Breakdown</div>", unsafe_allow_html=True)
     for key, val in signals.items():
         label  = _SIG_LABELS.get(key, key)
-        weight = _SIG_WEIGHTS.get(key, 0.0)
-        col    = BULL if val > 0.08 else BEAR if val < -0.08 else SIDE
+        weight = (weights or _SIG_WEIGHTS).get(key, _SIG_WEIGHTS.get(key, 0.0))
+        centered = _center_signal_value(_sf(val, 0.0))
+        col    = BULL if centered > 0.08 else BEAR if centered < -0.08 else SIDE
+        disp = f"{_sf(val, 0.0):.0f}/100" if abs(_sf(val, 0.0)) > 1.5 else f"{_sf(val, 0.0):+.2f}"
 
-        if val >= 0:
+        if centered >= 0:
             bar_left = "50%"
-            bar_w    = f"{min(val * 50.0, 50.0):.1f}%"
+            bar_w    = f"{min(centered * 50.0, 50.0):.1f}%"
         else:
-            bp       = min(abs(val) * 50.0, 50.0)
+            bp       = min(abs(centered) * 50.0, 50.0)
             bar_left = f"{50.0 - bp:.1f}%"
             bar_w    = f"{bp:.1f}%"
 
@@ -943,7 +982,7 @@ def _render_signal_bars(signals: dict) -> None:
               <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
                 <span style="font-size:11px;color:#8ab4d8;">{label}</span>
                 <span style="font-size:11px;color:{col};font-weight:700;">
-                  {val:+.2f}
+                  {disp}
                   <span style="color:#2a5080;font-size:10px;"> ({weight*100:.0f}%)</span>
                 </span>
               </div>
@@ -985,6 +1024,128 @@ def _render_regime_pill(regime: dict) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def _build_unified_regime_pill(prediction: dict) -> dict:
+    try:
+        regime_key = str(prediction.get("regime", "UNKNOWN") or "UNKNOWN").strip().upper()
+        indicators = dict(prediction.get("indicators") or {})
+        ema_aligned = _sf(indicators.get("EMA20"), 0.0) >= _sf(indicators.get("EMA50"), 0.0)
+        mapping = {
+            "TRENDING_UP": ("Trending Up", "Trend-following backdrop with higher bullish follow-through.", BULL, "▲"),
+            "TRENDING_DOWN": ("Trending Down", "Risk-off backdrop. Bearish setups deserve more respect.", BEAR, "▼"),
+            "RANGE_BOUND": ("Range Bound", "Mean reversion regime. Breakouts need extra confirmation.", SIDE, "◆"),
+            "HIGH_VOLATILITY": ("High Volatility", "Wide ranges reduce forecast stability and widen risk.", "#f0b429", "⚡"),
+        }
+        name, desc, color, emoji = mapping.get(
+            regime_key,
+            ("Unknown", "Regime model could not classify the market backdrop.", SIDE, "•"),
+        )
+        return {
+            "regime": name,
+            "description": desc,
+            "color": color,
+            "emoji": emoji,
+            "ema_aligned": ema_aligned,
+        }
+    except Exception:
+        return {
+            "regime": "Unknown",
+            "description": "",
+            "color": SIDE,
+            "emoji": "•",
+            "ema_aligned": False,
+        }
+
+
+def _load_ticker_feedback_history(symbol: str) -> pd.DataFrame:
+    try:
+        raw = _read_feedback_log()
+        if raw is None or raw.empty:
+            return pd.DataFrame()
+        plain = str(symbol or "").strip().upper().replace(".NS", "")
+        df = raw.copy()
+        df["_symbol_norm"] = df.get("symbol", "").astype(str).str.upper().str.replace(".NS", "", regex=False)
+        df = df[df["_symbol_norm"] == plain].copy()
+        if df.empty:
+            return pd.DataFrame()
+        df["logged_at"] = pd.to_datetime(df.get("logged_at"), errors="coerce")
+        df = df.sort_values("logged_at", ascending=False)
+        df["_prediction_score"] = pd.to_numeric(df.get("prediction_score"), errors="coerce")
+        df["_final_score"] = pd.to_numeric(df.get("final_score"), errors="coerce")
+        df["_confidence"] = ((df["_prediction_score"].fillna(0) + df["_final_score"].fillna(df["_prediction_score"].fillna(0))) / 2.0).clip(0, 100)
+        df["_return"] = pd.to_numeric(df.get("actual_next_return_pct"), errors="coerce")
+        df["_direction"] = np.where(
+            df.get("pred_bullish", "").astype(str).str.strip().isin(["1", "1.0", "true", "True"]),
+            "Bullish",
+            "Bearish",
+        )
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def _render_feedback_overlay(symbol: str, latest_prediction: dict) -> None:
+    try:
+        history = _load_ticker_feedback_history(symbol)
+        with st.expander("How did my past predictions do?", expanded=False):
+            if history.empty:
+                st.caption("No logged prediction history for this ticker yet.")
+                return
+
+            validated = history[history.get("correct", "").astype(str).isin(["True", "False"])].copy()
+            win_rate = float((validated["correct"] == "True").mean() * 100.0) if not validated.empty else 0.0
+            avg_hist_conf = float(validated["_confidence"].mean()) if not validated.empty else 0.0
+            current_conf = _sf(latest_prediction.get("confidence"), 0.0)
+            calibration_gap = abs(avg_hist_conf - win_rate) if not validated.empty else 0.0
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Ticker Win Rate", f"{win_rate:.1f}%")
+            c2.metric("Validated Calls", str(int(len(validated))))
+            c3.metric("Current Confidence", f"{current_conf:.1f}%")
+
+            recent = history.head(10).copy()
+            recent["Date"] = recent["logged_at"].dt.strftime("%Y-%m-%d")
+            recent["Confidence"] = recent["_confidence"].round(1)
+            recent["Return %"] = recent["_return"].round(2)
+            recent["Correct"] = recent.get("correct", "").replace("", "-")
+            display = recent[["Date", "_direction", "Confidence", "Return %", "Correct"]].rename(
+                columns={"_direction": "Direction"}
+            )
+            st.dataframe(display, hide_index=True, use_container_width=True)
+
+            st.markdown(
+                f"""
+                <div style="background:#0b1017;border:1px solid #1e3a5f;border-radius:12px;padding:14px 16px;margin-top:10px;">
+                  <div style="font-size:11px;color:#8ab4d8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;">
+                    Model confidence vs actual accuracy
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div>
+                      <div style="font-size:10px;color:#4a6480;margin-bottom:4px;">Average model confidence</div>
+                      {_conf_bar_html(avg_hist_conf, "#4da3ff")}
+                      <div style="font-size:11px;color:#8ab4d8;margin-top:4px;">{avg_hist_conf:.1f}%</div>
+                    </div>
+                    <div>
+                      <div style="font-size:10px;color:#4a6480;margin-bottom:4px;">Actual hit rate</div>
+                      {_conf_bar_html(win_rate, "#00d4a8")}
+                      <div style="font-size:11px;color:#8ab4d8;margin-top:4px;">{win_rate:.1f}%</div>
+                    </div>
+                  </div>
+                  <div style="font-size:10px;color:#4a6480;margin-top:10px;">Calibration gap: {calibration_gap:.1f} pts</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            if win_rate > 65.0:
+                st.success("✅ High-confidence ticker — historically accurate")
+            elif validated.empty:
+                st.info("This ticker has history, but not enough validated outcomes yet.")
+            elif win_rate < 40.0:
+                st.warning("⚠️ Low win rate on this ticker — reduce position size")
+    except Exception:
+        return
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1179,7 +1340,42 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         return
 
     # ── Prediction + regime ────────────────────────────────────────────
-    prediction  = compute_prediction(df)
+    try:
+        prediction = dict(_get_cached_prediction(trigger_symbol) or {})
+    except Exception:
+        prediction = {}
+
+    if not prediction:
+        try:
+            prediction = dict(
+                _get_tomorrow_prediction(
+                    trigger_symbol,
+                    {
+                        trigger_symbol: df,
+                        symbol_ns: df,
+                        trigger_symbol.upper().replace(".NS", ""): df,
+                    },
+                    "prediction_chart",
+                )
+                or {}
+            )
+        except Exception:
+            prediction = {}
+
+    if not prediction:
+        prediction = compute_prediction(df)
+    else:
+        prediction = {
+            "direction": prediction.get("direction", "Sideways"),
+            "confidence": _sf(prediction.get("confidence"), 48.0),
+            "signals": dict(prediction.get("signals") or {}),
+            "atr": _sf(prediction.get("atr"), float((df["High"] - df["Low"]).tail(14).mean())),
+            "regime": dict(prediction.get("regime_snapshot") or _build_unified_regime_pill(prediction)),
+            "label_tag": str(prediction.get("label_tag", "") or ""),
+            "weights": dict(prediction.get("weights") or {}),
+            "score": _sf(prediction.get("score"), 50.0),
+            "key_signal": str(prediction.get("key_signal", "") or ""),
+        }
     pred_candle = build_predicted_candle(df, prediction)
     regime      = prediction.get("regime", {})
 
@@ -1295,7 +1491,23 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         _render_regime_pill(regime)
 
     with c_sigs:
-        _render_signal_bars(signals)
+        _render_signal_bars(signals, prediction.get("weights"))
+
+        key_signal = str(prediction.get("key_signal", "") or "").replace("_", " ").strip().title()
+        if key_signal:
+            st.markdown(
+                f"""
+                <div style="background:#0b1017;border:1px solid #1e3a5f;
+                     border-radius:10px;padding:10px 14px;margin-top:8px;">
+                  <div style="font-size:10px;color:#4a6480;margin-bottom:4px;">
+                    Strongest Driver Today</div>
+                  <div style="font-size:12px;font-weight:700;color:#00d4ff;">
+                    {key_signal}
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         # EMA alignment summary
         ema_ok  = regime.get("ema_aligned", False)
@@ -1315,6 +1527,8 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
             """,
             unsafe_allow_html=True,
         )
+
+    _render_feedback_overlay(trigger_symbol, prediction)
 
     st.markdown(
         "<hr style='border:none;border-top:1px solid #1e3a5f;margin:16px 0;'>",

@@ -25,6 +25,18 @@ import pandas as pd
 import streamlit as st
 
 try:
+    from tomorrow_prediction_engine import summarize_tomorrow_predictions
+except Exception:
+    def summarize_tomorrow_predictions(tickers, all_data, mode):  # type: ignore[misc]
+        return {"tickers": [], "predictions": [], "direction": "Sideways", "confidence": 0.0, "action": "Wait"}
+
+try:
+    from nse_learning_brain import summarize_cached_predictions
+except Exception:
+    def summarize_cached_predictions(tickers):  # type: ignore[misc]
+        return {}
+
+try:
     from feature_data_manager import (
         feature_manager,
         get_current_window as _get_feature_window,
@@ -165,6 +177,74 @@ def _prediction_source_text(pred) -> str:
     if bars > 0:
         base += f" · {bars} daily candles"
     return f"{base} · {str(getattr(pred, 'predicted_at', ''))[:10]}".strip(" ·")
+
+
+def _tomorrow_action_meta(summary: dict) -> tuple[str, str]:
+    action = str(summary.get("action", "Wait") or "Wait")
+    if "Buy Tomorrow" in action:
+        return "Tomorrow: 🟢 BUY", "#00d4a8"
+    if "Avoid" in action:
+        return "Tomorrow: 🔴 AVOID", "#ff4d6d"
+    if "Watch" in action:
+        return "Tomorrow: 🟡 WATCH", "#f0b429"
+    return "Tomorrow: 🔵 WAIT", "#4da3ff"
+
+
+def _render_sector_tomorrow_panel(pred, all_data: dict) -> None:
+    try:
+        leaders = list(getattr(pred, "stocks_used", []) or [])[:3]
+        if not leaders:
+            leader = str(getattr(pred, "leader_ticker", "") or "").strip()
+            if leader:
+                leaders = [leader]
+        if not leaders:
+            return
+
+        summary = summarize_cached_predictions(leaders)
+        if not summary or not summary.get("predictions"):
+            summary = summarize_tomorrow_predictions(leaders, all_data, "sector_prediction")
+        chip_text, chip_color = _tomorrow_action_meta(summary)
+        direction = str(summary.get("direction", "Sideways") or "Sideways")
+        direction_color = _dir_color(direction)
+        confidence = float(summary.get("confidence", 0.0) or 0.0)
+        risk = str(summary.get("risk", "MEDIUM") or "MEDIUM").upper()
+        key_signal = _pretty_name(str(summary.get("key_signal", "momentum") or "momentum"))
+        risk_color = {"LOW": "#00d4a8", "MEDIUM": "#f0b429", "HIGH": "#ff4d6d"}.get(risk, "#f0b429")
+
+        st.markdown(
+            f"""
+            <div style="background:#0b1017;border:1px solid #1e3a5f;border-radius:14px;padding:16px 18px;margin:16px 0;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                <div>
+                  <div style="color:#8ab4d8;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Unified Tomorrow Pulse</div>
+                  <div style="font-size:24px;font-weight:900;color:{direction_color};">{_dir_icon(direction)} {direction}</div>
+                  <div style="font-size:12px;color:#6a8aad;margin-top:4px;">Built from: {", ".join(leaders)}</div>
+                </div>
+                <div style="text-align:right;">
+                  <span style="background:{chip_color}22;border:1.5px solid {chip_color};border-radius:999px;padding:6px 12px;font-size:11px;font-weight:800;color:{chip_color};">{chip_text}</span>
+                  <div style="font-size:12px;color:#8ab4d8;margin-top:10px;">Confidence {confidence:.0f}%</div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;">
+                <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                  <div style="font-size:10px;color:#4a6480;">Risk</div>
+                  <div style="font-size:13px;font-weight:800;color:{risk_color};margin-top:4px;">{risk}</div>
+                </div>
+                <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                  <div style="font-size:10px;color:#4a6480;">Key Signal</div>
+                  <div style="font-size:13px;font-weight:800;color:#ccd9e8;margin-top:4px;">{key_signal}</div>
+                </div>
+                <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                  <div style="font-size:10px;color:#4a6480;">Avg Score</div>
+                  <div style="font-size:13px;font-weight:800;color:#4da3ff;margin-top:4px;">{float(summary.get("score", 50.0) or 50.0):.1f}</div>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        return
 
 
 def _render_sector_picker(sectors: list[str]) -> str:
@@ -320,6 +400,8 @@ def _render_prediction_detail(
         st.info("Install `plotly` to enable the candlestick chart.")
 
     # ── Two columns: signal breakdown + sector model accuracy ─────────
+    _render_sector_tomorrow_panel(pred, all_data)
+
     if getattr(pred, "mtf_note", ""):
         st.caption(pred.mtf_note)
     if getattr(pred, "sideways_forced", False):

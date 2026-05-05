@@ -43,6 +43,18 @@ from strategy_engines.nse_autocomplete import (
 )
 
 try:
+    from tomorrow_prediction_engine import get_tomorrow_prediction as _get_tomorrow_prediction
+except Exception:
+    def _get_tomorrow_prediction(ticker, all_data, mode):  # type: ignore[misc]
+        return {}
+
+try:
+    from nse_learning_brain import get_cached_prediction as _get_cached_prediction
+except Exception:
+    def _get_cached_prediction(ticker):  # type: ignore[misc]
+        return {}
+
+try:
     from strategy_engines._engine_utils import (
         is_fresh_enough as _is_fresh_enough,
     )
@@ -1002,6 +1014,98 @@ def _render_aura_card(r: AuraResult) -> None:
 # PUBLIC ENTRY POINT — called from app.py
 # ══════════════════════════════════════════════════════════════════════
 
+def _forecast_action_color(action: str) -> str:
+    text = str(action or "").strip()
+    if "Buy Tomorrow" in text:
+        return "#00d4a8"
+    if "Avoid" in text:
+        return "#ff4d6d"
+    if "Watch" in text:
+        return "#f0b429"
+    return "#4da3ff"
+
+
+def _forecast_direction_arrow(direction: str) -> str:
+    return {"Bullish": "↑", "Bearish": "↓", "Sideways": "→"}.get(str(direction or "").strip(), "→")
+
+
+def _pretty_signal_name(signal_name: str) -> str:
+    return str(signal_name or "").replace("_", " ").strip().title()
+
+
+def _render_tomorrow_forecast_card(symbol: str, df: pd.DataFrame) -> None:
+    try:
+        forecast = _get_cached_prediction(symbol)
+        if not isinstance(forecast, dict) or not forecast:
+            forecast = _get_tomorrow_prediction(
+                symbol,
+                {
+                    str(symbol).strip().upper(): df,
+                    str(symbol).strip().upper().replace(".NS", ""): df,
+                },
+                "stock_aura",
+            )
+        if not isinstance(forecast, dict) or not forecast:
+            return
+
+        direction = str(forecast.get("direction", "Sideways") or "Sideways")
+        confidence = _sf(forecast.get("confidence", 0.0), 0.0)
+        action = str(forecast.get("action", "Wait") or "Wait")
+        hold_days = str(forecast.get("hold_days", "-") or "-").replace("—", "-")
+        risk = str(forecast.get("risk", "MEDIUM") or "MEDIUM").upper()
+        key_signal = _pretty_signal_name(str(forecast.get("key_signal", "momentum") or "momentum"))
+        regime = str(forecast.get("regime", "UNKNOWN") or "UNKNOWN").replace("_", " ").title()
+
+        dir_color = {"Bullish": "#00d4a8", "Bearish": "#ff4d6d", "Sideways": "#8ab4d8"}.get(direction, "#8ab4d8")
+        action_color = _forecast_action_color(action)
+        risk_color = {"LOW": "#00d4a8", "MEDIUM": "#f0b429", "HIGH": "#ff4d6d"}.get(risk, "#f0b429")
+        conf_width = max(0.0, min(100.0, confidence))
+
+        st.markdown(
+            f"""
+            <div style="background:linear-gradient(135deg,#0b1017 55%,{dir_color}12);border:1.5px solid #1e3a5f;border-radius:16px;padding:18px 20px;margin:14px 0 10px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+                <div>
+                  <div style="font-size:11px;color:#4a6480;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Tomorrow Forecast</div>
+                  <div style="font-size:26px;font-weight:900;color:{dir_color};">{_forecast_direction_arrow(direction)} {direction}</div>
+                  <div style="font-size:12px;color:#8ab4d8;margin-top:4px;">Regime: {regime}</div>
+                </div>
+                <div style="text-align:right;">
+                  <span style="background:{action_color}22;border:1.5px solid {action_color};border-radius:999px;padding:6px 12px;font-size:11px;font-weight:800;color:{action_color};">{action}</span>
+                  <div style="font-size:12px;color:#8ab4d8;margin-top:10px;">Hold: {hold_days}</div>
+                </div>
+              </div>
+              <div style="margin-top:16px;">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:#8ab4d8;margin-bottom:4px;">
+                  <span>Confidence meter</span>
+                  <span style="color:{dir_color};font-weight:800;">{confidence:.1f}%</span>
+                </div>
+                <div style="background:#111a27;border-radius:999px;height:10px;overflow:hidden;">
+                  <div style="width:{conf_width:.1f}%;height:10px;background:linear-gradient(90deg,#4da3ff 0%,{dir_color} 100%);"></div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;">
+                <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                  <div style="font-size:10px;color:#4a6480;">Risk Level</div>
+                  <div style="font-size:13px;font-weight:800;color:{risk_color};margin-top:4px;">{risk}</div>
+                </div>
+                <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                  <div style="font-size:10px;color:#4a6480;">Key Signal</div>
+                  <div style="font-size:13px;font-weight:800;color:#ccd9e8;margin-top:4px;">{key_signal}</div>
+                </div>
+                <div style="background:#0d1626;border:1px solid #1e3a5f;border-radius:10px;padding:10px 12px;">
+                  <div style="font-size:10px;color:#4a6480;">Score</div>
+                  <div style="font-size:13px;font-weight:800;color:#4da3ff;margin-top:4px;">{_sf(forecast.get("score", 50.0), 50.0):.1f}</div>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        return
+
+
 def render_stock_aura_panel() -> None:
     """
     Render the full Stock Aura panel.
@@ -1077,6 +1181,7 @@ def render_stock_aura_panel() -> None:
 
         result = _run_aura_engine(df, sym, mb)
         _render_aura_card(result)
+        _render_tomorrow_forecast_card(sym, df)
 
         st.markdown(
             '<div style="font-size:10px;color:#1e3050;margin-top:12px;text-align:center;">'

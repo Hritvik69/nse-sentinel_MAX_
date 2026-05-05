@@ -39,10 +39,13 @@ if _os.path.isdir(_os.path.join(_PARENT, "strategy_engines")) and _PARENT not in
 # (In this project, the learning engine code currently lives in
 # `trade_decision_engine.py`.)
 try:
-    import trade_decision_engine as _learning_engine  # type: ignore[import]
-    _sys.modules.setdefault("learning_engine", _learning_engine)
+    import learning_engine as _learning_engine  # type: ignore[import]
 except Exception:
-    pass
+    try:
+        import trade_decision_engine as _learning_engine  # type: ignore[import]
+        _sys.modules.setdefault("learning_engine", _learning_engine)
+    except Exception:
+        pass
 
 import io
 import html
@@ -62,7 +65,13 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 import yfinance as yf
-from learning_engine import train_learning_model, predict_success
+from learning_engine import (
+    get_training_status,
+    predict_success,
+    restore_learning_bundle,
+    train_learning_model,
+)
+from nse_learning_brain import run_learning_cycle
 try:
     import data_session_manager as _dsm
 except Exception:
@@ -162,6 +171,198 @@ save_closing_snapshot = getattr(_dsm, "save_closing_snapshot", lambda *_args, **
 load_snapshot_into_ALL_DATA = getattr(_dsm, "load_snapshot_into_ALL_DATA", lambda *_args, **_kwargs: 0)
 get_snapshot_path = getattr(_dsm, "get_snapshot_path", _fallback_get_snapshot_path)
 read_snapshot_metadata = getattr(_dsm, "read_snapshot_metadata", lambda *_args, **_kwargs: {})
+
+_PREDICTION_FEEDBACK_PATH = Path(_HERE) / "data" / "prediction_feedback_log.csv"
+_SECTOR_PREDICTION_PATH = Path(_HERE) / "data" / "sector_predictions.csv"
+
+
+def _safe_file_mtime(path: Path) -> float:
+    try:
+        return float(path.stat().st_mtime) if path.exists() else 0.0
+    except Exception:
+        return 0.0
+
+
+def _weight_bar_html(label: str, value_pct: float, *, warn: bool = False) -> str:
+    try:
+        safe_value = max(0.0, min(100.0, float(value_pct)))
+    except Exception:
+        safe_value = 0.0
+    color = "#ffb347" if warn else "#00d4ff"
+    return (
+        f'<div style="margin:6px 0 8px 0;">'
+        f'<div style="display:flex;justify-content:space-between;gap:10px;">'
+        f'<span style="font-size:11px;color:#8ab4d8;">{html.escape(str(label))}</span>'
+        f'<span style="font-size:11px;color:{color};">{safe_value:.1f}%</span>'
+        f'</div>'
+        f'<div style="background:#111926;border-radius:999px;height:7px;margin-top:4px;overflow:hidden;">'
+        f'<div style="background:{color};height:7px;width:{safe_value}%;"></div>'
+        f'</div>'
+        f'</div>'
+    )
+
+
+def _restore_learning_bundle_from_session() -> None:
+    try:
+        bundle = st.session_state.get("_learning_model_bundle")
+        if isinstance(bundle, dict):
+            restore_learning_bundle(bundle)
+    except Exception:
+        pass
+
+
+def _legacy_learning_status_from_brain(brain_status: dict | None) -> dict:
+    try:
+        brain = brain_status if isinstance(brain_status, dict) else {}
+        meta = brain.get("meta_model", {}) if isinstance(brain.get("meta_model", {}), dict) else {}
+        feedback = brain.get("feedback", {}) if isinstance(brain.get("feedback", {}), dict) else {}
+        legacy = dict(meta)
+        legacy["validated_today"] = int(feedback.get("filled_stock", 0) or 0)
+        legacy["sector_validated_today"] = int(feedback.get("filled_sector", 0) or 0)
+        legacy["feedback_summary"] = brain.get("feedback_summary", {})
+        legacy["brain_status"] = brain
+        legacy["message"] = str(meta.get("message", "") or brain.get("error", "") or "Learning status unavailable.")
+        return legacy
+    except Exception:
+        return {"trained": False, "feedback_summary": {}, "brain_status": {}, "message": "Learning status unavailable."}
+
+
+def _signal_weight_status_from_brain(brain_status: dict | None) -> dict:
+    default = {
+        "processed": 0,
+        "top_signal": "",
+        "top_weight": 0.0,
+        "weakest_signal": "",
+        "weakest_weight": 0.0,
+        "report": pd.DataFrame(),
+    }
+    try:
+        brain = brain_status if isinstance(brain_status, dict) else {}
+        weights = brain.get("weights", {}) if isinstance(brain.get("weights", {}), dict) else {}
+        report = weights.get("report")
+        top_signal = weights.get("top_signal", {}) if isinstance(weights.get("top_signal", {}), dict) else {}
+        weak_signal = weights.get("weakest_signal", {}) if isinstance(weights.get("weakest_signal", {}), dict) else {}
+        return {
+            "processed": int(weights.get("processed", 0) or 0),
+            "top_signal": str(top_signal.get("signal", "") or ""),
+            "top_weight": float(top_signal.get("weight_pct", 0.0) or 0.0),
+            "weakest_signal": str(weak_signal.get("signal", "") or ""),
+            "weakest_weight": float(weak_signal.get("weight_pct", 0.0) or 0.0),
+            "report": report if isinstance(report, pd.DataFrame) else pd.DataFrame(),
+        }
+    except Exception:
+        return default
+
+
+def _refresh_signal_weight_status(force_update: bool = False) -> dict:
+    default = {
+        "processed": 0,
+        "top_signal": "",
+        "top_weight": 0.0,
+        "weakest_signal": "",
+        "weakest_weight": 0.0,
+        "report": pd.DataFrame(),
+    }
+    try:
+        sig = (
+            str(get_expected_data_date()),
+            round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+            round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+        )
+        cached_sig = st.session_state.get("_signal_weight_sig")
+        cached_status = st.session_state.get("_signal_weight_status")
+        if (not force_update) and cached_sig == sig and isinstance(cached_status, dict):
+            return cached_status
+
+        brain_status = st.session_state.get("learning_cycle_status")
+        if not isinstance(brain_status, dict) or force_update:
+            _refresh_feedback_learning_system(force=force_update)
+            brain_status = st.session_state.get("learning_cycle_status")
+
+        status = _signal_weight_status_from_brain(brain_status)
+        if not status.get("top_signal") and isinstance(cached_status, dict):
+            status = cached_status
+        fresh_sig = (
+            str(get_expected_data_date()),
+            round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+            round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+        )
+        st.session_state["_signal_weight_status"] = status
+        st.session_state["_signal_weight_sig"] = fresh_sig
+        return status
+    except Exception:
+        return default
+
+
+def _refresh_feedback_learning_system(force: bool = False) -> dict:
+    try:
+        _restore_learning_bundle_from_session()
+    except Exception:
+        pass
+
+    if bool(st.session_state.get("tt_toggle_val")) or (_TIME_TRAVEL_OK and getattr(_tt, "is_active", lambda: False)()):
+        status = dict(get_training_status())
+        status["message"] = "Learning refresh paused during Time Travel."
+        status["validated_today"] = 0
+        st.session_state["_learning_status"] = status
+        return status
+
+    current_sig = (
+        str(get_expected_data_date()),
+        round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+        round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+    )
+    cached_sig = st.session_state.get("_learning_refresh_sig")
+    cached_status = st.session_state.get("_learning_status")
+    if (not force) and cached_sig == current_sig and isinstance(cached_status, dict):
+        return cached_status
+
+    try:
+        from strategy_engines._engine_utils import ALL_DATA
+    except Exception:
+        ALL_DATA = {}
+
+    try:
+        if not isinstance(ALL_DATA, dict):
+            ALL_DATA = {}
+        if not ALL_DATA:
+            load_snapshot_into_ALL_DATA(get_expected_data_date())
+    except Exception:
+        pass
+
+    try:
+        brain_status = run_learning_cycle(ALL_DATA, force=force)
+    except Exception:
+        brain_status = {}
+
+    bundle = st.session_state.get("_learning_model_bundle")
+    if isinstance(bundle, dict):
+        try:
+            restore_learning_bundle(bundle)
+        except Exception:
+            pass
+
+    status = _legacy_learning_status_from_brain(brain_status)
+    fresh_sig = (
+        str(get_expected_data_date()),
+        round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+        round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+    )
+    st.session_state["_learning_status"] = status
+    st.session_state["_learning_refresh_sig"] = fresh_sig
+
+    total_validated = int(status.get("validated_today", 0) or 0) + int(status.get("sector_validated_today", 0) or 0)
+    if total_validated > 0:
+        toast_key = f"{datetime.now().date().isoformat()}|{total_validated}|{fresh_sig}"
+        badge_text = f"✅ {total_validated} predictions validated today"
+        st.session_state["_validated_today_badge"] = badge_text
+        if st.session_state.get("_validated_today_toast_key") != toast_key:
+            st.toast(badge_text)
+            st.session_state["_validated_today_toast_key"] = toast_key
+    else:
+        st.session_state.setdefault("_validated_today_badge", "")
+
+    return status
 
 try:
     import gspread
@@ -314,8 +515,21 @@ except Exception as _sector_prediction_exc:
     def render_sector_prediction_section(*args, **kwargs) -> None:  # type: ignore[misc]
         return None
 
-_SECTOR_INTELLIGENCE_UI_OK = False
-_SECTOR_INTELLIGENCE_UI_ERR = ""
+try:
+    from strategy_engines.app_sector_intelligence_section import render_sector_intelligence_section
+    _SECTOR_INTELLIGENCE_UI_OK = True
+    _SECTOR_INTELLIGENCE_UI_ERR = ""
+except Exception as _sector_intelligence_exc:
+    try:
+        from app_sector_intelligence_section import render_sector_intelligence_section  # type: ignore[import]
+        _SECTOR_INTELLIGENCE_UI_OK = True
+        _SECTOR_INTELLIGENCE_UI_ERR = ""
+    except Exception:
+        _SECTOR_INTELLIGENCE_UI_OK = False
+        _SECTOR_INTELLIGENCE_UI_ERR = str(_sector_intelligence_exc).strip() or "sector intelligence import failed"
+
+        def render_sector_intelligence_section(*args, **kwargs) -> None:  # type: ignore[misc]
+            return None
 
 try:
     from app_breakout_radar_section import render_breakout_radar_section
@@ -6287,6 +6501,9 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────
 # MAIN PAGE
 # ─────────────────────────────────────────────────────────────────────
+learning_status = _refresh_feedback_learning_system(force=False)
+signal_weight_status = _refresh_signal_weight_status(force_update=False)
+
 mc = mode_colors[mode]
 _mc_soft = _hex_to_rgba(mc, 0.10)
 _mc_border = _hex_to_rgba(mc, 0.28)
@@ -6396,6 +6613,154 @@ with st.sidebar:
     else:
         st.caption(f"✅ {ticker_count:,} tickers loaded")
 
+with st.sidebar:
+    try:
+        _ls = learning_status if isinstance(learning_status, dict) else {}
+        _fs = _ls.get("feedback_summary", {}) if isinstance(_ls.get("feedback_summary", {}), dict) else {}
+        _logged = int(_fs.get("total_logged", 0) or 0)
+        _validated = int(_fs.get("rows_with_outcome", 0) or 0)
+        _validated_pct = round((_validated / max(_logged, 1)) * 100.0, 1) if _logged else 0.0
+        _trained_samples = int(_ls.get("samples", 0) or 0)
+        _train_acc = _ls.get("accuracy_pct")
+        _train_acc_txt = f"{float(_train_acc):.1f}%" if _train_acc is not None else "n/a"
+        _last_trained = str(_ls.get("last_trained", "") or "").replace("T", " ")
+        _brain = _ls.get("brain_status", {}) if isinstance(_ls.get("brain_status", {}), dict) else {}
+        _mode_models = _brain.get("mode_models", {}) if isinstance(_brain.get("mode_models", {}), dict) else {}
+        _mode_by_mode = _mode_models.get("by_mode", {}) if isinstance(_mode_models.get("by_mode", {}), dict) else {}
+        _best_mode = _mode_models.get("best_mode", {}) if isinstance(_mode_models.get("best_mode", {}), dict) else {}
+        _worst_mode = _mode_models.get("worst_mode", {}) if isinstance(_mode_models.get("worst_mode", {}), dict) else {}
+        _calibration = _brain.get("calibration", {}) if isinstance(_brain.get("calibration", {}), dict) else {}
+        _regime_brain = _brain.get("regime", {}) if isinstance(_brain.get("regime", {}), dict) else {}
+        _eval = _brain.get("evaluation", {}) if isinstance(_brain.get("evaluation", {}), dict) else {}
+        _eval_report = _eval.get("report", None)
+        _best_mode_txt = "n/a"
+        if _best_mode:
+            _best_mode_txt = f"Mode{int(_best_mode.get('mode', 0) or 0)} {float(_best_mode.get('accuracy_pct', 0.0) or 0.0):.1f}%"
+        _worst_mode_txt = "n/a"
+        if _worst_mode:
+            _worst_mode_txt = f"Mode{int(_worst_mode.get('mode', 0) or 0)} {float(_worst_mode.get('accuracy_pct', 0.0) or 0.0):.1f}%"
+        _calibration_txt = "n/a"
+        if _calibration:
+            _calibration_txt = (
+                f"{float(_calibration.get('error_pct', 0.0) or 0.0):.1f}% "
+                f"(x{float(_calibration.get('factor', 1.0) or 1.0):.2f})"
+            )
+        _badge = str(st.session_state.get("_validated_today_badge", "") or "").strip()
+        if _badge:
+            st.caption(_badge)
+
+        if _ls.get("trained"):
+            st.caption(f"ðŸ§  Model trained on {_trained_samples} samples | Accuracy: {_train_acc_txt}")
+        else:
+            st.caption(f"ðŸ§  {str(_ls.get('message', 'Model not trained yet.'))}")
+
+        _sw = signal_weight_status if isinstance(signal_weight_status, dict) else {}
+        _top_signal = str(_sw.get("top_signal", "") or "")
+        _weak_signal = str(_sw.get("weakest_signal", "") or "")
+        if _top_signal and _weak_signal:
+            st.caption(
+                f"ðŸ“Š Top signal: {_top_signal} ({float(_sw.get('top_weight', 0.0) or 0.0):.1f}%) | "
+                f"Weakest: {_weak_signal} ({float(_sw.get('weakest_weight', 0.0) or 0.0):.1f}%)"
+            )
+
+        _recent_bull_acc_txt = "n/a"
+        _regime_txt = "n/a"
+        _wf_txt = "n/a"
+        if _regime_brain:
+            _regime_txt = (
+                f"{str(_regime_brain.get('regime', 'n/a'))} "
+                f"(conf: {float(_regime_brain.get('confidence', 0.0) or 0.0):.0f}%)"
+            )
+        try:
+            _wf_score = float(getattr(_eval_report, "wf_stability_score", 0.0) or 0.0)
+            if _wf_score > 0:
+                _wf_txt = f"{_wf_score:.1f}"
+        except Exception:
+            pass
+        try:
+            from prediction_feedback_store import read_feedback_log
+
+            _feedback_df = read_feedback_log()
+            if isinstance(_feedback_df, pd.DataFrame) and not _feedback_df.empty and "correct" in _feedback_df.columns:
+                _valid_df = _feedback_df[_feedback_df["correct"].isin(["True", "False"])].copy()
+                if not _valid_df.empty:
+                    _valid_df = _valid_df.sort_values("logged_at", ascending=False).head(20)
+                    _bull_df = _valid_df[_valid_df["pred_bullish"].astype(str).str.strip().isin(["1", "1.0", "True", "true"])]
+                    if not _bull_df.empty:
+                        _recent_bull_acc_txt = f"{(_bull_df['correct'].eq('True').mean() * 100.0):.0f}% correct"
+        except Exception:
+            pass
+
+        try:
+            from strategy_engines._engine_utils import ALL_DATA as _learning_all_data
+            from sector_regime_engine import detect_regime as _detect_learning_regime
+
+            _regime_state = _detect_learning_regime(_learning_all_data)
+            _regime_txt = (
+                f"{str(getattr(_regime_state, 'regime', 'n/a'))} "
+                f"(conf: {float(getattr(_regime_state, 'confidence', 0.0) or 0.0):.0f}%)"
+            )
+        except Exception:
+            pass
+
+        try:
+            from sector_evaluation_engine import compute_full_evaluation
+            from sector_prediction_tracker import read_log as _read_sector_prediction_log
+
+            _sector_log_df = _read_sector_prediction_log()
+            if isinstance(_sector_log_df, pd.DataFrame) and not _sector_log_df.empty:
+                _sector_eval = compute_full_evaluation(_sector_log_df)
+                _wf_score = float(getattr(_sector_eval, "wf_stability_score", 0.0) or 0.0)
+                if _wf_score > 0:
+                    _wf_txt = f"{_wf_score:.1f}"
+        except Exception:
+            pass
+
+        with st.expander("🧠 AI Learning Status", expanded=False):
+            st.markdown(
+                f'<div style="background:#0d1117;border:1px solid #1e3a5f;border-radius:12px;'
+                f'padding:14px 14px 10px 14px;">'
+                f'<div style="font-size:12px;color:#8ab4d8;line-height:1.8;">'
+                f'Predictions logged: <span style="color:#ccd9e8;">{_logged}</span><br>'
+                f'Validated: <span style="color:#ccd9e8;">{_validated} ({_validated_pct:.1f}%)</span><br>'
+                f'Filled today: <span style="color:#00d4ff;">{int(_ls.get("validated_today", 0) or 0) + int(_ls.get("sector_validated_today", 0) or 0)}</span><br>'
+                f'Meta accuracy: <span style="color:#00d4ff;">{_train_acc_txt}</span><br>'
+                f'Best mode: <span style="color:#ccd9e8;">{html.escape(_best_mode_txt)}</span><br>'
+                f'Worst mode: <span style="color:#ccd9e8;">{html.escape(_worst_mode_txt)}</span><br>'
+                f'Calibration: <span style="color:#ccd9e8;">{html.escape(_calibration_txt)}</span><br>'
+                f'Last trained: <span style="color:#ccd9e8;">{html.escape(_last_trained or "n/a")}</span><br>'
+                f'Last learning cycle: <span style="color:#ccd9e8;">{html.escape(str(_brain.get("completed_at", "n/a") or "n/a").replace("T", " "))}</span>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            _report = _sw.get("report") if isinstance(_sw, dict) else pd.DataFrame()
+            if isinstance(_report, pd.DataFrame) and not _report.empty:
+                st.markdown(
+                    '<div style="font-size:11px;color:#8ab4d8;margin:10px 0 6px 0;">TOP SIGNALS (Dynamic Weights)</div>',
+                    unsafe_allow_html=True,
+                )
+                for _, _sig_row in _report.head(4).iterrows():
+                    _sig_name = str(_sig_row.get("Signal", "") or "")
+                    _sig_weight = float(_sig_row.get("Dynamic Weight", 0.0) or 0.0)
+                    st.markdown(
+                        _weight_bar_html(_sig_name, _sig_weight, warn=_sig_weight <= 3.0),
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown(
+                f'<div style="font-size:11px;color:#8ab4d8;margin:10px 0 6px 0;">RECENT ACCURACY (Last 20)</div>'
+                f'<div style="font-size:12px;color:#ccd9e8;line-height:1.8;">'
+                f'Bullish calls: {_recent_bull_acc_txt}<br>'
+                f'Regime: {_regime_txt}<br>'
+                f'Walk-forward stability: {_wf_txt}'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+    except Exception:
+        pass
+
 if _show_pred_chart_panel:
     render_prediction_chart_section(ticker_list=all_tickers)
     st.stop()
@@ -6436,11 +6801,6 @@ if _tt_banner and _show_home_scanner:
     )
 
 if scan_clicked or main_scan_clicked:
-    try:
-        from learning_engine import train_learning_model
-        train_learning_model()
-    except Exception:
-        pass
     st.markdown(
         f'<div class="section-lbl">⏳ Scanning {n:,} NSE Equities — Mode {mode_display["display_num"]}: {mode_display["display_name"]}</div>',
         unsafe_allow_html=True)
@@ -6655,18 +7015,6 @@ if scan_clicked or main_scan_clicked:
     })
 
     # FIX 6 — Auto-backfill actual returns for past predictions (background)
-    try:
-        from prediction_feedback_store import backfill_actual_returns
-        from strategy_engines._engine_utils import ALL_DATA
-        def _bg_backfill():
-            try:
-                backfill_actual_returns(ALL_DATA)
-            except Exception:
-                pass
-        threading.Thread(target=_bg_backfill, daemon=True).start()
-    except Exception:
-        pass
-
     st.rerun()
 
 # ── SECTOR SCREENER DASHBOARD ─────────────────────────────────────
@@ -6734,7 +7082,7 @@ if st.session_state.get("show_sector_screener", False):
             f"Import error: {_SECTOR_EXPLORER_UI_ERR}"
         )
 
-    _sector_intel_ready = False
+    _sector_intel_ready = isinstance(st.session_state.get("last_scan_df"), pd.DataFrame) and not st.session_state.get("last_scan_df").empty
     if _SECTOR_INTELLIGENCE_UI_OK and _sector_intel_ready:
         render_sector_intelligence_section()
     elif _sector_intel_ready:
@@ -6951,6 +7299,15 @@ if _show_home_scanner and "results" in st.session_state:
                     _cap += f". Recent accuracy: {_fs.get('accuracy_pct')}%"
                 _cap += "."
                 st.caption(_cap)
+        except Exception:
+            pass
+
+        try:
+            learning_status = _refresh_feedback_learning_system(force=True)
+        except Exception:
+            pass
+        try:
+            signal_weight_status = _refresh_signal_weight_status(force_update=True)
         except Exception:
             pass
 

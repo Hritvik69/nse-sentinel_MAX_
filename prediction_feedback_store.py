@@ -19,6 +19,7 @@ LOG_PATH = DATA_DIR / "prediction_feedback_log.csv"
 _FIELDNAMES = [
     "logged_at",
     "symbol",
+    "sector",
     "mode",
     "prediction_score",
     "final_score",
@@ -26,8 +27,13 @@ _FIELDNAMES = [
     "conviction_tier",
     "market_bias",
     "regime",
+    "rsi",
+    "vol_avg_ratio",
+    "delta_ema20_pct",
+    "trap_risk",
     "pred_bullish",
     "actual_next_return_pct",
+    "correct",
     "outcome_label",
 ]
 
@@ -39,6 +45,164 @@ def _ensure_data_dir() -> None:
         pass
 
 
+def _is_blank(value: object) -> bool:
+    try:
+        if value is None:
+            return True
+        if isinstance(value, float) and np.isnan(value):
+            return True
+        return str(value).strip() in ("", "nan", "None")
+    except Exception:
+        return True
+
+
+def _to_float(value: object) -> float | None:
+    try:
+        if _is_blank(value):
+            return None
+        out = float(value)
+        return out if np.isfinite(out) else None
+    except Exception:
+        return None
+
+
+def _pred_is_bullish(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "1.0", "true", "bullish", "yes", "y"}
+
+
+def _first_present(row: pd.Series, keys: list[str], default: object = "") -> object:
+    try:
+        for key in keys:
+            value = row.get(key, None)
+            if value is None:
+                continue
+            if isinstance(value, str) and value.strip() == "":
+                continue
+            return value
+    except Exception:
+        return default
+    return default
+
+
+def _correct_from_return(pred_bullish: object, next_return_pct: float | None) -> str:
+    try:
+        if next_return_pct is None or not np.isfinite(float(next_return_pct)):
+            return ""
+        is_correct = (
+            (_pred_is_bullish(pred_bullish) and float(next_return_pct) > 0.0)
+            or ((not _pred_is_bullish(pred_bullish)) and float(next_return_pct) <= 0.0)
+        )
+        return "True" if is_correct else "False"
+    except Exception:
+        return ""
+
+
+def _outcome_from_correct(correct: object) -> str:
+    text = str(correct).strip()
+    if text == "True":
+        return "correct"
+    if text == "False":
+        return "incorrect"
+    return ""
+
+
+def _coerce_schema(df: pd.DataFrame | None) -> pd.DataFrame:
+    try:
+        out = df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
+        for col in _FIELDNAMES:
+            if col not in out.columns:
+                out[col] = ""
+
+        try:
+            from sector_master import get_sector
+        except Exception:
+            def get_sector(symbol: str) -> str | None:  # type: ignore[misc]
+                return None
+
+        if "sector" in out.columns and "symbol" in out.columns:
+            derived_sector = out["symbol"].astype(str).map(lambda value: get_sector(str(value).strip()) or "")
+            out["sector"] = np.where(out["sector"].apply(_is_blank), derived_sector, out["sector"])
+
+        derived_correct = (
+            out.get("outcome_label", "")
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .map({"correct": "True", "incorrect": "False", "true": "True", "false": "False"})
+            .fillna("")
+        )
+        out["correct"] = np.where(out["correct"].apply(_is_blank), derived_correct, out["correct"])
+
+        derived_outcome = out["correct"].apply(_outcome_from_correct)
+        out["outcome_label"] = np.where(
+            out["outcome_label"].apply(_is_blank),
+            derived_outcome,
+            out["outcome_label"],
+        )
+        return out[_FIELDNAMES]
+    except Exception:
+        return pd.DataFrame(columns=_FIELDNAMES)
+
+
+def _ensure_schema() -> None:
+    try:
+        _ensure_data_dir()
+        if not LOG_PATH.exists():
+            return
+        upgraded = _coerce_schema(pd.read_csv(LOG_PATH, dtype=str))
+        upgraded.to_csv(LOG_PATH, index=False)
+    except Exception:
+        pass
+
+
+def read_feedback_log() -> pd.DataFrame:
+    try:
+        _ensure_schema()
+        if not LOG_PATH.exists():
+            return pd.DataFrame(columns=_FIELDNAMES)
+        return _coerce_schema(pd.read_csv(LOG_PATH, dtype=str))
+    except Exception:
+        return pd.DataFrame(columns=_FIELDNAMES)
+
+
+def _normalize_history_frame(df_hist: pd.DataFrame | None) -> pd.DataFrame | None:
+    try:
+        if df_hist is None or df_hist.empty:
+            return None
+        hist = df_hist.copy()
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
+        if "Close" not in hist.columns:
+            return None
+        hist.index = pd.to_datetime(hist.index, errors="coerce")
+        hist = hist[~hist.index.isna()].sort_index()
+        if getattr(hist.index, "tz", None) is not None:
+            hist.index = hist.index.tz_localize(None)
+        hist = hist[~hist.index.duplicated(keep="last")].copy()
+        hist["Close"] = pd.to_numeric(hist["Close"], errors="coerce")
+        hist = hist.dropna(subset=["Close"])
+        return hist if len(hist) >= 2 else None
+    except Exception:
+        return None
+
+
+def _resolve_history(all_data: dict | None, symbol: str) -> pd.DataFrame | None:
+    try:
+        if not isinstance(all_data, dict) or not all_data:
+            return None
+        raw = str(symbol or "").strip().upper()
+        if not raw:
+            return None
+        plain = raw.replace(".NS", "")
+        for key in (raw, plain, f"{plain}.NS"):
+            hist = _normalize_history_frame(all_data.get(key))
+            if hist is not None:
+                return hist
+        return None
+    except Exception:
+        return None
+
+
 def log_scan_predictions(
     df: pd.DataFrame,
     mode: int,
@@ -47,34 +211,53 @@ def log_scan_predictions(
     try:
         if df is None or not isinstance(df, pd.DataFrame) or df.empty:
             return
-        _ensure_data_dir()
+        _ensure_schema()
         mb = market_bias if isinstance(market_bias, dict) else {}
         bias_s = str(mb.get("bias", ""))[:160]
         regime_s = str(mb.get("regime", ""))[:80]
+        try:
+            from sector_master import get_sector
+        except Exception:
+            def get_sector(symbol: str) -> str | None:  # type: ignore[misc]
+                return None
         ts = datetime.now().isoformat(timespec="seconds")
         file_exists = LOG_PATH.exists()
         with open(LOG_PATH, "a", newline="", encoding="utf-8") as f:
-            w = csv.DictWriter(f, fieldnames=_FIELDNAMES, extrasaction="ignore")
+            writer = csv.DictWriter(f, fieldnames=_FIELDNAMES, extrasaction="ignore")
             if not file_exists:
-                w.writeheader()
+                writer.writeheader()
             for _, row in df.iterrows():
                 try:
                     sym = str(row.get("Symbol") or row.get("Ticker") or "").strip()
                     if not sym:
                         continue
+                    sector = str(row.get("Sector") or get_sector(sym) or "").strip()
                     ps = row.get("Prediction Score", np.nan)
                     fs = row.get("Final Score", np.nan)
                     sig = str(row.get("Signal", "") or "")[:40]
                     ct = str(row.get("Conviction Tier", "") or "")[:20]
+                    rsi = _to_float(_first_present(row, ["RSI"], ""))
+                    vol_avg_ratio = _to_float(_first_present(row, ["Vol / Avg", "Volume Ratio"], ""))
+                    delta_ema20_pct = _to_float(
+                        _first_present(
+                            row,
+                            ["Δ vs EMA20 (%)", "Î” vs EMA20 (%)", "Delta vs EMA20 (%)", "EMA Distance (%)"],
+                            "",
+                        )
+                    )
+                    trap_risk = str(
+                        _first_present(row, ["Trap Risk", "Trap Check", "Trap Flags", "Bull Trap", "Trap"], "")
+                        or ""
+                    )[:40]
                     try:
                         ps_f = float(ps) if ps is not None and pd.notna(ps) else float("nan")
                     except Exception:
                         ps_f = float("nan")
-                    pred_bull = "1" if (np.isfinite(ps_f) and ps_f >= 55.0) else "0"
-                    w.writerow(
+                    writer.writerow(
                         {
                             "logged_at": ts,
                             "symbol": sym,
+                            "sector": sector,
                             "mode": int(mode) if mode is not None else 0,
                             "prediction_score": f"{ps_f:.4f}" if np.isfinite(ps_f) else "",
                             "final_score": f"{float(fs):.4f}" if fs is not None and pd.notna(fs) else "",
@@ -82,8 +265,13 @@ def log_scan_predictions(
                             "conviction_tier": ct,
                             "market_bias": bias_s,
                             "regime": regime_s,
-                            "pred_bullish": pred_bull,
+                            "rsi": f"{rsi:.4f}" if rsi is not None else "",
+                            "vol_avg_ratio": f"{vol_avg_ratio:.4f}" if vol_avg_ratio is not None else "",
+                            "delta_ema20_pct": f"{delta_ema20_pct:.4f}" if delta_ema20_pct is not None else "",
+                            "trap_risk": trap_risk,
+                            "pred_bullish": "1" if (np.isfinite(ps_f) and ps_f >= 55.0) else "0",
                             "actual_next_return_pct": "",
+                            "correct": "",
                             "outcome_label": "",
                         }
                     )
@@ -104,57 +292,45 @@ def feedback_summary() -> dict:
         "false_bearish_pct": None,
     }
     try:
-        if not LOG_PATH.exists():
-            return out
-        df = pd.read_csv(LOG_PATH)
+        df = read_feedback_log()
         out["total_logged"] = int(len(df))
-        if df.empty or "actual_next_return_pct" not in df.columns:
+        if df.empty:
             return out
 
-        def _to_float(x: object) -> float | None:
-            try:
-                if x is None or (isinstance(x, float) and np.isnan(x)):
-                    return None
-                s = str(x).strip()
-                if s == "":
-                    return None
-                f = float(s)
-                return f if np.isfinite(f) else None
-            except Exception:
-                return None
-
-        df = df.copy()
-        df["_act"] = df["actual_next_return_pct"].map(_to_float)
-        sub = df[df["_act"].notna()].copy()
+        sub = df.copy()
+        sub["_act"] = sub["actual_next_return_pct"].map(_to_float)
+        sub = sub[sub["_act"].notna()].copy()
         out["rows_with_outcome"] = int(len(sub))
         if sub.empty:
             return out
 
-        sub["_bull_pred"] = sub["pred_bullish"].astype(str).str.strip().isin(("1", "1.0", "True", "true"))
+        sub["_bull_pred"] = sub["pred_bullish"].map(_pred_is_bullish)
         sub["_act_pos"] = sub["_act"] > 0
-        sub["_act_neg"] = sub["_act"] < 0
 
         bull_rows = sub[sub["_bull_pred"]]
         bear_rows = sub[~sub["_bull_pred"]]
 
         if len(bull_rows) > 0:
-            bull_ok = (bull_rows["_act_pos"]).sum()
+            bull_ok = int((bull_rows["_act_pos"]).sum())
             out["bullish_precision_pct"] = round(100.0 * float(bull_ok) / float(len(bull_rows)), 2)
-            out["false_bullish_pct"] = round(100.0 * float((~bull_rows["_act_pos"]).sum()) / float(len(bull_rows)), 2)
+            out["false_bullish_pct"] = round(
+                100.0 * float((~bull_rows["_act_pos"]).sum()) / float(len(bull_rows)),
+                2,
+            )
 
         if len(bear_rows) > 0:
-            bear_ok = ((bear_rows["_act_neg"]) | (bear_rows["_act"] == 0)).sum()
+            bear_ok = int(((~bear_rows["_act_pos"]) | (bear_rows["_act"] == 0)).sum())
             out["bearish_precision_pct"] = round(100.0 * float(bear_ok) / float(len(bear_rows)), 2)
-            out["false_bearish_pct"] = round(100.0 * float((bear_rows["_act_pos"]).sum()) / float(len(bear_rows)), 2)
+            out["false_bearish_pct"] = round(
+                100.0 * float((bear_rows["_act_pos"]).sum()) / float(len(bear_rows)),
+                2,
+            )
 
-        hits = 0
-        for _, r in sub.iterrows():
-            bp = bool(r["_bull_pred"])
-            ap = bool(r["_act_pos"])
-            if bp and ap:
-                hits += 1
-            elif not bp and not ap:
-                hits += 1
+        sub["_correct"] = sub.apply(
+            lambda row: _correct_from_return(row.get("pred_bullish"), row.get("_act")),
+            axis=1,
+        )
+        hits = int((sub["_correct"] == "True").sum())
         out["accuracy_pct"] = round(100.0 * float(hits) / float(len(sub)), 2)
         return out
     except Exception:
@@ -163,90 +339,76 @@ def feedback_summary() -> dict:
 
 def backfill_actual_returns(all_data: dict) -> int:
     """
-    FIX 6 — Auto-fill actual_next_return_pct for logged predictions.
+    Auto-fill actual_next_return_pct and correctness for logged predictions.
 
-    Reads prediction_feedback_log.csv. For every row where
-    actual_next_return_pct is blank AND the symbol exists in all_data,
-    looks up the historical close on logged_at date, finds the next
-    available close, computes the 1-day return (%) and writes it back.
+    For every row where the outcome is still missing, look up the logged symbol
+    inside ALL_DATA, align the logged date to the last available session on or
+    before that date, then compute the next-session return from the next close.
 
-    Parameters
-    ----------
-    all_data : dict[str, pd.DataFrame]
-        Preloaded price history keyed by "SYMBOL.NS" — from ALL_DATA.
-
-    Returns
-    -------
-    int  Number of rows filled (0 if nothing to do or any error).
-
-    Never raises — fully wrapped in try/except.
+    Returns the number of rows validated during this call.
     """
     try:
-        if not LOG_PATH.exists():
-            return 0
-        df = pd.read_csv(LOG_PATH)
-        if df.empty or "actual_next_return_pct" not in df.columns:
+        df = read_feedback_log()
+        if df.empty:
             return 0
 
-        # Rows still needing an outcome
-        needs_fill = df["actual_next_return_pct"].apply(
-            lambda x: str(x).strip() == "" or (isinstance(x, float) and np.isnan(x))
-        )
-        if not needs_fill.any():
-            return 0
+        validated = 0
+        changed = False
 
-        filled = 0
-        for idx in df.index[needs_fill]:
+        for idx in df.index:
             try:
-                sym = str(df.at[idx, "symbol"]).strip()
-                if not sym:
-                    continue
-                ticker_ns = sym if sym.endswith(".NS") else sym + ".NS"
-                df_hist = all_data.get(ticker_ns)
-                if df_hist is None or "Close" not in df_hist.columns or len(df_hist) < 2:
+                existing_ret = _to_float(df.at[idx, "actual_next_return_pct"])
+                existing_correct = str(df.at[idx, "correct"]).strip()
+                if existing_ret is not None and existing_correct in ("True", "False"):
                     continue
 
-                # Parse the logged date
-                logged_str = str(df.at[idx, "logged_at"]).strip()
-                logged_dt  = pd.to_datetime(logged_str, errors="coerce")
-                if pd.isnull(logged_dt):
-                    continue
-                logged_date = logged_dt.date()
-
-                # Align to historical index (date-only comparison)
-                hist_dates = pd.to_datetime(df_hist.index).date
-                date_arr   = np.array(hist_dates)
-                match_idxs = np.where(date_arr == logged_date)[0]
-                if len(match_idxs) == 0:
-                    # Try the closest date on or before logged_date
-                    before = np.where(date_arr <= logged_date)[0]
-                    if len(before) == 0:
+                ret_pct = existing_ret
+                if ret_pct is None:
+                    sym = str(df.at[idx, "symbol"]).strip()
+                    hist = _resolve_history(all_data, sym)
+                    if hist is None:
                         continue
-                    match_idxs = [before[-1]]
 
-                day_i = int(match_idxs[0])
-                if day_i + 1 >= len(df_hist):
-                    continue  # no next-day data yet
+                    logged_dt = pd.to_datetime(str(df.at[idx, "logged_at"]).strip(), errors="coerce")
+                    if pd.isnull(logged_dt):
+                        continue
+                    if getattr(logged_dt, "tzinfo", None) is not None:
+                        logged_dt = logged_dt.tz_localize(None)
+                    logged_date = logged_dt.date()
 
-                close_today = float(df_hist["Close"].iloc[day_i])
-                close_next  = float(df_hist["Close"].iloc[day_i + 1])
-                if close_today <= 0:
-                    continue
+                    hist_dates = np.array(pd.to_datetime(hist.index).date)
+                    base_locs = np.where(hist_dates <= logged_date)[0]
+                    if len(base_locs) == 0:
+                        continue
+                    base_idx = int(base_locs[-1])
+                    next_idx = base_idx + 1
+                    if next_idx >= len(hist):
+                        continue
 
-                ret_pct = round((close_next / close_today - 1.0) * 100, 4)
-                df.at[idx, "actual_next_return_pct"] = ret_pct
-                outcome = "correct" if (
-                    (str(df.at[idx, "pred_bullish"]).strip() in ("1", "1.0") and ret_pct > 0)
-                    or (str(df.at[idx, "pred_bullish"]).strip() not in ("1", "1.0") and ret_pct <= 0)
-                ) else "incorrect"
-                df.at[idx, "outcome_label"] = outcome
-                filled += 1
+                    close_today = _to_float(hist["Close"].iloc[base_idx])
+                    close_next = _to_float(hist["Close"].iloc[next_idx])
+                    if close_today is None or close_next is None or close_today <= 0:
+                        continue
+
+                    ret_pct = round((close_next / close_today - 1.0) * 100.0, 4)
+                    df.at[idx, "actual_next_return_pct"] = f"{ret_pct:.4f}"
+                    changed = True
+
+                correct = _correct_from_return(df.at[idx, "pred_bullish"], ret_pct)
+                if correct in ("True", "False"):
+                    if str(df.at[idx, "correct"]).strip() != correct:
+                        df.at[idx, "correct"] = correct
+                        changed = True
+                    outcome = _outcome_from_correct(correct)
+                    if str(df.at[idx, "outcome_label"]).strip().lower() != outcome:
+                        df.at[idx, "outcome_label"] = outcome
+                        changed = True
+                    validated += 1
             except Exception:
                 continue
 
-        if filled > 0:
+        if changed:
             df.to_csv(LOG_PATH, index=False)
-        return filled
-
+        return validated
     except Exception:
         return 0

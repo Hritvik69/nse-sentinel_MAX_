@@ -17,6 +17,26 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+try:
+    from tomorrow_prediction_engine import summarize_tomorrow_predictions
+except Exception:
+    def summarize_tomorrow_predictions(tickers, all_data, mode):  # type: ignore[misc]
+        return {"tickers": [], "predictions": [], "direction": "Sideways", "confidence": 0.0, "action": "Wait"}
+
+try:
+    from nse_learning_brain import summarize_cached_predictions
+except Exception:
+    def summarize_cached_predictions(tickers):  # type: ignore[misc]
+        return {}
+
+try:
+    from strategy_engines._engine_utils import ALL_DATA as _ALL_DATA
+except Exception:
+    try:
+        from _engine_utils import ALL_DATA as _ALL_DATA  # type: ignore[import]
+    except Exception:
+        _ALL_DATA = {}
+
 # ── Safe import of the intelligence engine ────────────────────────────
 try:
     from strategy_engines.sector_intelligence_engine import compute_sector_intelligence
@@ -86,6 +106,34 @@ def _sector_intel_cache_key(df: pd.DataFrame) -> tuple[object, ...]:
             len(df),
             tuple(str(col) for col in df.columns),
         )
+
+
+def _sector_tomorrow_summary(tickers: list[str]) -> dict:
+    try:
+        summary = summarize_cached_predictions(tickers[:3])
+        if summary and summary.get("predictions"):
+            return summary
+        return summarize_tomorrow_predictions(tickers[:3], _ALL_DATA, "sector_dashboard")
+    except Exception:
+        return {
+            "tickers": [],
+            "predictions": [],
+            "direction": "Sideways",
+            "confidence": 0.0,
+            "action": "Wait",
+            "risk": "HIGH",
+        }
+
+
+def _tomorrow_action_chip(summary: dict) -> tuple[str, str]:
+    action = str(summary.get("action", "Wait") or "Wait")
+    if "Buy Tomorrow" in action:
+        return "Tomorrow: 🟢 BUY", "#00d4a8"
+    if "Avoid" in action:
+        return "Tomorrow: 🔴 AVOID", "#ff4d6d"
+    if "Watch" in action:
+        return "Tomorrow: 🟡 WATCH", "#f0b429"
+    return "Tomorrow: 🔵 WAIT", "#4da3ff"
 
 # ─────────────────────────────────────────────────────────────────────
 
@@ -450,6 +498,37 @@ def render_sector_intelligence_section() -> None:
                     )
 
                     _top_sectors_for_leaders = _sie_ranking[:3]
+                    try:
+                        _best_sector_row = _top_sectors_for_leaders[0] if _top_sectors_for_leaders else {}
+                        _best_sector_name = str(_best_sector_row.get("sector", "") or "")
+                        _best_sector_leaders = list(_best_sector_row.get("leader_stocks", []) or [])[:3]
+                        _best_sector_tmr = _sector_tomorrow_summary(_best_sector_leaders)
+                        _best_sector_action, _best_sector_color = _tomorrow_action_chip(_best_sector_tmr)
+                        _current_regime = str(st.session_state.get("current_regime", "") or "")
+                        _previous_regime = str(st.session_state.get("_prev_learning_regime", "") or "")
+
+                        if _best_sector_name:
+                            st.markdown(
+                                f'<div style="background:#0b1017;border:1.5px solid {_best_sector_color};'
+                                f'border-radius:12px;padding:12px 14px;margin-bottom:12px;">'
+                                f'<div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:.08em;">Best Sector For Tomorrow</div>'
+                                f'<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px;">'
+                                f'<div style="font-size:18px;font-weight:900;color:#ccd9e8;">{_best_sector_name}</div>'
+                                f'<div style="font-size:12px;font-weight:800;color:{_best_sector_color};">{_best_sector_action} · {float(_best_sector_tmr.get("confidence", 0.0) or 0.0):.0f}%</div>'
+                                f'</div>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+
+                        if _current_regime and _previous_regime and _current_regime != _previous_regime:
+                            st.warning(
+                                "⚠️ Regime shift detected — previous week's sector leaders may underperform."
+                            )
+                        if _current_regime:
+                            st.session_state["_prev_learning_regime"] = _current_regime
+                    except Exception:
+                        pass
+
                     _ldr_cols = st.columns(3)
                     for _li, _sec_r in enumerate(_top_sectors_for_leaders):
                         _sec_n   = _sec_r.get("sector", "")
@@ -457,6 +536,11 @@ def render_sector_intelligence_section() -> None:
                         _leaders = _sec_r.get("leader_stocks", [])[:3]
                         _col_c   = _strength_color(_sec_str)
                         _desc    = get_sector_description(_sec_n)
+                        _tmr = _sector_tomorrow_summary(_leaders)
+                        _tmr_chip, _tmr_color = _tomorrow_action_chip(_tmr)
+                        _tmr_conf = float(_tmr.get("confidence", 0.0) or 0.0)
+                        _tmr_dir = str(_tmr.get("direction", "Sideways") or "Sideways")
+                        _tmr_icon = {"Bullish": "▲", "Bearish": "▼", "Sideways": "◆"}.get(_tmr_dir, "•")
 
                         _card = (
                             f'<div style="background:#0b1017;border:1.5px solid #1e3a5f;'
@@ -471,6 +555,12 @@ def render_sector_intelligence_section() -> None:
                             f'</div>'
                             f'<span style="font-size:13px;font-weight:800;color:{_col_c};">'
                             f'{_sec_str:.1f}</span>'
+                            f'</div>'
+                            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                            f'background:{_tmr_color}14;border:1px solid {_tmr_color}44;border-radius:10px;'
+                            f'padding:8px 10px;margin-bottom:10px;">'
+                            f'<span style="font-size:11px;font-weight:800;color:{_tmr_color};">{_tmr_chip}</span>'
+                            f'<span style="font-size:11px;color:#8ab4d8;">{_tmr_icon} {_tmr_dir} · {_tmr_conf:.0f}%</span>'
                             f'</div>'
                         )
 
