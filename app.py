@@ -96,6 +96,37 @@ def _fallback_train_learning_model():
         "status": _default_learning_status(),
     }
 
+
+def _module_has_required_attrs(module, required_attrs: tuple[str, ...]) -> bool:
+    try:
+        if module is None:
+            return False
+        return all(hasattr(module, attr) for attr in required_attrs)
+    except Exception:
+        return False
+
+
+def _load_optional_module(module_name: str, required_attrs: tuple[str, ...] = ()):
+    """
+    Import an optional local module without letting a half-imported entry stay
+    behind in sys.modules. Streamlit Cloud can otherwise surface KeyError or
+    similar startup failures on reruns.
+    """
+    existing = _sys.modules.get(module_name)
+    if _module_has_required_attrs(existing, required_attrs):
+        return existing
+
+    try:
+        _sys.modules.pop(module_name, None)
+        module = _importlib.import_module(module_name)
+        if required_attrs and not _module_has_required_attrs(module, required_attrs):
+            _sys.modules.pop(module_name, None)
+            return None
+        return module
+    except Exception:
+        _sys.modules.pop(module_name, None)
+        return None
+
 import io
 import html
 import json
@@ -1849,30 +1880,37 @@ except ImportError:
         return None
 
 # ── Grading engine (optional, graceful if missing) ────────────────────
-try:
-    from grading_engine import apply_universal_grading
+_grading_module = _load_optional_module("grading_engine", ("apply_universal_grading",))
+if _grading_module is not None:
+    apply_universal_grading = getattr(_grading_module, "apply_universal_grading")
     _GRADING_OK = True
-except ImportError:
+else:
     _GRADING_OK = False
 
     def apply_universal_grading(df, market_bias=None):  # type: ignore[misc]
         return df
 
 # ── Enhanced logic engine (optional, graceful if missing) ─────────────
-try:
-    from enhanced_logic_engine import apply_enhanced_logic
+_enhanced_logic_module = _load_optional_module("enhanced_logic_engine", ("apply_enhanced_logic",))
+if _enhanced_logic_module is not None:
+    apply_enhanced_logic = getattr(_enhanced_logic_module, "apply_enhanced_logic")
     _ENHANCED_LOGIC_OK = True
-except ImportError:
+else:
     _ENHANCED_LOGIC_OK = False
 
     def apply_enhanced_logic(df):  # type: ignore[misc]
         return df
 
 # ── Phase 4 logic engine (optional, graceful if missing) ──────────────
-try:
-    from phase4_logic_engine import apply_phase4_logic, apply_phase42_logic
+_phase4_logic_module = _load_optional_module(
+    "phase4_logic_engine",
+    ("apply_phase4_logic", "apply_phase42_logic"),
+)
+if _phase4_logic_module is not None:
+    apply_phase4_logic = getattr(_phase4_logic_module, "apply_phase4_logic")
+    apply_phase42_logic = getattr(_phase4_logic_module, "apply_phase42_logic")
     _PHASE4_LOGIC_OK = True
-except ImportError:
+else:
     _PHASE4_LOGIC_OK = False
 
     def apply_phase4_logic(df, market_bias=None):  # type: ignore[misc]
@@ -1882,10 +1920,10 @@ except ImportError:
         return df
 
 # ── Time Travel engine (optional, graceful if missing) ────────────────
-try:
-    import time_travel_engine as _tt
+_tt = _load_optional_module("time_travel_engine")
+if _tt is not None:
     _TIME_TRAVEL_OK = True
-except ImportError:
+else:
     _TIME_TRAVEL_OK = False
 
     class _tt:  # type: ignore[no-redef]
