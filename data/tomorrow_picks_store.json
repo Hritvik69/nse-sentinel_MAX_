@@ -1,0 +1,37 @@
+{
+  "picks": [
+    "PSB",
+    "CENTRALBK",
+    "CHAMBLFERT",
+    "GSFC",
+    "IPCALAB",
+    "ZYDUSLIFE",
+    "AFSL",
+    "RAINBOW",
+    "KKCL",
+    "APLLTD",
+    "RAYMONDLSL"
+  ],
+  "notes": "",
+  "sections": {
+    "relax": [
+      "PSB",
+      "CENTRALBK"
+    ],
+    "swing": [
+      "CHAMBLFERT",
+      "GSFC",
+      "IPCALAB"
+    ],
+    "intraday": [
+      "ZYDUSLIFE",
+      "AFSL",
+      "RAINBOW"
+    ],
+    "breakout": [
+      "KKCL",
+      "APLLTD",
+      "RAYMONDLSL"
+    ]
+  }
+}

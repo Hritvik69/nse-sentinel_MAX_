@@ -1,0 +1,48 @@
+{
+  "saved_at": "2026-05-06T16:22:13",
+  "signature": [
+    "2026-05-06",
+    0.0,
+    0.0
+  ],
+  "learning_status": {
+    "trained": false,
+    "samples": 0,
+    "stock_samples": 0,
+    "sector_samples": 0,
+    "accuracy_pct": null,
+    "last_trained": "",
+    "source": "none",
+    "message": "Learning warm-up pending. Full refresh runs after the next scan.",
+    "regime_encoder": {},
+    "sector_encoder": {},
+    "feedback_summary": {
+      "total_logged": 342,
+      "rows_with_outcome": 0,
+      "accuracy_pct": null,
+      "bullish_precision_pct": null,
+      "bearish_precision_pct": null,
+      "false_bullish_pct": null,
+      "false_bearish_pct": null
+    },
+    "brain_status": {
+      "feedback_summary": {
+        "total_logged": 342,
+        "rows_with_outcome": 0,
+        "accuracy_pct": null,
+        "bullish_precision_pct": null,
+        "bearish_precision_pct": null,
+        "false_bullish_pct": null,
+        "false_bearish_pct": null
+      }
+    }
+  },
+  "signal_weight_status": {
+    "processed": 0,
+    "top_signal": "",
+    "top_weight": 0.0,
+    "weakest_signal": "",
+    "weakest_weight": 0.0,
+    "report_rows": []
+  }
+}
