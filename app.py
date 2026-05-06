@@ -146,10 +146,16 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+try:
+    from persistent_store import push_file as _push_persistent_file
+except Exception:
+    def _push_persistent_file(*a, **kw):  # type: ignore[misc]
+        pass
+
 # Persistent store: pull remote data before any local data readers run.
 if not st.session_state.get("_persistence_pulled", False):
     try:
-        from persistent_store import pull_all
+        from persistent_store import is_configured as _persistence_is_configured, pull_all
 
         _pulled = pull_all()
         try:
@@ -161,6 +167,10 @@ if not st.session_state.get("_persistence_pulled", False):
         st.session_state["_persistence_pulled"] = True
         if _pulled > 0:
             st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
+        elif not _persistence_is_configured():
+            st.session_state["_persistence_warning"] = (
+                "Cloud persistence is not configured. Add [github_store] secrets or Streamlit reboot can still wipe saved picks."
+            )
     except Exception:
         st.session_state["_persistence_pulled"] = True
 
@@ -434,6 +444,7 @@ def _write_learning_status_snapshot(
             json.dumps(payload, ensure_ascii=True, indent=2),
             encoding="utf-8",
         )
+        _push_persistent_file(_LEARNING_STATUS_SNAPSHOT_PATH)
     except Exception:
         return
 
@@ -1345,6 +1356,7 @@ def _save_local_tomorrow_store(store: dict) -> bool:
             json.dumps(store, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        _push_persistent_file(_TOMORROW_STORE_PATH)
         return True
     except Exception:
         return False
@@ -1851,6 +1863,7 @@ def _save_local_imported_ai_learning_store(payload: dict[str, object]) -> bool:
             json.dumps(normalized, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        _push_persistent_file(_IMPORTED_AI_STORE_PATH)
         return True
     except Exception:
         return False
@@ -7384,6 +7397,8 @@ with st.sidebar:
 
     if st.session_state.get("_persistence_msg"):
         st.success(st.session_state.pop("_persistence_msg"))
+    if st.session_state.get("_persistence_warning"):
+        st.warning(st.session_state.get("_persistence_warning"))
 
     st.markdown('<div class="section-lbl">Strategy Mode</div>', unsafe_allow_html=True)
 

@@ -53,6 +53,11 @@ def _get_secrets() -> dict | None:
         return None
 
 
+def is_configured() -> bool:
+    """Return True when GitHub-backed persistence has real secrets configured."""
+    return _get_secrets() is not None
+
+
 def _gh_get(secrets: dict, path: str) -> dict | None:
     """GET /repos/{owner}/{repo}/contents/{path}?ref={branch}."""
     try:
@@ -140,6 +145,9 @@ def _gh_put(secrets: dict, path: str, content_bytes: bytes, sha: str | None = No
 _SYNC_FILES = {
     "prediction_feedback_log.csv": "data/prediction_feedback_log.csv",
     "tomorrow_master_predictions.csv": "data/tomorrow_master_predictions.csv",
+    "tomorrow_picks_store.json": "data/tomorrow_picks_store.json",
+    "imported_ai_learning_store.json": "data/imported_ai_learning_store.json",
+    "learning_status_snapshot.json": "data/learning_status_snapshot.json",
     "sector_predictions.csv": "data/sector_prediction_log.csv",
     "sector_signal_performance.csv": "data/sector_signal_performance.csv",
     "learning_model.pkl": "data/learning_model.pkl",
