@@ -5,6 +5,9 @@
     "CHAMBLFERT",
     "GSFC",
     "IPCALAB",
+    "ZYDUSLIFE",
+    "AFSL",
+    "RAINBOW",
     "KKCL",
     "APLLTD",
     "RAYMONDLSL"
@@ -20,7 +23,11 @@
       "GSFC",
       "IPCALAB"
     ],
-    "intraday": [],
+    "intraday": [
+      "ZYDUSLIFE",
+      "AFSL",
+      "RAINBOW"
+    ],
     "breakout": [
       "KKCL",
       "APLLTD",
