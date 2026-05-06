@@ -155,9 +155,11 @@ except Exception:
 # Persistent store: pull remote data before any local data readers run.
 if not st.session_state.get("_persistence_pulled", False):
     try:
-        from persistent_store import is_configured as _persistence_is_configured, pull_all
+        from persistent_store import health_check as _persistence_health_check, pull_all
 
         _pulled = pull_all()
+        _persistence_health = _persistence_health_check()
+        st.session_state["_persistence_health"] = _persistence_health
         try:
             from learning_engine import load_persisted_model
 
@@ -167,9 +169,9 @@ if not st.session_state.get("_persistence_pulled", False):
         st.session_state["_persistence_pulled"] = True
         if _pulled > 0:
             st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
-        elif not _persistence_is_configured():
+        elif not _persistence_health.get("connected"):
             st.session_state["_persistence_warning"] = (
-                "Cloud persistence is not configured. Add [github_store] secrets or Streamlit reboot can still wipe saved picks."
+                "Cloud persistence is NOT active. Add the [github_store] secrets below or Streamlit reboot will wipe saved picks."
             )
     except Exception:
         st.session_state["_persistence_pulled"] = True
@@ -7399,6 +7401,21 @@ with st.sidebar:
         st.success(st.session_state.pop("_persistence_msg"))
     if st.session_state.get("_persistence_warning"):
         st.warning(st.session_state.get("_persistence_warning"))
+        with st.expander("Fix permanent storage", expanded=True):
+            st.caption("Copy this into Streamlit Cloud -> App settings -> Secrets, then reboot the app.")
+            st.code(
+                '[github_store]\n'
+                'token  = "PASTE_YOUR_GITHUB_PAT_HERE"\n'
+                'owner  = "Hritvik69"\n'
+                'repo   = "nse-sentinel_MAX_"\n'
+                'branch = "main"',
+                language="toml",
+            )
+            st.caption("PAT needs repo scope. Until this is added, saves are local-only and not permanent.")
+    else:
+        _persistence_health = st.session_state.get("_persistence_health", {})
+        if isinstance(_persistence_health, dict) and _persistence_health.get("connected"):
+            st.success("Cloud persistence connected.")
 
     st.markdown('<div class="section-lbl">Strategy Mode</div>', unsafe_allow_html=True)
 

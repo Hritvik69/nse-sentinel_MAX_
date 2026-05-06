@@ -82,6 +82,58 @@ def _gh_get(secrets: dict, path: str) -> dict | None:
         return None
 
 
+def _gh_get_ref(secrets: dict) -> dict | None:
+    """GET /repos/{owner}/{repo}/git/ref/heads/{branch}."""
+    try:
+        import requests
+
+        url = (
+            f"https://api.github.com/repos/{secrets['owner']}/{secrets['repo']}"
+            f"/git/ref/heads/{secrets['branch']}"
+        )
+        resp = requests.get(
+            url,
+            headers={
+                "Authorization": f"token {secrets['token']}",
+                "Accept": "application/vnd.github+json",
+            },
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return {"error": f"GitHub returned HTTP {resp.status_code}"}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def health_check() -> dict:
+    """
+    Validate whether GitHub-backed persistence can actually read the target repo.
+
+    This is intentionally separate from pull_all(): first deploys may have no
+    stored data files yet, but the token/repo/branch should still validate.
+    """
+    secrets = _get_secrets()
+    if secrets is None:
+        return {
+            "configured": False,
+            "connected": False,
+            "message": "Missing [github_store] secrets.",
+        }
+    ref = _gh_get_ref(secrets)
+    if isinstance(ref, dict) and not ref.get("error"):
+        return {
+            "configured": True,
+            "connected": True,
+            "message": f"Connected to {secrets['owner']}/{secrets['repo']}:{secrets['branch']}.",
+        }
+    return {
+        "configured": True,
+        "connected": False,
+        "message": str(ref.get("error") if isinstance(ref, dict) else "Unable to validate GitHub storage."),
+    }
+
+
 def _gh_get_raw(secrets: dict, path: str) -> bytes | None:
     """Download raw file bytes through the contents endpoint."""
     try:
