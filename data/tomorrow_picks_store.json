@@ -4,7 +4,10 @@
     "CENTRALBK",
     "CHAMBLFERT",
     "GSFC",
-    "IPCALAB"
+    "IPCALAB",
+    "KKCL",
+    "APLLTD",
+    "RAYMONDLSL"
   ],
   "notes": "",
   "sections": {
@@ -18,6 +21,10 @@
       "IPCALAB"
     ],
     "intraday": [],
-    "breakout": []
+    "breakout": [
+      "KKCL",
+      "APLLTD",
+      "RAYMONDLSL"
+    ]
   }
 }
