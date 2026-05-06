@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-06T16:05:08",
+  "saved_at": "2026-05-06T16:09:23",
   "signature": [
     "2026-05-06",
     0.0,
@@ -17,7 +17,7 @@
     "regime_encoder": {},
     "sector_encoder": {},
     "feedback_summary": {
-      "total_logged": 126,
+      "total_logged": 198,
       "rows_with_outcome": 0,
       "accuracy_pct": null,
       "bullish_precision_pct": null,
@@ -27,7 +27,7 @@
     },
     "brain_status": {
       "feedback_summary": {
-        "total_logged": 126,
+        "total_logged": 198,
         "rows_with_outcome": 0,
         "accuracy_pct": null,
         "bullish_precision_pct": null,
