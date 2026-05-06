@@ -1,0 +1,18 @@
+{
+  "picks": [
+    "PSB",
+    "CENTRALBK",
+    "GSFC"
+  ],
+  "notes": "",
+  "sections": {
+    "relax": [
+      "PSB",
+      "CENTRALBK",
+      "GSFC"
+    ],
+    "swing": [],
+    "intraday": [],
+    "breakout": []
+  }
+}
