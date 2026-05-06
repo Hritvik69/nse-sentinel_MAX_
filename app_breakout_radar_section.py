@@ -205,6 +205,7 @@ def _render_breakout_radar_tab(
     breakout_radar_ok: bool,
     tt_date,
     render_add_in_picks_actions=None,
+    render_imported_ai_actions=None,
 ) -> None:
     """Render the ⚡ Breakout Radar sub-tab."""
 
@@ -509,6 +510,16 @@ def _render_breakout_radar_tab(
                 bucket="breakout",
                 helper_text="Add these radar breakout picks into the Breakout strip in Tomorrow's Picks.",
             )
+        if callable(render_imported_ai_actions):
+            render_imported_ai_actions(
+                _radar_top3.get("Symbol", pd.Series(dtype=object)).tolist(),
+                mode_value=0,
+                key_prefix=f"breakout_radar_imported_{radar_scanned_at or 'latest'}",
+                source_label="Breakout Radar Top 3",
+                source_bucket="breakout",
+                source_rows=_radar_top3,
+                helper_text="Add these Breakout Radar names into Imported AI Stocks for self-learning.",
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -521,6 +532,7 @@ def _render_csv_next_day_tab(
     data_downloader_ok: bool,
     tt_date,
     render_add_in_picks_actions=None,
+    render_imported_ai_actions=None,
 ) -> None:
     """Render the original CSV Next-Day Potential sub-tab — zero changes to logic."""
 
@@ -762,6 +774,16 @@ def _render_csv_next_day_tab(
                 bucket="breakout",
                 helper_text="Add these breakout-probability picks into the Breakout strip in Tomorrow's Picks.",
             )
+        if callable(render_imported_ai_actions):
+            render_imported_ai_actions(
+                _csv_top3.get("Symbol", pd.Series(dtype=object)).tolist(),
+                mode_value=0,
+                key_prefix=f"breakout_csv_imported_{csv_last_scan_at or 'latest'}",
+                source_label="Breakout Radar CSV Top 3",
+                source_bucket="breakout",
+                source_rows=_csv_top3,
+                helper_text="Add these Breakout Radar CSV names into Imported AI Stocks for self-learning.",
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -774,6 +796,7 @@ def render_breakout_radar_section(
     _DATA_DOWNLOADER_OK: bool = True,
     _BREAKOUT_RADAR_OK: bool = True,
     render_add_in_picks_actions=None,
+    render_imported_ai_actions=None,
 ) -> None:
     """
     Render the combined ⚡ Next-Day Breakout Radar section.
@@ -825,6 +848,7 @@ def render_breakout_radar_section(
             breakout_radar_ok=_BREAKOUT_RADAR_OK and _RADAR_OK,
             tt_date=tt_date,
             render_add_in_picks_actions=render_add_in_picks_actions,
+            render_imported_ai_actions=render_imported_ai_actions,
         )
 
     with tab_csv:
@@ -834,4 +858,5 @@ def render_breakout_radar_section(
             data_downloader_ok=_DATA_DOWNLOADER_OK,
             tt_date=tt_date,
             render_add_in_picks_actions=render_add_in_picks_actions,
+            render_imported_ai_actions=render_imported_ai_actions,
         )

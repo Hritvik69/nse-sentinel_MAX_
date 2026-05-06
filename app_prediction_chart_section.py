@@ -179,6 +179,15 @@ def _clamp(v: float, lo: float = -1.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
 
 
+def _conf_bar_html(value: float, color: str = "#4da3ff") -> str:
+    pct = int(max(0, min(100, _sf(value, 0.0))))
+    return (
+        '<div style="background:#152235;border-radius:999px;height:8px;width:100%;overflow:hidden;">'
+        f'<div style="background:{color};height:8px;border-radius:999px;width:{pct}%;"></div>'
+        "</div>"
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PART 1 — DATA ENGINE  (unchanged from v1, cache preserved)
 # ─────────────────────────────────────────────────────────────────────────────

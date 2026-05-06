@@ -21,6 +21,8 @@ _FIELDNAMES = [
     "symbol",
     "sector",
     "mode",
+    "import_source",
+    "import_category",
     "prediction_score",
     "final_score",
     "signal",
@@ -267,7 +269,14 @@ def log_scan_predictions(
                     sym = str(row.get("Symbol") or row.get("Ticker") or "").strip()
                     if not sym:
                         continue
+                    row_mode_raw = row.get("Import Mode", row.get("Mode", mode))
+                    try:
+                        row_mode = int(row_mode_raw) if row_mode_raw is not None and pd.notna(row_mode_raw) else int(mode)
+                    except Exception:
+                        row_mode = int(mode) if mode is not None else 0
                     sector = str(row.get("Sector") or get_sector(sym) or "").strip()
+                    import_source = str(row.get("Import Source", "") or "")[:160]
+                    import_category = str(row.get("Import Category", "") or "")[:80]
                     ps = row.get("Prediction Score", np.nan)
                     fs = row.get("Final Score", np.nan)
                     sig = str(row.get("Signal", "") or "")[:40]
@@ -294,7 +303,9 @@ def log_scan_predictions(
                             "logged_at": ts,
                             "symbol": sym,
                             "sector": sector,
-                            "mode": int(mode) if mode is not None else 0,
+                            "mode": row_mode,
+                            "import_source": import_source,
+                            "import_category": import_category,
                             "prediction_score": f"{ps_f:.4f}" if np.isfinite(ps_f) else "",
                             "final_score": f"{float(fs):.4f}" if fs is not None and pd.notna(fs) else "",
                             "signal": sig,

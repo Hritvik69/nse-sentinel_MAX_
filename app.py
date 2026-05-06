@@ -27,6 +27,7 @@ from __future__ import annotations
 # errors when Streamlit is launched from a different working directory.
 import importlib as _importlib
 import os as _os, sys as _sys
+from typing import Any
 _HERE = _os.path.dirname(_os.path.abspath(__file__))
 if _HERE not in _sys.path:
     _sys.path.insert(0, _HERE)
@@ -671,6 +672,90 @@ def _refresh_feedback_learning_system(force: bool = False) -> dict:
         st.session_state.setdefault("_validated_today_badge", "")
 
     return status
+
+
+def _sync_cached_learning_feedback_summary(feedback_stats: dict | None = None) -> dict:
+    stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
+    if not stats:
+        try:
+            from prediction_feedback_store import feedback_summary as _feedback_summary
+
+            stats = dict(_feedback_summary())
+        except Exception:
+            stats = {}
+    try:
+        cached_status = st.session_state.get("_learning_status")
+        if isinstance(cached_status, dict):
+            updated_status = dict(cached_status)
+            updated_status["feedback_summary"] = dict(stats)
+            brain_status = updated_status.get("brain_status", {})
+            if isinstance(brain_status, dict):
+                brain_copy = dict(brain_status)
+                brain_copy["feedback_summary"] = dict(stats)
+                updated_status["brain_status"] = brain_copy
+                st.session_state["learning_cycle_status"] = brain_copy
+            st.session_state["_learning_status"] = updated_status
+            try:
+                _write_learning_status_snapshot(
+                    updated_status,
+                    st.session_state.get("_signal_weight_status", {}),
+                    signature=st.session_state.get("_learning_refresh_sig"),
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return stats
+
+
+def _should_run_full_learning_refresh(feedback_stats: dict | None = None) -> bool:
+    stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
+    cached_status = st.session_state.get("_learning_status")
+    cached_summary = (
+        cached_status.get("feedback_summary", {})
+        if isinstance(cached_status, dict) and isinstance(cached_status.get("feedback_summary", {}), dict)
+        else {}
+    )
+    brain_status = st.session_state.get("learning_cycle_status")
+    try:
+        refresh_sig = st.session_state.get("_learning_refresh_sig")
+        current_date = str(get_expected_data_date())
+        cached_date = str(refresh_sig[0]) if isinstance(refresh_sig, tuple) and refresh_sig else str(refresh_sig or "")
+    except Exception:
+        cached_date = ""
+
+    if not isinstance(cached_status, dict) or not isinstance(brain_status, dict):
+        return True
+    if cached_date != str(get_expected_data_date()):
+        return True
+
+    current_outcomes = int(stats.get("rows_with_outcome", 0) or 0)
+    cached_outcomes = int(cached_summary.get("rows_with_outcome", 0) or 0)
+    current_total = int(stats.get("total_logged", 0) or 0)
+    cached_total = int(cached_summary.get("total_logged", 0) or 0)
+
+    if current_outcomes > cached_outcomes:
+        return True
+    if cached_total <= 0 and current_total > 0:
+        return True
+    if not st.session_state.get("_signal_weight_status"):
+        return True
+    return False
+
+
+def _refresh_learning_after_prediction_log(feedback_stats: dict | None = None) -> bool:
+    stats = _sync_cached_learning_feedback_summary(feedback_stats)
+    if not _should_run_full_learning_refresh(stats):
+        return False
+    try:
+        _refresh_feedback_learning_system(force=True)
+    except Exception:
+        pass
+    try:
+        _refresh_signal_weight_status(force_update=True)
+    except Exception:
+        pass
+    return True
 
 try:
     import gspread
@@ -1466,43 +1551,307 @@ def _pretty_learning_signal_name(signal: object) -> str:
         return "Momentum"
 
 
-def _import_symbols_into_ai_prediction(
+def _import_category_from_context(
+    *,
+    source_label: object = "",
+    source_bucket: object = "",
+    mode_value: object = 0,
+) -> str:
+    text = str(source_label or "").strip().lower()
+    bucket_key = _normalize_tomorrow_bucket(source_bucket)
+    if "pulse" in text:
+        return "Breakout Pulse"
+    if "radar" in text and "csv" in text:
+        return "Breakout Radar CSV"
+    if "radar" in text:
+        return "Breakout Radar"
+    if bucket_key == "breakout":
+        return "Breakout"
+    if bucket_key:
+        return _tomorrow_section_label(bucket_key)
+    try:
+        return _tomorrow_section_label(_tomorrow_bucket_for_mode(mode_value))
+    except Exception:
+        return "Imported"
+
+
+def _normalize_import_mode_list(values: object) -> list[int]:
+    modes: list[int] = []
+    seen: set[int] = set()
+    raw_values = values if isinstance(values, (list, tuple, set)) else [values]
+    for raw in list(raw_values):
+        try:
+            mode_int = int(raw)
+        except Exception:
+            continue
+        if mode_int not in seen and mode_int > 0:
+            modes.append(mode_int)
+            seen.add(mode_int)
+    return modes
+
+
+def _normalize_import_text_list(values: object) -> list[str]:
+    items = values if isinstance(values, (list, tuple, set)) else [values]
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in list(items):
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        if text not in seen:
+            out.append(text)
+            seen.add(text)
+    return out
+
+
+def _sanitize_import_snapshot_value(value: object) -> object:
+    try:
+        if value is None:
+            return ""
+        if isinstance(value, np.generic):
+            value = value.item()
+        if isinstance(value, (pd.Timestamp, datetime)):
+            return value.isoformat(timespec="seconds")
+        if isinstance(value, bool):
+            return bool(value)
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, float):
+            return float(value) if np.isfinite(value) else ""
+        if isinstance(value, str):
+            return value
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    try:
+        return str(value or "").strip()[:240]
+    except Exception:
+        return ""
+
+
+def _build_import_snapshot_map(source_rows: object) -> dict[str, dict[str, object]]:
+    snapshot_map: dict[str, dict[str, object]] = {}
+    try:
+        if isinstance(source_rows, pd.DataFrame):
+            iterable = [row.to_dict() for _, row in source_rows.iterrows()]
+        elif isinstance(source_rows, dict):
+            iterable = [dict(source_rows)]
+        elif isinstance(source_rows, (list, tuple)):
+            iterable = []
+            for item in source_rows:
+                if isinstance(item, pd.Series):
+                    iterable.append(item.to_dict())
+                elif isinstance(item, dict):
+                    iterable.append(dict(item))
+        else:
+            iterable = []
+
+        for row in iterable:
+            symbol = _normalize_tomorrow_symbol(row.get("Symbol") or row.get("Ticker"))
+            if not symbol:
+                continue
+            snapshot: dict[str, object] = {}
+            for key, raw_value in row.items():
+                if key in {"_learn_symbol", "_panel_symbol"}:
+                    continue
+                snapshot[str(key)] = _sanitize_import_snapshot_value(raw_value)
+            snapshot["Symbol"] = symbol
+            snapshot_map[symbol] = snapshot
+    except Exception:
+        return {}
+    return snapshot_map
+
+
+def _legacy_imported_ai_learning_records() -> list[dict[str, object]]:
+    symbols = _normalize_prediction_chart_imports(
+        st.session_state.get("prediction_chart_imported_symbols", []),
+        limit=40,
+    )
+    if not symbols:
+        return []
+    origin = str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports")
+    mode_value = st.session_state.get("prediction_chart_import_mode", st.session_state.get("mode", 0))
+    category = _import_category_from_context(source_label=origin, mode_value=mode_value)
+    timestamp = str(st.session_state.get("prediction_chart_imported_at", "") or "")
+    records: list[dict[str, object]] = []
+    for symbol in symbols:
+        records.append(
+            {
+                "ticker": symbol,
+                "categories": [category],
+                "sources": [origin],
+                "modes": _normalize_import_mode_list(mode_value),
+                "last_imported_at": timestamp,
+            }
+        )
+    return records
+
+
+def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, object]]:
+    records_map: dict[str, dict[str, object]] = {}
+    raw_items = list(raw or []) if isinstance(raw, (list, tuple)) else []
+    if not raw_items:
+        raw_items = _legacy_imported_ai_learning_records()
+
+    for item in raw_items:
+        if isinstance(item, dict):
+            ticker = _normalize_tomorrow_symbol(item.get("ticker") or item.get("symbol"))
+            if not ticker:
+                continue
+            categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
+            sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
+            modes = _normalize_import_mode_list(item.get("modes", item.get("mode", [])))
+            imported_at = str(item.get("last_imported_at", item.get("imported_at", "")) or "")
+            snapshot = _build_import_snapshot_map(item.get("snapshot", {})).get(ticker, {})
+        else:
+            ticker = _normalize_tomorrow_symbol(item)
+            if not ticker:
+                continue
+            origin = str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports")
+            mode_value = st.session_state.get("prediction_chart_import_mode", st.session_state.get("mode", 0))
+            categories = [_import_category_from_context(source_label=origin, mode_value=mode_value)]
+            sources = [origin]
+            modes = _normalize_import_mode_list(mode_value)
+            imported_at = str(st.session_state.get("prediction_chart_imported_at", "") or "")
+            snapshot = {}
+
+        record = records_map.setdefault(
+            ticker,
+            {
+                "ticker": ticker,
+                "categories": [],
+                "sources": [],
+                "modes": [],
+                "last_imported_at": imported_at,
+                "snapshot": {},
+            },
+        )
+        record["categories"] = _normalize_import_text_list(list(record.get("categories", [])) + categories)
+        record["sources"] = _normalize_import_text_list(list(record.get("sources", [])) + sources)
+        record["modes"] = _normalize_import_mode_list(list(record.get("modes", [])) + modes)
+        if imported_at:
+            record["last_imported_at"] = imported_at
+        if isinstance(snapshot, dict) and snapshot:
+            record["snapshot"] = dict(snapshot)
+
+    return list(records_map.values())
+
+
+def _get_imported_ai_learning_records() -> list[dict[str, object]]:
+    records = _normalize_imported_ai_learning_records(
+        st.session_state.get("imported_ai_learning_records", []),
+    )
+    if records:
+        st.session_state["imported_ai_learning_records"] = records
+    return records
+
+
+def _sync_imported_ai_store_to_prediction_chart(*, focus_symbol: str | None = None) -> dict[str, object]:
+    records = _get_imported_ai_learning_records()
+    symbols = [str(record.get("ticker", "")).strip() for record in records if str(record.get("ticker", "")).strip()]
+    symbols = _normalize_prediction_chart_imports(symbols, limit=40)
+    if not symbols:
+        return {"symbols": [], "mode": None, "origin": ""}
+
+    focus = _normalize_tomorrow_symbol(focus_symbol) if focus_symbol else symbols[0]
+    latest_record = records[-1] if records else {}
+    latest_sources = _normalize_import_text_list(latest_record.get("sources", []))
+    latest_modes = _normalize_import_mode_list(latest_record.get("modes", []))
+
+    st.session_state["prediction_chart_imported_symbols"] = symbols
+    st.session_state["prediction_chart_import_origin"] = "Imported AI Stocks Basket"
+    st.session_state["prediction_chart_import_mode"] = latest_modes[0] if latest_modes else st.session_state.get("mode", 0)
+    st.session_state["prediction_chart_focus_symbol"] = focus
+    st.session_state["pc_loaded_symbol"] = focus
+    st.session_state["prediction_chart_imported_at"] = str(datetime.now().isoformat(timespec="seconds"))
+    st.session_state["prediction_chart_import_context"] = {
+        "latest_sources": latest_sources,
+        "latest_modes": latest_modes,
+        "count": len(symbols),
+    }
+    return {
+        "symbols": symbols,
+        "mode": st.session_state.get("prediction_chart_import_mode"),
+        "origin": st.session_state.get("prediction_chart_import_origin", ""),
+    }
+
+
+def _store_symbols_in_imported_ai_learning(
     symbols: list[object] | tuple[object, ...] | None,
     *,
     mode_value: object,
     source_label: str,
+    source_bucket: object = "",
+    source_rows: object = None,
 ) -> dict[str, object]:
     normalized = _normalize_prediction_chart_imports(symbols, limit=40)
     if not normalized:
-        return {"symbols": [], "added": 0, "mode": None, "source_label": str(source_label or "")}
+        return {"symbols": [], "added": 0, "updated": 0, "mode": None, "source_label": str(source_label or ""), "category": ""}
 
-    existing = _normalize_prediction_chart_imports(
-        st.session_state.get("prediction_chart_imported_symbols", []),
-        limit=40,
+    existing_records = _get_imported_ai_learning_records()
+    snapshot_map = _build_import_snapshot_map(source_rows)
+    records_map = {
+        str(record.get("ticker", "")).strip(): dict(record)
+        for record in existing_records
+        if str(record.get("ticker", "")).strip()
+    }
+    ordered_symbols = [str(record.get("ticker", "")).strip() for record in existing_records if str(record.get("ticker", "")).strip()]
+    category = _import_category_from_context(
+        source_label=source_label,
+        source_bucket=source_bucket,
+        mode_value=mode_value,
     )
-    merged = list(existing)
+    source_text = str(source_label or category or "Imported AI Stocks")
+    mode_list = _normalize_import_mode_list(mode_value)
+    ts = datetime.now().isoformat(timespec="seconds")
     added = 0
+    updated = 0
     for symbol in normalized:
-        if symbol not in merged:
-            merged.append(symbol)
+        record = records_map.get(symbol)
+        if record is None:
+            records_map[symbol] = {
+                "ticker": symbol,
+                "categories": [category] if category else [],
+                "sources": [source_text],
+                "modes": mode_list,
+                "last_imported_at": ts,
+                "snapshot": dict(snapshot_map.get(symbol) or {}),
+            }
+            ordered_symbols.append(symbol)
             added += 1
-        if len(merged) >= 40:
+        else:
+            before_categories = list(record.get("categories", []))
+            before_sources = list(record.get("sources", []))
+            before_modes = list(record.get("modes", []))
+            before_snapshot = dict(record.get("snapshot", {}) or {})
+            record["categories"] = _normalize_import_text_list(before_categories + ([category] if category else []))
+            record["sources"] = _normalize_import_text_list(before_sources + [source_text])
+            record["modes"] = _normalize_import_mode_list(before_modes + mode_list)
+            record["last_imported_at"] = ts
+            if symbol in snapshot_map and snapshot_map.get(symbol):
+                record["snapshot"] = dict(snapshot_map.get(symbol) or {})
+            records_map[symbol] = record
+            if (
+                record.get("categories", []) != before_categories
+                or record.get("sources", []) != before_sources
+                or record.get("modes", []) != before_modes
+                or dict(record.get("snapshot", {}) or {}) != before_snapshot
+            ):
+                updated += 1
+        if len(ordered_symbols) >= 40:
             break
 
-    focus_symbol = normalized[0]
-    st.session_state["prediction_chart_imported_symbols"] = merged
-    st.session_state["prediction_chart_import_origin"] = str(source_label or "Mode scan")
-    try:
-        st.session_state["prediction_chart_import_mode"] = int(mode_value)
-    except Exception:
-        st.session_state["prediction_chart_import_mode"] = mode_value
-    st.session_state["prediction_chart_focus_symbol"] = focus_symbol
-    st.session_state["pc_loaded_symbol"] = focus_symbol
+    merged_records = [records_map[symbol] for symbol in ordered_symbols if symbol in records_map][:40]
+    st.session_state["imported_ai_learning_records"] = merged_records
+    st.session_state["imported_ai_learning_updated_at"] = ts
     return {
-        "symbols": merged,
+        "symbols": [str(record.get("ticker", "")).strip() for record in merged_records if str(record.get("ticker", "")).strip()],
         "added": added,
-        "mode": st.session_state.get("prediction_chart_import_mode"),
-        "source_label": st.session_state.get("prediction_chart_import_origin", str(source_label or "")),
+        "updated": updated,
+        "mode": mode_list[0] if mode_list else st.session_state.get("mode", 0),
+        "source_label": source_text,
+        "category": category,
     }
 
 
@@ -1517,32 +1866,59 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
         "mode": 0,
     }
     try:
-        imported = _normalize_prediction_chart_imports(
-            st.session_state.get("prediction_chart_imported_symbols", []),
-            limit=40,
-        )
+        imported_records = _get_imported_ai_learning_records()
+        imported = [
+            str(record.get("ticker", "")).strip()
+            for record in imported_records
+            if str(record.get("ticker", "")).strip()
+        ]
+        record_map = {
+            str(record.get("ticker", "")).strip(): dict(record)
+            for record in imported_records
+            if str(record.get("ticker", "")).strip()
+        }
         result["symbols"] = imported
         st.session_state["self_learning_imported_symbols"] = imported
         if not imported:
-            result["message"] = "Import stocks into AI Prediction first."
+            result["message"] = "Add some stocks into Imported AI Stocks first."
             return result
 
+        frames: list[pd.DataFrame] = []
         scan_df = st.session_state.get("last_scan_df")
-        if not isinstance(scan_df, pd.DataFrame) or scan_df.empty:
-            result["message"] = "Imported stocks are saved, but no recent scan rows are available to log yet."
+        if isinstance(scan_df, pd.DataFrame) and not scan_df.empty:
+            symbol_col = "Symbol" if "Symbol" in scan_df.columns else "Ticker" if "Ticker" in scan_df.columns else ""
+            if symbol_col:
+                scan_working = scan_df.copy()
+                scan_working["_learn_symbol"] = scan_working[symbol_col].map(_normalize_tomorrow_symbol)
+                scan_working = scan_working[scan_working["_learn_symbol"].isin(imported)].copy()
+                if not scan_working.empty:
+                    frames.append(scan_working)
+
+        snapshot_rows: list[dict[str, object]] = []
+        seen_snapshot_symbols: set[str] = set()
+        for symbol in imported:
+            record = record_map.get(symbol, {})
+            snapshot = dict(record.get("snapshot", {}) or {})
+            if not snapshot:
+                continue
+            snap_symbol = _normalize_tomorrow_symbol(snapshot.get("Symbol") or symbol)
+            if not snap_symbol or snap_symbol in seen_snapshot_symbols:
+                continue
+            snapshot["_learn_symbol"] = snap_symbol
+            snapshot_rows.append(snapshot)
+            seen_snapshot_symbols.add(snap_symbol)
+        if snapshot_rows:
+            frames.append(pd.DataFrame(snapshot_rows))
+
+        if not frames:
+            result["message"] = "Imported stocks are saved, but no stored rows are available to log yet."
             return result
 
-        symbol_col = "Symbol" if "Symbol" in scan_df.columns else "Ticker" if "Ticker" in scan_df.columns else ""
-        if not symbol_col:
-            result["message"] = "Recent scan rows do not contain stock symbols."
-            return result
-
-        working = scan_df.copy()
-        working["_learn_symbol"] = working[symbol_col].map(_normalize_tomorrow_symbol)
+        working = pd.concat(frames, ignore_index=True, sort=False)
         working = working[working["_learn_symbol"].isin(imported)].copy()
         if working.empty:
             result["missing_symbols"] = imported
-            result["message"] = "These imported stocks are not present in the latest scan results."
+            result["message"] = "These imported stocks are not available in the saved basket data yet."
             return result
 
         working = working.drop_duplicates(subset=["_learn_symbol"], keep="first")
@@ -1550,10 +1926,10 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
         result["matched_symbols"] = matched_symbols
         result["missing_symbols"] = [sym for sym in imported if sym not in matched_symbols]
 
-        mode_value = st.session_state.get(
-            "prediction_chart_import_mode",
-            st.session_state.get("mode", 0),
-        )
+        latest_mode_candidates = []
+        for record in imported_records:
+            latest_mode_candidates.extend(_normalize_import_mode_list(record.get("modes", [])))
+        mode_value = latest_mode_candidates[0] if latest_mode_candidates else st.session_state.get("mode", 0)
         try:
             mode_int = int(mode_value)
         except Exception:
@@ -1588,6 +1964,25 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
             result["message"] = "These imported stocks are already being tracked by the self-learning engine."
             return result
 
+        def _record_categories(symbol: object) -> str:
+            record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
+            categories = _normalize_import_text_list(record.get("categories", []))
+            return " | ".join(categories)
+
+        def _record_sources(symbol: object) -> str:
+            record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
+            sources = _normalize_import_text_list(record.get("sources", []))
+            return " | ".join(sources)
+
+        def _record_mode(symbol: object) -> int:
+            record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
+            modes = _normalize_import_mode_list(record.get("modes", []))
+            return modes[0] if modes else mode_int
+
+        to_log["Import Category"] = to_log["_learn_symbol"].map(_record_categories)
+        to_log["Import Source"] = to_log["_learn_symbol"].map(_record_sources)
+        to_log["Import Mode"] = to_log["_learn_symbol"].map(_record_mode)
+
         try:
             from prediction_feedback_store import log_scan_predictions
 
@@ -1602,11 +1997,9 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
             return result
 
         try:
-            _refresh_feedback_learning_system(force=True)
-        except Exception:
-            pass
-        try:
-            _refresh_signal_weight_status(force_update=True)
+            from prediction_feedback_store import feedback_summary as _feedback_summary
+
+            _refresh_learning_after_prediction_log(_feedback_summary())
         except Exception:
             pass
 
@@ -1674,20 +2067,28 @@ def _render_sidebar_imported_ai_learning_button() -> None:
 
 
 def _render_sidebar_imported_ai_learning_entry_button() -> None:
-    imported = _normalize_prediction_chart_imports(
-        st.session_state.get("prediction_chart_imported_symbols", []),
-        limit=40,
-    )
+    records = _get_imported_ai_learning_records()
+    imported = [
+        str(record.get("ticker", "")).strip()
+        for record in records
+        if str(record.get("ticker", "")).strip()
+    ]
     count = len(imported)
     preview = ", ".join(imported[:4])
     if count > 4:
         preview = f"{preview} +{count - 4} more"
-    origin = str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports")
+    categories = []
+    for record in records:
+        categories.extend(_normalize_import_text_list(record.get("categories", [])))
+    categories = _normalize_import_text_list(categories)
+    origin = ", ".join(categories[:3]) if categories else "Imported AI Stocks"
+    if len(categories) > 3:
+        origin = f"{origin} +{len(categories) - 3} more"
     helper_text = (
         f"Stored imported stocks: <b style='color:#ccd9e8;'>{count}</b><br>"
         f"<span style='color:#8ab4d8;'>{preview}</span>"
         if count
-        else "Import stocks into AI Prediction first, then open the stored imported basket from here."
+        else "Import stocks into Imported AI Stocks from any Top 3 area, then open the stored self-learning basket from here."
     )
     st.markdown(
         '<div style="margin-top:14px;padding:12px 12px 10px 12px;'
@@ -1696,7 +2097,7 @@ def _render_sidebar_imported_ai_learning_entry_button() -> None:
         '<div style="font-size:10px;color:#4a6480;letter-spacing:1.3px;'
         'text-transform:uppercase;margin-bottom:6px;">Imported AI Learning</div>'
         f'<div style="font-size:11px;color:#4a6480;line-height:1.7;margin-bottom:10px;">'
-        f'Source: <span style="color:#8ab4d8;">{origin}</span><br>{helper_text}</div>'
+        f'Categories: <span style="color:#8ab4d8;">{origin}</span><br>{helper_text}</div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -1712,23 +2113,44 @@ def _render_sidebar_imported_ai_learning_entry_button() -> None:
 def _build_imported_ai_learning_panel_data() -> dict[str, object]:
     payload: dict[str, object] = {
         "imported": [],
-        "origin": str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports"),
-        "mode": st.session_state.get("prediction_chart_import_mode", st.session_state.get("mode", 0)),
+        "origin": "Imported AI Stocks",
+        "mode": st.session_state.get("mode", 0),
         "table": pd.DataFrame(),
         "matched_count": 0,
         "logged_today_count": 0,
         "validated_count": 0,
         "missing_symbols": [],
+        "categories": [],
+        "records": [],
     }
     try:
-        imported = _normalize_prediction_chart_imports(
-            st.session_state.get("prediction_chart_imported_symbols", []),
-            limit=40,
-        )
+        records = _get_imported_ai_learning_records()
+        imported = [
+            str(record.get("ticker", "")).strip()
+            for record in records
+            if str(record.get("ticker", "")).strip()
+        ]
+        categories = []
+        for record in records:
+            categories.extend(_normalize_import_text_list(record.get("categories", [])))
+        payload["records"] = records
         payload["imported"] = imported
+        payload["categories"] = _normalize_import_text_list(categories)
+        if payload["categories"]:
+            payload["origin"] = ", ".join(payload["categories"])
+        latest_modes = []
+        for record in records:
+            latest_modes.extend(_normalize_import_mode_list(record.get("modes", [])))
+        if latest_modes:
+            payload["mode"] = latest_modes[0]
         if not imported:
             return payload
 
+        record_map = {
+            str(record.get("ticker", "")).strip(): dict(record)
+            for record in records
+            if str(record.get("ticker", "")).strip()
+        }
         scan_df = st.session_state.get("last_scan_df")
         scan_map: dict[str, dict[str, object]] = {}
         if isinstance(scan_df, pd.DataFrame) and not scan_df.empty:
@@ -1738,11 +2160,20 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
                 working["_panel_symbol"] = working[symbol_col].map(_normalize_tomorrow_symbol)
                 working = working[working["_panel_symbol"].isin(imported)].copy()
                 working = working.drop_duplicates(subset=["_panel_symbol"], keep="first")
-                payload["matched_count"] = int(len(working))
                 for _, row in working.iterrows():
                     symbol = _normalize_tomorrow_symbol(row.get("_panel_symbol"))
                     if symbol:
                         scan_map[symbol] = row.to_dict()
+        snapshot_map: dict[str, dict[str, object]] = {
+            str(record.get("ticker", "")).strip(): dict(record.get("snapshot", {}) or {})
+            for record in records
+            if str(record.get("ticker", "")).strip()
+        }
+        stored_symbols = {
+            sym for sym in imported
+            if sym in scan_map or bool(snapshot_map.get(sym))
+        }
+        payload["matched_count"] = int(len(stored_symbols))
 
         latest_log_map: dict[str, dict[str, object]] = {}
         today_logged: set[str] = set()
@@ -1752,19 +2183,26 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
             log_df = read_feedback_log()
             if isinstance(log_df, pd.DataFrame) and not log_df.empty:
                 log_work = log_df.copy()
-                log_work["_panel_symbol"] = log_work.get("symbol", "").map(_normalize_tomorrow_symbol)
-                log_work["_logged_dt"] = pd.to_datetime(log_work.get("logged_at", ""), errors="coerce")
+                fallback_blank = pd.Series([""] * len(log_work), index=log_work.index, dtype=object)
+                fallback_zero = pd.Series([0] * len(log_work), index=log_work.index, dtype=float)
+                log_symbol_series = (
+                    log_work.get("symbol")
+                    if "symbol" in log_work.columns
+                    else log_work.get("ticker", fallback_blank)
+                )
+                log_time_series = (
+                    log_work.get("logged_at")
+                    if "logged_at" in log_work.columns
+                    else log_work.get("prediction_date", fallback_blank)
+                )
+                log_work["_panel_symbol"] = log_symbol_series.map(_normalize_tomorrow_symbol)
+                log_work["_logged_dt"] = pd.to_datetime(log_time_series, errors="coerce")
                 log_work["_logged_date"] = log_work["_logged_dt"].dt.date
-                log_work["_mode_norm"] = pd.to_numeric(log_work.get("mode", 0), errors="coerce").fillna(0).astype(int)
-                try:
-                    mode_int = int(payload.get("mode", 0) or 0)
-                except Exception:
-                    mode_int = 0
                 target_date = get_expected_data_date()
                 today_logged = {
                     sym
                     for sym in log_work.loc[
-                        (log_work["_mode_norm"] == mode_int) & (log_work["_logged_date"] == target_date),
+                        log_work["_logged_date"] == target_date,
                         "_panel_symbol",
                     ].tolist()
                     if sym
@@ -1788,25 +2226,71 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
         rows: list[dict[str, object]] = []
         for symbol in imported:
             scan_row = dict(scan_map.get(symbol) or {})
+            snapshot_row = dict(snapshot_map.get(symbol) or {})
+            source_row = scan_row if scan_row else snapshot_row
             log_row = dict(latest_log_map.get(symbol) or {})
+            record = record_map.get(symbol, {})
             actual_return = _to_float(log_row.get("actual_next_return_pct"))
+            correct_value = log_row.get("correct")
+            correct_text = str(correct_value).strip()
+            if correct_text.lower() in {"", "nan", "none"}:
+                correct_text = "-"
+            trap_value = (
+                source_row.get("Trap Risk")
+                if source_row.get("Trap Risk") is not None and str(source_row.get("Trap Risk")).strip().lower() not in {"", "nan", "none"}
+                else source_row.get("Trap Check")
+            )
+            if trap_value is None or str(trap_value).strip().lower() in {"", "nan", "none"}:
+                trap_value = source_row.get("Trap")
+            record_categories = _normalize_import_text_list(record.get("categories", []))
+            record_sources = _normalize_import_text_list(record.get("sources", []))
+            record_modes = _normalize_import_mode_list(record.get("modes", []))
+            stored_state = (
+                "Live Scan" if symbol in scan_map
+                else "Imported Snapshot" if snapshot_row
+                else "Imported Only"
+            )
             rows.append(
                 {
                     "Ticker": symbol,
-                    "Stored Data": "Stored" if symbol in scan_map else "Imported Only",
-                    "Sector": str(scan_row.get("Sector", "-") or "-"),
-                    "Final Score": round(_safe(scan_row.get("Final Score", np.nan), np.nan), 1) if symbol in scan_map else np.nan,
-                    "Pred Score": round(_safe(scan_row.get("Prediction Score", np.nan), np.nan), 1) if symbol in scan_map else np.nan,
-                    "Signal": str(scan_row.get("Signal", "-") or "-"),
-                    "Conviction": str(scan_row.get("Conviction Tier", "-") or "-"),
-                    "Trap": str(_first_present(scan_row, ["Trap Risk", "Trap Check", "Trap"], "-") or "-"),
+                    "Categories": " | ".join(record_categories) if record_categories else "-",
+                    "Sources": " | ".join(record_sources[:3]) if record_sources else "-",
+                    "Modes": " | ".join([f"M{mode}" for mode in record_modes]) if record_modes else "-",
+                    "Imported At": str(record.get("last_imported_at", "") or "-").replace("T", " "),
+                    "Stored Data": stored_state,
+                    "Sector": str(source_row.get("Sector", "-") or "-"),
+                    "Final Score": round(_safe(source_row.get("Final Score", np.nan), np.nan), 1) if source_row else np.nan,
+                    "Pred Score": round(
+                        _safe(
+                            source_row.get(
+                                "Prediction Score",
+                                source_row.get(
+                                    "Pred Score",
+                                    source_row.get(
+                                        "Next Day Prob",
+                                        source_row.get("Tomorrow Pick Score", np.nan),
+                                    ),
+                                ),
+                            ),
+                            np.nan,
+                        ),
+                        1,
+                    ) if source_row else np.nan,
+                    "Signal": str(source_row.get("Signal", "-") or "-"),
+                    "Conviction": str(
+                        source_row.get(
+                            "Conviction Tier",
+                            source_row.get("Conviction", source_row.get("Confidence", source_row.get("Grade", "-"))),
+                        ) or "-"
+                    ),
+                    "Trap": str(trap_value or "-"),
                     "Logged Today": "Yes" if symbol in today_logged else "No",
                     "Last Outcome": f"{actual_return:.2f}%" if actual_return is not None else "-",
-                    "Correct": str(log_row.get("correct", "-") or "-"),
+                    "Correct": correct_text,
                 }
             )
 
-        payload["missing_symbols"] = [sym for sym in imported if sym not in scan_map]
+        payload["missing_symbols"] = [sym for sym in imported if sym not in stored_symbols]
         payload["table"] = pd.DataFrame(rows)
         return payload
     except Exception:
@@ -1829,8 +2313,8 @@ def render_imported_ai_learning_panel() -> None:
         st.markdown('<h2>Imported AI Stocks</h2>', unsafe_allow_html=True)
         st.markdown(
             '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-            'This screen shows the imported AI stocks already stored in your session, their saved scan data, '
-            'and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine.</div>',
+            'This screen shows the imported AI stocks already stored in your session, their saved scan or snapshot data, '
+            'their import category/source, and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine.</div>',
             unsafe_allow_html=True,
         )
     with _close_col:
@@ -1844,15 +2328,16 @@ def render_imported_ai_learning_panel() -> None:
     except Exception:
         _mode_int = 0
     _mode_label = f"Mode M{_mode_int}" if _mode_int else "Mode -"
+    _category_text = ", ".join(list(panel.get("categories", []) or [])[:4]) or "Imported AI Stocks"
     st.caption(
-        f"Source: {panel.get('origin', 'AI Prediction imports')} | {_mode_label} | Imported stocks: {len(imported)}"
+        f"Categories: {_category_text} | {_mode_label} | Imported stocks: {len(imported)}"
     )
 
     _m1, _m2, _m3, _m4 = st.columns(4)
     with _m1:
         st.metric("Imported", f"{len(imported):,}")
     with _m2:
-        st.metric("Stored Scan Rows", f"{int(panel.get('matched_count', 0) or 0):,}")
+        st.metric("Stored Rows", f"{int(panel.get('matched_count', 0) or 0):,}")
     with _m3:
         st.metric("Logged Today", f"{int(panel.get('logged_today_count', 0) or 0):,}")
     with _m4:
@@ -1868,14 +2353,22 @@ def render_imported_ai_learning_panel() -> None:
         )
     with _action2:
         if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", width="stretch"):
-            _activate_sidebar_panel("pred_chart_show_panel")
+            summary = _sync_imported_ai_store_to_prediction_chart()
+            if list(summary.get("symbols", []) or []):
+                _activate_sidebar_panel("pred_chart_show_panel")
+            else:
+                st.info("No imported AI stocks are stored yet.")
     with _action3:
         if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
             for key in (
+                "imported_ai_learning_records",
                 "prediction_chart_imported_symbols",
                 "prediction_chart_import_origin",
                 "prediction_chart_import_mode",
                 "prediction_chart_focus_symbol",
+                "prediction_chart_imported_at",
+                "prediction_chart_import_context",
+                "imported_ai_learning_updated_at",
             ):
                 st.session_state.pop(key, None)
             st.rerun()
@@ -1903,7 +2396,7 @@ def render_imported_ai_learning_panel() -> None:
             st.info(message)
 
     if not imported:
-        st.info("No imported AI stocks are stored yet. Import some stocks from a mode Top 3 table first.")
+        st.info("No imported AI stocks are stored yet. Add some symbols from a Mode Top 3, Breakout Radar, CSV Breakout, or Live Breakout Pulse panel first.")
         return
 
     missing_symbols = list(panel.get("missing_symbols", []) or [])
@@ -1912,7 +2405,7 @@ def render_imported_ai_learning_panel() -> None:
         if len(missing_symbols) > 8:
             _missing_preview += " ..."
         st.caption(
-            f"Stored scan data is missing for some imported symbols in the latest scan: {_missing_preview}"
+            f"Stored row data is still missing for some imported symbols: {_missing_preview}"
         )
 
     if not table.empty:
@@ -1920,6 +2413,10 @@ def render_imported_ai_learning_panel() -> None:
             table,
             column_config={
                 "Ticker": st.column_config.TextColumn("Ticker"),
+                "Categories": st.column_config.TextColumn("Categories", width="medium"),
+                "Sources": st.column_config.TextColumn("Sources", width="large"),
+                "Modes": st.column_config.TextColumn("Modes"),
+                "Imported At": st.column_config.TextColumn("Imported At", width="medium"),
                 "Stored Data": st.column_config.TextColumn("Stored Data"),
                 "Sector": st.column_config.TextColumn("Sector"),
                 "Final Score": st.column_config.NumberColumn("Final Score", format="%.1f"),
@@ -1963,37 +2460,35 @@ def _build_mode_ai_top3_preview(
         if isinstance(payload, dict):
             return payload
 
-    preview = default.copy()
-    try:
-        from strategy_engines._engine_utils import ALL_DATA as _ai_all_data
-        from tomorrow_prediction_engine import summarize_tomorrow_predictions
-
-        summary = summarize_tomorrow_predictions(normalized, _ai_all_data, mode_int)
-    except Exception:
-        summary = {}
-
     prediction_map: dict[str, dict] = {}
     try:
-        for pred in list(summary.get("predictions", []) or []):
-            symbol = _normalize_tomorrow_symbol(pred.get("ticker"))
-            if symbol:
+        from nse_learning_brain import get_cached_prediction, summarize_cached_predictions
+
+        summary = summarize_cached_predictions(normalized)
+        for symbol in normalized:
+            pred = get_cached_prediction(symbol)
+            if isinstance(pred, dict) and pred:
                 prediction_map[symbol] = dict(pred)
     except Exception:
+        summary = {}
         prediction_map = {}
 
     if len(prediction_map) < len(normalized):
         try:
-            from nse_learning_brain import get_cached_prediction
+            from strategy_engines._engine_utils import ALL_DATA as _ai_all_data
+            from tomorrow_prediction_engine import summarize_tomorrow_predictions
 
-            for symbol in normalized:
-                if symbol in prediction_map:
-                    continue
-                pred = get_cached_prediction(symbol)
-                if isinstance(pred, dict) and pred:
-                    prediction_map[symbol] = dict(pred)
+            live_summary = summarize_tomorrow_predictions(normalized, _ai_all_data, mode_int)
+            if isinstance(live_summary, dict) and live_summary:
+                summary = live_summary
+                for pred in list(live_summary.get("predictions", []) or []):
+                    symbol = _normalize_tomorrow_symbol(pred.get("ticker"))
+                    if symbol:
+                        prediction_map[symbol] = dict(pred)
         except Exception:
             pass
 
+    preview = default.copy()
     rows: list[dict[str, object]] = []
     for symbol in normalized:
         pred = dict(prediction_map.get(symbol) or {})
@@ -2024,6 +2519,8 @@ def _render_ai_prediction_import_action(
     mode_value: object,
     key_prefix: str,
     source_label: str,
+    source_bucket: object = "",
+    source_rows: object = None,
     helper_text: str = "",
 ) -> None:
     normalized = _normalize_prediction_chart_imports(symbols, limit=12)
@@ -2034,7 +2531,7 @@ def _render_ai_prediction_import_action(
         )
 
     import_clicked = st.button(
-        "IMPORT IN AI PREDICTION",
+        "ADD TO IMPORTED AI STOCKS",
         key=f"{key_prefix}_import_ai_prediction",
         width="stretch",
         disabled=not normalized,
@@ -2047,20 +2544,25 @@ def _render_ai_prediction_import_action(
         st.info("No valid stock is available to import right now.")
         return
 
-    summary = _import_symbols_into_ai_prediction(
+    summary = _store_symbols_in_imported_ai_learning(
         normalized,
         mode_value=mode_value,
         source_label=source_label,
+        source_bucket=source_bucket,
+        source_rows=source_rows,
     )
     imported = list(summary.get("symbols", []) or [])
     if imported:
         try:
-            st.toast(f"Imported {len(normalized)} stock(s) into AI Prediction.")
+            st.toast(
+                f"Added {len(normalized)} stock(s) to Imported AI Stocks "
+                f"under {summary.get('category', 'Imported')}."
+            )
         except Exception:
             pass
-        _activate_sidebar_panel("pred_chart_show_panel")
+        _activate_sidebar_panel("imported_ai_learning_show_panel")
     else:
-        st.info("The AI prediction import list is empty right now.")
+        st.info("The imported AI stocks list is empty right now.")
 
 try:
     import scan_diagnostics as _scan_diag
@@ -6462,6 +6964,19 @@ def _safe(v, default=0.0):
         return default
 
 
+def _to_float(value, default=None):
+    """Best-effort float conversion used by lightweight UI helpers."""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, str) and value.strip().lower() in {"", "nan", "none"}:
+            return default
+        out = float(value)
+        return out if np.isfinite(out) else default
+    except Exception:
+        return default
+
+
 def compute_score(row: dict, mode: int = 2) -> tuple[float, dict]:
     """
     Returns (score_0_100, breakdown_dict).
@@ -6648,8 +7163,8 @@ def compute_backtest_probability(row: dict, ticker: str, mode: int = 2) -> float
 
 
 # ── ML model cache ────────────────────────────────────────────────────
-_ML_MODEL: "LogisticRegression | None" = None
-_ML_SCALER: "StandardScaler | None"   = None
+_ML_MODEL: Any = None
+_ML_SCALER: Any = None
 _ML_LOCK = threading.Lock()
 _ML_TICKERS_TRAINED: list[str] = []
 
@@ -7853,31 +8368,6 @@ with st.sidebar:
         except Exception:
             pass
 
-        try:
-            from strategy_engines._engine_utils import ALL_DATA as _learning_all_data
-            from sector_regime_engine import detect_regime as _detect_learning_regime
-
-            _regime_state = _detect_learning_regime(_learning_all_data)
-            _regime_txt = (
-                f"{str(getattr(_regime_state, 'regime', 'n/a'))} "
-                f"(conf: {float(getattr(_regime_state, 'confidence', 0.0) or 0.0):.0f}%)"
-            )
-        except Exception:
-            pass
-
-        try:
-            from sector_evaluation_engine import compute_full_evaluation
-            from sector_prediction_tracker import read_log as _read_sector_prediction_log
-
-            _sector_log_df = _read_sector_prediction_log()
-            if isinstance(_sector_log_df, pd.DataFrame) and not _sector_log_df.empty:
-                _sector_eval = compute_full_evaluation(_sector_log_df)
-                _wf_score = float(getattr(_sector_eval, "wf_stability_score", 0.0) or 0.0)
-                if _wf_score > 0:
-                    _wf_txt = f"{_wf_score:.1f}"
-        except Exception:
-            pass
-
         with st.expander("🧠 AI Learning Status", expanded=False):
             st.markdown(
                 f'<div style="background:#0d1117;border:1px solid #1e3a5f;border-radius:12px;'
@@ -8530,11 +9020,14 @@ if _show_home_scanner and "results" in st.session_state:
 
         if _did_log_predictions:
             try:
-                learning_status = _refresh_feedback_learning_system(force=True)
-            except Exception:
-                pass
-            try:
-                signal_weight_status = _refresh_signal_weight_status(force_update=True)
+                _full_learning_refresh = _refresh_learning_after_prediction_log(_fs)
+                if _full_learning_refresh:
+                    learning_status = st.session_state.get("_learning_status", learning_status)
+                    signal_weight_status = st.session_state.get("_signal_weight_status", signal_weight_status)
+                else:
+                    st.caption(
+                        "⚡ Fast result paint: learning retrain skipped because no new validated outcomes were added yet."
+                    )
             except Exception:
                 pass
 
@@ -8934,7 +9427,9 @@ if _show_home_scanner and "results" in st.session_state:
                 mode_value=stored_mode,
                 key_prefix=f"scan_top3_mode_{stored_mode}",
                 source_label=f"Mode {stored_mode} Top 3",
-                helper_text="Import these mode picks into the self-learning prediction chart and open the first imported stock instantly.",
+                source_bucket=_tomorrow_bucket_for_mode(stored_mode),
+                source_rows=_tomorrow_df,
+                helper_text="Add these mode picks into Imported AI Stocks for self-learning. Open AI Prediction later only when you want the chart.",
             )
 
     else:
@@ -8969,9 +9464,13 @@ if _BREAKOUT_SECTION_OK:
             _DATA_DOWNLOADER_OK=_DATA_DOWNLOADER_OK,
             _BREAKOUT_RADAR_OK=_BREAKOUT_RADAR_OK,
             render_add_in_picks_actions=_render_add_in_picks_actions,
+            render_imported_ai_actions=_render_ai_prediction_import_action,
         )
     except TypeError as _breakout_call_exc:
-        if "render_add_in_picks_actions" not in str(_breakout_call_exc):
+        if (
+            "render_add_in_picks_actions" not in str(_breakout_call_exc)
+            and "render_imported_ai_actions" not in str(_breakout_call_exc)
+        ):
             raise
         render_breakout_radar_section(
             csv_scan_clicked=csv_scan_clicked,
@@ -9109,6 +9608,7 @@ if _LIVE_PULSE_SECTION_OK:
         live_pulse_clicked=live_pulse_clicked,
         tt_date_val=st.session_state.get("tt_date_val"),
         render_add_in_picks_actions=_render_add_in_picks_actions,
+        render_imported_ai_actions=_render_ai_prediction_import_action,
     )
 
 # ══════════════════════════════════════════════════════════

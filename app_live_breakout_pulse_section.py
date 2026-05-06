@@ -183,6 +183,7 @@ def render_live_breakout_pulse(
     live_pulse_clicked: bool,
     tt_date_val=None,
     render_add_in_picks_actions=None,
+    render_imported_ai_actions=None,
 ) -> None:
     """
     Render the Live Breakout Pulse panel.
@@ -407,6 +408,17 @@ def render_live_breakout_pulse(
                 scope_label="Live Breakout Pulse",
                 bucket="breakout",
                 helper_text="Add these top breakout stocks into Tomorrow's Picks and keep them saved until you remove them.",
+            )
+        if callable(render_imported_ai_actions):
+            top_pulse_key = (last_scan_at or "latest").replace(" ", "_").replace(",", "").replace(":", "-")
+            render_imported_ai_actions(
+                top_pulse_symbols,
+                mode_value=0,
+                key_prefix=f"live_pulse_imported_{top_pulse_key}",
+                source_label="Live Breakout Pulse Top 3",
+                source_bucket="breakout",
+                source_rows=top_pulse_df,
+                helper_text="Add these Live Breakout Pulse names into Imported AI Stocks for self-learning.",
             )
         st.markdown("<br>", unsafe_allow_html=True)
 
