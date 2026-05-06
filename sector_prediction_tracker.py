@@ -44,6 +44,12 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+try:
+    from persistent_store import push_file as _push_file
+except Exception:
+    def _push_file(*a, **kw):  # type: ignore[misc]
+        pass
+
 # ── Storage location ──────────────────────────────────────────────────
 _HERE     = Path(__file__).resolve().parent
 _DATA_DIR = _HERE / "data"
@@ -300,6 +306,7 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
+        _push_file(_LOG_PATH)
         try:
             read_log()
         except Exception:
@@ -401,6 +408,7 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
 
         if filled > 0:
             df.to_csv(_LOG_PATH, index=False)
+            _push_file(_LOG_PATH)
             _set_cached_log(df)
             _rebuild_calibration_cache(df)
         return filled

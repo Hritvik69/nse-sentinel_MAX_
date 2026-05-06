@@ -146,6 +146,24 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+# Persistent store: pull remote data before any local data readers run.
+if not st.session_state.get("_persistence_pulled", False):
+    try:
+        from persistent_store import pull_all
+
+        _pulled = pull_all()
+        try:
+            from learning_engine import load_persisted_model
+
+            load_persisted_model()
+        except Exception:
+            pass
+        st.session_state["_persistence_pulled"] = True
+        if _pulled > 0:
+            st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
+    except Exception:
+        st.session_state["_persistence_pulled"] = True
+
 _learning_engine = None
 _run_learning_cycle = None
 
@@ -476,6 +494,14 @@ def _bootstrap_learning_status() -> tuple[dict, dict]:
         st.session_state["_signal_weight_status"] = default_signal_status
         st.session_state["_signal_weight_sig"] = snapshot.get("signature") or current_sig
         return snapshot_status, default_signal_status
+
+    persisted_status = get_training_status()
+    if isinstance(persisted_status, dict) and persisted_status.get("trained"):
+        st.session_state["_learning_status"] = persisted_status
+        st.session_state["_learning_refresh_sig"] = current_sig
+        st.session_state["_signal_weight_status"] = default_signal_status
+        st.session_state["_signal_weight_sig"] = current_sig
+        return persisted_status, default_signal_status
 
     fallback_status = _default_learning_status()
     fallback_status["message"] = "Learning warm-up pending. Full refresh runs after the next scan."
@@ -7355,6 +7381,9 @@ with st.sidebar:
         'color:#00d4a8;letter-spacing:-0.5px;padding:4px 0 16px 0;">'
         '<span class="live-dot"></span>NSE SENTINEL</div>',
         unsafe_allow_html=True)
+
+    if st.session_state.get("_persistence_msg"):
+        st.success(st.session_state.pop("_persistence_msg"))
 
     st.markdown('<div class="section-lbl">Strategy Mode</div>', unsafe_allow_html=True)
 

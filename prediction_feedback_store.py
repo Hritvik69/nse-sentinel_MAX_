@@ -12,6 +12,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+try:
+    from persistent_store import push_file as _push_file
+except Exception:
+    def _push_file(*a, **kw):  # type: ignore[misc]
+        pass
+
 _HERE = Path(__file__).resolve().parent
 DATA_DIR = _HERE / "data"
 LOG_PATH = DATA_DIR / "prediction_feedback_log.csv"
@@ -328,6 +334,7 @@ def log_scan_predictions(
             read_feedback_log()
         except Exception:
             pass
+        _push_file(LOG_PATH)
     except Exception:
         return
 
@@ -460,6 +467,7 @@ def backfill_actual_returns(all_data: dict) -> int:
 
         if changed:
             df.to_csv(LOG_PATH, index=False)
+            _push_file(LOG_PATH)
             _set_cached_log(df)
         return validated
     except Exception:

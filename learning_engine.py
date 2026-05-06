@@ -26,6 +26,15 @@ except Exception:
     def read_sector_prediction_log(sector: str | None = None) -> pd.DataFrame:  # type: ignore[misc]
         return pd.DataFrame()
 
+try:
+    from model_persistence import save_model as _save_model, load_model as _load_model
+except Exception:
+    def _save_model(*a, **kw):  # type: ignore[misc]
+        return False
+
+    def _load_model():  # type: ignore[misc]
+        return None
+
 
 MODEL = None
 SCALER = None
@@ -413,6 +422,7 @@ def train_learning_model():
             }
         )
         TRAINING_STATUS = status
+        _save_model(MODEL, SCALER, REGIME_ENCODER, SECTOR_ENCODER)
         return {
             "model": model,
             "scaler": scaler,
@@ -424,6 +434,32 @@ def train_learning_model():
         status["message"] = f"Training failed: {exc}"
         TRAINING_STATUS = status
         return {"model": None, "scaler": None, "status": status}
+
+
+def load_persisted_model() -> bool:
+    """
+    Restore a previously trained model from disk.
+
+    Call this at app startup after persistent_store.pull_all().
+    """
+    global MODEL, SCALER, TRAINING_STATUS, REGIME_ENCODER, SECTOR_ENCODER
+    try:
+        payload = _load_model()
+        if payload is None:
+            return False
+        MODEL = payload["model"]
+        SCALER = payload["scaler"]
+        REGIME_ENCODER = payload.get("regime_encoder", {})
+        SECTOR_ENCODER = payload.get("sector_encoder", {})
+        if MODEL is not None and SCALER is not None:
+            TRAINING_STATUS["trained"] = True
+            TRAINING_STATUS["message"] = "Model restored from persistent storage."
+            TRAINING_STATUS["regime_encoder"] = dict(REGIME_ENCODER)
+            TRAINING_STATUS["sector_encoder"] = dict(SECTOR_ENCODER)
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def restore_learning_bundle(bundle: dict | None) -> bool:
