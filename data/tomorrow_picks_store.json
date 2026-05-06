@@ -2,16 +2,21 @@
   "picks": [
     "PSB",
     "CENTRALBK",
-    "GSFC"
+    "CHAMBLFERT",
+    "GSFC",
+    "IPCALAB"
   ],
   "notes": "",
   "sections": {
     "relax": [
       "PSB",
-      "CENTRALBK",
-      "GSFC"
+      "CENTRALBK"
     ],
-    "swing": [],
+    "swing": [
+      "CHAMBLFERT",
+      "GSFC",
+      "IPCALAB"
+    ],
     "intraday": [],
     "breakout": []
   }
