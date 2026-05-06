@@ -1291,7 +1291,11 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
     if imported_symbols:
         import_origin = str(st.session_state.get("prediction_chart_import_origin", "Mode scan") or "Mode scan")
         import_mode = st.session_state.get("prediction_chart_import_mode", "")
-        import_mode_label = f" | Mode M{import_mode}" if str(import_mode).strip() else ""
+        try:
+            import_mode_int = int(import_mode)
+        except Exception:
+            import_mode_int = 0
+        import_mode_label = f" | Mode M{import_mode_int}" if import_mode_int > 0 else ""
         visible_imports = imported_symbols[:6]
         st.markdown(
             f"""

@@ -266,6 +266,9 @@ def update_signal_performance(log_df: pd.DataFrame) -> int:
                                   "dynamic_weight": _STATIC_WEIGHTS.get(sig, 0.08)})
             perf[sig]["dynamic_weight"] = w
 
+        if not perf:
+            return processed
+
         _save_perf(perf)
         global _perf_cache
         _perf_cache = perf

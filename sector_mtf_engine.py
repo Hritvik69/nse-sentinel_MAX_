@@ -102,7 +102,7 @@ def _long_term_score(ohlc: pd.DataFrame) -> float:
     Returns 0–100.
     """
     if len(ohlc) < 55:
-        return 50.0
+        return 50.0   # caller should check MTFAlignment.note for this signal
 
     close = ohlc["Close"]
     e20   = _ema(close, 20)
@@ -144,6 +144,7 @@ def compute_mtf_alignment(ohlc: pd.DataFrame) -> MTFAlignment:
         return MTFAlignment(note="Insufficient data for MTF analysis.")
 
     try:
+        long_term_available = len(ohlc) >= 55
         short_s = _short_term_score(ohlc)
         long_s  = _long_term_score(ohlc)
 
@@ -178,6 +179,8 @@ def compute_mtf_alignment(ohlc: pd.DataFrame) -> MTFAlignment:
             )
         elif short_bias == "NEUTRAL" or long_bias == "NEUTRAL":
             note_parts.append("One timeframe is neutral — mixed signal.")
+        if not long_term_available:
+            note_parts.append("Long-term timeframe unavailable (need 55 bars).")
 
         return MTFAlignment(
             alignment_score = round(float(np.clip(alignment, 0, 100)), 1),

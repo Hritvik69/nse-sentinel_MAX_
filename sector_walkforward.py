@@ -51,6 +51,7 @@ class WalkForwardReport:
     folds:             list[WalkForwardFold] = field(default_factory=list)
     overall_accuracy:  float = 0.0
     overall_return:    float = 0.0
+    raw_stability_score: float = 0.0
     stability_score:   float = 0.0      # 0–100; higher = more consistent
     max_fold_dd:       float = 0.0      # worst single fold
     accuracy_std:      float = 0.0      # consistency of accuracy across folds
@@ -107,9 +108,9 @@ def _fold_stats(fold_df: pd.DataFrame) -> tuple[float, float, float]:
     return round(acc, 2), round(avg, 3), round(cum, 2)
 
 
-def _stability(accuracies: list[float], returns: list[float]) -> float:
+def _raw_stability_score(accuracies: list[float], returns: list[float]) -> float:
     """
-    Stability score (0–100).
+    Raw stability score before clipping to the 0–100 display range.
 
     Penalises:
       • high variance in accuracy across folds
@@ -125,8 +126,18 @@ def _stability(accuracies: list[float], returns: list[float]) -> float:
 
     # Penalty = acc variability + losing fold frequency
     penalty    = acc_std * 1.5 + neg_pct * 0.5
-    base_score = float(np.clip(acc_mean - penalty, 0, 100))
-    return round(base_score, 1)
+    return float(acc_mean - penalty)
+
+
+def _stability(accuracies: list[float], returns: list[float]) -> float:
+    """
+    Stability score (0–100).
+
+    A return value of 0.0 means the raw stability score was <= 0 before
+    clipping, not that model stability is exactly zero.
+    """
+    raw_score = _raw_stability_score(accuracies, returns)
+    return round(float(np.clip(raw_score, 0, 100)), 1)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -205,19 +216,25 @@ def run_walk_forward(
             report.note = "Walk-forward produced no folds — not enough data."
             return report
 
+        raw_stability = _raw_stability_score(acc_list, ret_list)
         report.folds            = folds
         report.overall_accuracy = round(float(np.mean(acc_list)), 2)
         report.overall_return   = round(float(np.mean(ret_list)), 2)
+        report.raw_stability_score = round(float(raw_stability), 2)
         report.stability_score  = _stability(acc_list, ret_list)
         report.max_fold_dd      = round(float(min(ret_list)), 2)
         report.accuracy_std     = round(float(np.std(acc_list)), 2)
         report.rolling_accuracy = [round(a, 2) for a in acc_list]
         report.rolling_returns  = [round(r, 2) for r in ret_list]
         report.fold_dates       = date_list
-        report.note = (
-            f"{fold_num} folds · train={train_window} eval={eval_window} "
-            f"step={step} bars"
-        )
+        note_parts = [
+            f"{fold_num} folds · train={train_window} eval={eval_window} step={step} bars"
+        ]
+        if raw_stability < 0:
+            note_parts.append(
+                "Stability was clipped to 0.0 because the raw stability score was negative before clipping."
+            )
+        report.note = " ".join(note_parts)
 
     except Exception as exc:
         report.note = f"Walk-forward error: {exc}"

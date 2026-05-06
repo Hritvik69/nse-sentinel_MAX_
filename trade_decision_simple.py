@@ -56,7 +56,7 @@ def _decision_payload(row):
     ema = _safe_float(
         _first_present(
             row,
-            ["Δ vs EMA20 (%)", "Î” vs EMA20 (%)", "ÃŽâ€ vs EMA20 (%)", "Δ EMA20 (%)", "ÃŽâ€ EMA20 (%)"],
+            ["Δ vs EMA20 (%)", "Δ EMA20 (%)", "delta_ema20"],
             0,
         ),
         0,

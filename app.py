@@ -696,10 +696,11 @@ def _sync_cached_learning_feedback_summary(feedback_stats: dict | None = None) -
                 st.session_state["learning_cycle_status"] = brain_copy
             st.session_state["_learning_status"] = updated_status
             try:
+                _sig = st.session_state.get("_learning_refresh_sig") or ("", 0.0, 0.0)
                 _write_learning_status_snapshot(
                     updated_status,
                     st.session_state.get("_signal_weight_status", {}),
-                    signature=st.session_state.get("_learning_refresh_sig"),
+                    signature=_sig,
                 )
             except Exception:
                 pass
@@ -848,6 +849,7 @@ def _fallback_get_shared_market_frame(
             df["Volume"] = df["Volume"].fillna(0.0)
         return df.sort_index() if len(df) >= max(1, int(min_rows)) else None
     except Exception:
+        _scan_diag.record_failure(ticker_ns, "EXCEPTION")
         return None
 
 
@@ -1053,6 +1055,7 @@ _SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 _TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
+_IMPORTED_AI_STORE_PATH = Path(_HERE) / "data" / "imported_ai_learning_store.json"
 _TICKER_MASTER_STORE_PATH = Path(_HERE) / "data" / "ticker_master_list.json"
 
 _TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "breakout")
@@ -1358,15 +1361,29 @@ def _load_tomorrow_store(force_refresh: bool = False) -> tuple[dict, str]:
     session_store = cached_store or _normalize_tomorrow_store(
         st.session_state.get("tomorrow_picks_store", default)
     )
+    local_store = _normalize_tomorrow_store(_load_local_tomorrow_store())
     sheets_ready = _get_sheet() is not None
     if sheets_ready:
-        store = _normalize_tomorrow_store(_load_picks())
+        cloud_store = _normalize_tomorrow_store(_load_picks())
         storage_mode = "cloud"
-        if (not store["picks"] and not store["notes"]) and (session_store["picks"] or session_store["notes"]):
-            store = session_store
+        if cloud_store["picks"] or cloud_store["notes"]:
+            store = cloud_store
+            try:
+                _save_local_tomorrow_store(store)
+            except Exception:
+                pass
+        elif local_store["picks"] or local_store["notes"]:
+            store = local_store
             _save_picks(store)
+        else:
+            store = session_store
+            if store["picks"] or store["notes"]:
+                _save_picks(store)
+                try:
+                    _save_local_tomorrow_store(store)
+                except Exception:
+                    pass
     else:
-        local_store = _normalize_tomorrow_store(_load_local_tomorrow_store())
         if local_store["picks"] or local_store["notes"]:
             store = local_store
             storage_mode = "local"
@@ -1382,10 +1399,15 @@ def _persist_tomorrow_store(store: dict) -> None:
     normalized = _normalize_tomorrow_store(store)
     storage_mode = "cloud" if _get_sheet() is not None else "local"
     _cache_tomorrow_store_session(normalized, storage_mode)
-    if storage_mode == "cloud":
-        _save_picks(normalized)
-    else:
+    try:
         _save_local_tomorrow_store(normalized)
+    except Exception:
+        pass
+    if storage_mode == "cloud":
+        try:
+            _save_picks(normalized)
+        except Exception:
+            pass
 
 
 def _assign_symbols_to_tomorrow_bucket(
@@ -1584,7 +1606,7 @@ def _normalize_import_mode_list(values: object) -> list[int]:
             mode_int = int(raw)
         except Exception:
             continue
-        if mode_int not in seen and mode_int > 0:
+        if mode_int not in seen and mode_int >= 0:
             modes.append(mode_int)
             seen.add(mode_int)
     return modes
@@ -1602,6 +1624,37 @@ def _normalize_import_text_list(values: object) -> list[str]:
             out.append(text)
             seen.add(text)
     return out
+
+
+def _best_import_mode_for_records(
+    records: list[dict[str, object]] | tuple[dict[str, object], ...] | None,
+    *,
+    focus_symbol: object = "",
+    fallback: object = 0,
+) -> int:
+    try:
+        focus = _normalize_tomorrow_symbol(focus_symbol)
+        if focus:
+            for record in list(records or []):
+                if _normalize_tomorrow_symbol(record.get("ticker")) != focus:
+                    continue
+                modes = [mode for mode in _normalize_import_mode_list(record.get("modes", [])) if mode > 0]
+                if modes:
+                    return int(modes[0])
+
+        positive_modes: list[int] = []
+        for record in list(records or []):
+            positive_modes.extend(
+                [mode for mode in _normalize_import_mode_list(record.get("modes", [])) if mode > 0]
+            )
+        if positive_modes:
+            return int(positive_modes[0])
+    except Exception:
+        pass
+    try:
+        return int(fallback or 0)
+    except Exception:
+        return 0
 
 
 def _sanitize_import_snapshot_value(value: object) -> object:
@@ -1738,10 +1791,173 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
     return list(records_map.values())
 
 
-def _get_imported_ai_learning_records() -> list[dict[str, object]]:
-    records = _normalize_imported_ai_learning_records(
-        st.session_state.get("imported_ai_learning_records", []),
+def _normalize_imported_ai_learning_payload(payload: object) -> dict[str, object]:
+    default = {"records": [], "updated_at": ""}
+    try:
+        if not isinstance(payload, dict):
+            return default.copy()
+        records = _normalize_imported_ai_learning_records(payload.get("records", []))
+        updated_at = str(payload.get("updated_at", "") or "")
+        return {
+            "records": records,
+            "updated_at": updated_at,
+        }
+    except Exception:
+        return default.copy()
+
+
+def _load_local_imported_ai_learning_store() -> dict[str, object]:
+    default = {"records": [], "updated_at": ""}
+    try:
+        if not _IMPORTED_AI_STORE_PATH.exists():
+            return default
+        payload = json.loads(_IMPORTED_AI_STORE_PATH.read_text(encoding="utf-8"))
+        return _normalize_imported_ai_learning_payload(payload)
+    except Exception:
+        return default
+
+
+def _save_local_imported_ai_learning_store(payload: dict[str, object]) -> bool:
+    try:
+        normalized = _normalize_imported_ai_learning_payload(payload)
+        _IMPORTED_AI_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _IMPORTED_AI_STORE_PATH.write_text(
+            json.dumps(normalized, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _load_imported_ai_learning_cloud_store() -> dict[str, object]:
+    default = {"records": [], "updated_at": ""}
+    try:
+        ws = _get_sheet()
+        if ws is None:
+            return default
+        records_json = ws.cell(2, 3).value or "[]"
+        updated_at = ws.cell(2, 4).value or ""
+        payload = json.loads(records_json)
+        return _normalize_imported_ai_learning_payload(
+            {
+                "records": payload,
+                "updated_at": updated_at,
+            }
+        )
+    except Exception:
+        return default
+
+
+def _save_imported_ai_learning_cloud_store(payload: dict[str, object]) -> bool:
+    try:
+        ws = _get_sheet()
+        if ws is None:
+            return False
+        normalized = _normalize_imported_ai_learning_payload(payload)
+        if not ws.cell(1, 3).value:
+            ws.update("C1:D1", [["imported_ai_records", "imported_ai_updated_at"]])
+        ws.update(
+            "C2:D2",
+            [[
+                json.dumps(normalized.get("records", []), ensure_ascii=False),
+                str(normalized.get("updated_at", "") or ""),
+            ]],
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _cache_imported_ai_learning_store_session(payload: dict[str, object], storage_mode: str) -> dict[str, object]:
+    normalized = _normalize_imported_ai_learning_payload(payload)
+    mode = "cloud" if str(storage_mode or "").strip().lower() == "cloud" else "local"
+    st.session_state["imported_ai_learning_records"] = list(normalized.get("records", []))
+    st.session_state["imported_ai_learning_updated_at"] = str(normalized.get("updated_at", "") or "")
+    st.session_state["imported_ai_learning_storage_mode"] = mode
+    st.session_state["imported_ai_learning_store_loaded"] = True
+    return normalized
+
+
+def _get_cached_imported_ai_learning_store() -> tuple[dict[str, object] | None, str]:
+    if not bool(st.session_state.get("imported_ai_learning_store_loaded", False)):
+        return None, ""
+    payload = {
+        "records": st.session_state.get("imported_ai_learning_records", []),
+        "updated_at": st.session_state.get("imported_ai_learning_updated_at", ""),
+    }
+    mode = str(st.session_state.get("imported_ai_learning_storage_mode", "local") or "local")
+    return _normalize_imported_ai_learning_payload(payload), ("cloud" if mode == "cloud" else "local")
+
+
+def _load_imported_ai_learning_store(force_refresh: bool = False) -> tuple[dict[str, object], str]:
+    cached_payload, cached_mode = _get_cached_imported_ai_learning_store()
+    if cached_payload is not None and not force_refresh:
+        return cached_payload, cached_mode or "local"
+
+    session_payload = cached_payload or _normalize_imported_ai_learning_payload(
+        {
+            "records": st.session_state.get("imported_ai_learning_records", _legacy_imported_ai_learning_records()),
+            "updated_at": st.session_state.get("imported_ai_learning_updated_at", ""),
+        }
     )
+    local_payload = _load_local_imported_ai_learning_store()
+    sheets_ready = _get_sheet() is not None
+    if sheets_ready:
+        cloud_payload = _load_imported_ai_learning_cloud_store()
+        if cloud_payload.get("records"):
+            payload = cloud_payload
+            storage_mode = "cloud"
+            _save_local_imported_ai_learning_store(payload)
+        elif local_payload.get("records"):
+            payload = local_payload
+            storage_mode = "cloud"
+            _save_imported_ai_learning_cloud_store(payload)
+        else:
+            payload = session_payload
+            storage_mode = "cloud"
+            if payload.get("records"):
+                _save_imported_ai_learning_cloud_store(payload)
+                _save_local_imported_ai_learning_store(payload)
+    else:
+        if local_payload.get("records"):
+            payload = local_payload
+            storage_mode = "local"
+        else:
+            payload = session_payload
+            storage_mode = "local"
+            if payload.get("records"):
+                _save_local_imported_ai_learning_store(payload)
+    return _cache_imported_ai_learning_store_session(payload, storage_mode), storage_mode
+
+
+def _persist_imported_ai_learning_store(records: list[dict[str, object]], *, updated_at: str | None = None) -> dict[str, object]:
+    normalized_records = _normalize_imported_ai_learning_records(records)
+    payload = {
+        "records": normalized_records,
+        "updated_at": (
+            datetime.now().isoformat(timespec="seconds")
+            if updated_at is None
+            else str(updated_at or "")
+        ),
+    }
+    storage_mode = "cloud" if _get_sheet() is not None else "local"
+    normalized_payload = _cache_imported_ai_learning_store_session(payload, storage_mode)
+    try:
+        _save_local_imported_ai_learning_store(normalized_payload)
+    except Exception:
+        pass
+    if storage_mode == "cloud":
+        try:
+            _save_imported_ai_learning_cloud_store(normalized_payload)
+        except Exception:
+            pass
+    return normalized_payload
+
+
+def _get_imported_ai_learning_records() -> list[dict[str, object]]:
+    payload, _storage_mode = _load_imported_ai_learning_store()
+    records = _normalize_imported_ai_learning_records(payload.get("records", []))
     if records:
         st.session_state["imported_ai_learning_records"] = records
     return records
@@ -1757,22 +1973,26 @@ def _sync_imported_ai_store_to_prediction_chart(*, focus_symbol: str | None = No
     focus = _normalize_tomorrow_symbol(focus_symbol) if focus_symbol else symbols[0]
     latest_record = records[-1] if records else {}
     latest_sources = _normalize_import_text_list(latest_record.get("sources", []))
-    latest_modes = _normalize_import_mode_list(latest_record.get("modes", []))
+    focus_mode = _best_import_mode_for_records(
+        records,
+        focus_symbol=focus,
+        fallback=st.session_state.get("mode", 0),
+    )
 
     st.session_state["prediction_chart_imported_symbols"] = symbols
     st.session_state["prediction_chart_import_origin"] = "Imported AI Stocks Basket"
-    st.session_state["prediction_chart_import_mode"] = latest_modes[0] if latest_modes else st.session_state.get("mode", 0)
+    st.session_state["prediction_chart_import_mode"] = focus_mode
     st.session_state["prediction_chart_focus_symbol"] = focus
     st.session_state["pc_loaded_symbol"] = focus
     st.session_state["prediction_chart_imported_at"] = str(datetime.now().isoformat(timespec="seconds"))
     st.session_state["prediction_chart_import_context"] = {
         "latest_sources": latest_sources,
-        "latest_modes": latest_modes,
+        "latest_modes": [focus_mode] if focus_mode > 0 else [],
         "count": len(symbols),
     }
     return {
         "symbols": symbols,
-        "mode": st.session_state.get("prediction_chart_import_mode"),
+        "mode": focus_mode,
         "origin": st.session_state.get("prediction_chart_import_origin", ""),
     }
 
@@ -1843,8 +2063,7 @@ def _store_symbols_in_imported_ai_learning(
             break
 
     merged_records = [records_map[symbol] for symbol in ordered_symbols if symbol in records_map][:40]
-    st.session_state["imported_ai_learning_records"] = merged_records
-    st.session_state["imported_ai_learning_updated_at"] = ts
+    _persist_imported_ai_learning_store(merged_records, updated_at=ts)
     return {
         "symbols": [str(record.get("ticker", "")).strip() for record in merged_records if str(record.get("ticker", "")).strip()],
         "added": added,
@@ -1926,10 +2145,10 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
         result["matched_symbols"] = matched_symbols
         result["missing_symbols"] = [sym for sym in imported if sym not in matched_symbols]
 
-        latest_mode_candidates = []
-        for record in imported_records:
-            latest_mode_candidates.extend(_normalize_import_mode_list(record.get("modes", [])))
-        mode_value = latest_mode_candidates[0] if latest_mode_candidates else st.session_state.get("mode", 0)
+        mode_value = _best_import_mode_for_records(
+            imported_records,
+            fallback=st.session_state.get("mode", 0),
+        )
         try:
             mode_int = int(mode_value)
         except Exception:
@@ -2014,20 +2233,28 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
 
 
 def _render_sidebar_imported_ai_learning_button() -> None:
-    imported = _normalize_prediction_chart_imports(
-        st.session_state.get("prediction_chart_imported_symbols", []),
-        limit=40,
-    )
+    records = _get_imported_ai_learning_records()
+    imported = [
+        str(record.get("ticker", "")).strip()
+        for record in records
+        if str(record.get("ticker", "")).strip()
+    ]
     count = len(imported)
     preview = ", ".join(imported[:4])
     if count > 4:
         preview = f"{preview} +{count - 4} more"
-    origin = str(st.session_state.get("prediction_chart_import_origin", "AI Prediction imports") or "AI Prediction imports")
+    categories = []
+    for record in records:
+        categories.extend(_normalize_import_text_list(record.get("categories", [])))
+    categories = _normalize_import_text_list(categories)
+    origin = ", ".join(categories[:3]) if categories else "Imported AI Stocks"
+    if len(categories) > 3:
+        origin = f"{origin} +{len(categories) - 3} more"
     helper_text = (
         f"Ready for self-learning: <b style='color:#ccd9e8;'>{count}</b><br>"
         f"<span style='color:#8ab4d8;'>{preview}</span>"
         if count
-        else "Import stocks into AI Prediction first, then send that imported basket into self-learning from here."
+        else "Import stocks into Imported AI Stocks first, then use this permanently saved basket for self-learning from here."
     )
     st.markdown(
         '<div style="margin-top:14px;padding:12px 12px 10px 12px;'
@@ -2088,7 +2315,7 @@ def _render_sidebar_imported_ai_learning_entry_button() -> None:
         f"Stored imported stocks: <b style='color:#ccd9e8;'>{count}</b><br>"
         f"<span style='color:#8ab4d8;'>{preview}</span>"
         if count
-        else "Import stocks into Imported AI Stocks from any Top 3 area, then open the stored self-learning basket from here."
+        else "Import stocks into Imported AI Stocks from any Top 3 area, then open the permanently saved self-learning basket from here."
     )
     st.markdown(
         '<div style="margin-top:14px;padding:12px 12px 10px 12px;'
@@ -2122,9 +2349,14 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
         "missing_symbols": [],
         "categories": [],
         "records": [],
+        "storage_mode": "local",
+        "updated_at": "",
     }
     try:
-        records = _get_imported_ai_learning_records()
+        store_payload, storage_mode = _load_imported_ai_learning_store()
+        records = _normalize_imported_ai_learning_records(store_payload.get("records", []))
+        payload["storage_mode"] = storage_mode
+        payload["updated_at"] = str(store_payload.get("updated_at", "") or "")
         imported = [
             str(record.get("ticker", "")).strip()
             for record in records
@@ -2138,11 +2370,10 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
         payload["categories"] = _normalize_import_text_list(categories)
         if payload["categories"]:
             payload["origin"] = ", ".join(payload["categories"])
-        latest_modes = []
-        for record in records:
-            latest_modes.extend(_normalize_import_mode_list(record.get("modes", [])))
-        if latest_modes:
-            payload["mode"] = latest_modes[0]
+        payload["mode"] = _best_import_mode_for_records(
+            records,
+            fallback=payload.get("mode", st.session_state.get("mode", 0)),
+        )
         if not imported:
             return payload
 
@@ -2245,6 +2476,7 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
             record_categories = _normalize_import_text_list(record.get("categories", []))
             record_sources = _normalize_import_text_list(record.get("sources", []))
             record_modes = _normalize_import_mode_list(record.get("modes", []))
+            visible_modes = [mode for mode in record_modes if mode > 0]
             stored_state = (
                 "Live Scan" if symbol in scan_map
                 else "Imported Snapshot" if snapshot_row
@@ -2255,7 +2487,7 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
                     "Ticker": symbol,
                     "Categories": " | ".join(record_categories) if record_categories else "-",
                     "Sources": " | ".join(record_sources[:3]) if record_sources else "-",
-                    "Modes": " | ".join([f"M{mode}" for mode in record_modes]) if record_modes else "-",
+                    "Modes": " | ".join([f"M{mode}" for mode in visible_modes]) if visible_modes else "-",
                     "Imported At": str(record.get("last_imported_at", "") or "-").replace("T", " "),
                     "Stored Data": stored_state,
                     "Sector": str(source_row.get("Sector", "-") or "-"),
@@ -2313,7 +2545,7 @@ def render_imported_ai_learning_panel() -> None:
         st.markdown('<h2>Imported AI Stocks</h2>', unsafe_allow_html=True)
         st.markdown(
             '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-            'This screen shows the imported AI stocks already stored in your session, their saved scan or snapshot data, '
+            'This screen shows the imported AI stocks already saved in permanent storage, their saved scan or snapshot data, '
             'their import category/source, and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine.</div>',
             unsafe_allow_html=True,
         )
@@ -2327,11 +2559,16 @@ def render_imported_ai_learning_panel() -> None:
         _mode_int = int(_mode_value or 0)
     except Exception:
         _mode_int = 0
-    _mode_label = f"Mode M{_mode_int}" if _mode_int else "Mode -"
+    _mode_label = f"Mode M{_mode_int}" if _mode_int > 0 else "Mixed / Imported"
     _category_text = ", ".join(list(panel.get("categories", []) or [])[:4]) or "Imported AI Stocks"
+    _storage_mode = str(panel.get("storage_mode", "local") or "local")
+    _storage_label = "Cloud + Local backup" if _storage_mode == "cloud" else "Local persistent store"
+    _updated_at = str(panel.get("updated_at", "") or "").strip()
     st.caption(
-        f"Categories: {_category_text} | {_mode_label} | Imported stocks: {len(imported)}"
+        f"Categories: {_category_text} | {_mode_label} | Storage: {_storage_label} | Imported stocks: {len(imported)}"
     )
+    if _updated_at:
+        st.caption(f"Last saved: {_updated_at}")
 
     _m1, _m2, _m3, _m4 = st.columns(4)
     with _m1:
@@ -2357,11 +2594,15 @@ def render_imported_ai_learning_panel() -> None:
             if list(summary.get("symbols", []) or []):
                 _activate_sidebar_panel("pred_chart_show_panel")
             else:
-                st.info("No imported AI stocks are stored yet.")
+                st.info("No imported AI stocks are stored yet in the permanent basket.")
     with _action3:
         if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
+            _persist_imported_ai_learning_store([], updated_at="")
             for key in (
                 "imported_ai_learning_records",
+                "imported_ai_learning_storage_mode",
+                "imported_ai_learning_store_loaded",
+                "self_learning_imported_symbols",
                 "prediction_chart_imported_symbols",
                 "prediction_chart_import_origin",
                 "prediction_chart_import_mode",
@@ -2396,7 +2637,7 @@ def render_imported_ai_learning_panel() -> None:
             st.info(message)
 
     if not imported:
-        st.info("No imported AI stocks are stored yet. Add some symbols from a Mode Top 3, Breakout Radar, CSV Breakout, or Live Breakout Pulse panel first.")
+        st.info("No imported AI stocks are stored yet in the permanent basket. Add some symbols from a Mode Top 3, Breakout Radar, CSV Breakout, or Live Breakout Pulse panel first.")
         return
 
     missing_symbols = list(panel.get("missing_symbols", []) or [])
@@ -3039,190 +3280,6 @@ def _aura_factor_row(label: str, value: str, color: str) -> str:
     )
 
 def render_stock_aura_panel() -> None:
-    """Fully self-contained Stock Aura panel — no external file needed."""
-    if not st.session_state.get("aura_show_panel", False):
-        return
-
-    st.markdown("<hr>", unsafe_allow_html=True)
-
-    # Header
-    st.markdown(
-        '<h2 style="font-family:\'Syne\',sans-serif;font-weight:900;font-size:22px;'
-        'color:#ccd9e8;margin-bottom:4px;">🔮 Stock Aura</h2>'
-        '<div style="font-size:12px;color:#4a6480;margin-bottom:18px;">'
-        "Single stock decision engine — a trader's brain, not a screener</div>",
-        unsafe_allow_html=True,
-    )
-
-    # TT banner inside Aura
-    _aura_tt = st.session_state.get("aura_tt_date")
-    if _aura_tt is not None:
-        try:
-            _aura_tt_str = _aura_tt.strftime("%d %b %Y")
-        except Exception:
-            _aura_tt_str = str(_aura_tt)
-        st.markdown(
-            f'<div style="background:#1a0a00;border:1.5px solid #f0b429;border-radius:8px;'
-            f'padding:8px 14px;margin-bottom:14px;font-size:12px;color:#f0b429;">'
-            f'🕰️ <b>TIME TRAVEL ACTIVE</b> — Evaluating {_aura_tt_str} post-market · '
-            f'No future data used</div>',
-            unsafe_allow_html=True,
-        )
-
-    # Input row
-    configure_nse_stock_search(_get_cached_nse_tickers())
-    c_form, c_cls = st.columns([4, 1])
-    with c_form:
-        with st.form("stock_aura_form", clear_on_submit=False):
-            c_in, c_btn = st.columns([3, 1])
-            with c_in:
-                ticker_raw = render_nse_stock_input(
-                    "Stock Symbol",
-                    key="aura_ticker_input",
-                    placeholder="e.g. RELIANCE or search company name",
-                    label_visibility="collapsed",
-                )
-            with c_btn:
-                analyze_clicked = st.form_submit_button(
-                    "🧠 Analyze Aura",
-                    width="stretch",
-                )
-    with c_cls:
-        if st.button("✕ Close", key="aura_close_btn"):
-            st.session_state["aura_show_panel"] = False
-            st.rerun()
-
-    if not (analyze_clicked and ticker_raw.strip()):
-        return
-
-    sym = ticker_raw.strip().upper().replace(".NS", "")
-    _spin = (
-        f"🕰️ Historical aura for {sym} ({_aura_tt_str})…"
-        if _aura_tt else f"🔮 Reading aura for {sym}…"
-    )
-    with st.spinner(_spin):
-        df = _aura_fetch(sym)
-
-    if df is None or df.empty:
-        st.error(
-            f"❌ No data for **{sym}**. Check the symbol "
-            "(e.g. RELIANCE, not RELIANCE.NS) and try again."
-        )
-        return
-
-    mb = dict(st.session_state.get("market_bias_result") or {})
-    if _aura_tt and not mb.get("bias"):
-        mb["bias"] = f"Historical ({_aura_tt_str}) — run Market Bias for that date"
-
-    res = _aura_engine(df, sym, mb)
-    vc  = res["verdict_color"]
-
-    # ── Verdict card ─────────────────────────────────────────────────
-    st.markdown(
-        f'<div style="background:#0b1017;border:2px solid {vc};border-radius:14px;'
-        f'padding:20px 24px;margin:12px 0 20px;">'
-        f'<div style="font-size:13px;color:#4a6480;letter-spacing:1px;'
-        f'text-transform:uppercase;margin-bottom:4px;">🔮 STOCK AURA RESULT</div>'
-        f'<div style="font-family:\'Syne\',sans-serif;font-size:26px;font-weight:800;'
-        f'color:#ccd9e8;margin-bottom:2px;">{res["symbol"]}</div>'
-        f'<div style="font-size:11px;color:#4a6480;margin-bottom:14px;">'
-        f'₹{res["price"]:.2f} &nbsp;|&nbsp; RSI {res["rsi"]:.0f} &nbsp;|&nbsp; '
-        f'Vol {res["vol_ratio"]:.1f}× &nbsp;|&nbsp; EMA20 {res["delta_ema20"]:+.1f}% '
-        f'&nbsp;|&nbsp; 5D {res["ret_5d"]:+.1f}%</div>'
-        f'<div style="font-family:\'Syne\',sans-serif;font-size:22px;font-weight:900;'
-        f'color:{vc};margin-bottom:10px;">{res["verdict"]}</div>'
-        f'Timing: {_aura_timing_badge(res["timing"], vc)}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-    col_l, col_r = st.columns([3, 2])
-
-    # ── Why / Warnings ────────────────────────────────────────────────
-    with col_l:
-        if res["pos"]:
-            st.markdown(
-                '<div style="background:#0f1923;border:1px solid #1e3a5f;'
-                'border-radius:10px;padding:14px 16px;margin-bottom:12px;">'
-                '<div style="font-size:11px;font-weight:700;color:#00d4a8;'
-                'letter-spacing:.5px;margin-bottom:8px;">WHY ✔</div>' +
-                "".join(
-                    f'<div style="padding:5px 0;font-size:12px;color:#ccd9e8;">'
-                    f'<span style="color:#00d4a8;font-weight:700;">✔</span> &nbsp;{t}</div>'
-                    for t in res["pos"]
-                ) + '</div>',
-                unsafe_allow_html=True,
-            )
-
-        issues = [(t, "#f0b429") for t in res["warn"]] + [(t, "#ff4d6d") for t in res["rej"]]
-        if issues:
-            st.markdown(
-                '<div style="background:#0f1923;border:1px solid #3a1e1e;'
-                'border-radius:10px;padding:14px 16px;margin-bottom:12px;">'
-                '<div style="font-size:11px;font-weight:700;color:#ff4d6d;'
-                'letter-spacing:.5px;margin-bottom:8px;">WARNINGS / REJECTIONS ✖</div>' +
-                "".join(
-                    f'<div style="padding:5px 0;font-size:12px;color:#ccd9e8;">'
-                    f'<span style="color:{c};font-weight:700;">✖</span> &nbsp;{t}</div>'
-                    for t, c in issues
-                ) + '</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div style="background:#0f1923;border:1px solid #1e3a5f;'
-                'border-radius:10px;padding:14px 16px;font-size:12px;color:#00d4a8;">'
-                'Warnings: None ✔</div>',
-                unsafe_allow_html=True,
-            )
-
-    # ── Factor scorecard ──────────────────────────────────────────────
-    with col_r:
-        def _g(ok, lt="PASS", lf="FAIL"):
-            return (lt, "#00d4a8") if ok else (lf, "#ff4d6d")
-
-        tl, tc = _g(res["trend_ok"],     "ALIGNED",   "WEAK")
-        sc2    = "#00d4a8" if res["setup_type"] != "None" else "#ff4d6d"
-        vl, vc2 = _g(res["volume_ok"],   "STRONG",    "WEAK")
-        ml, mc2 = _g(res["momentum_ok"], "HEALTHY",   "STRETCHED")
-        el, ec  = _g(res["entry_ok"],    "GOOD",      "EXTENDED")
-        slc     = {"Tight":"#00d4a8","Medium":"#f0b429","Poor":"#ff4d6d"}.get(res["sl_quality"],"#4a6480")
-        rrl, rrc = _g(res["rr_ok"],
-                      f'{res["rr_ratio"]:.1f}:1 ✔',
-                      f'{res["rr_ratio"]:.1f}:1 ✖')
-
-        factors = (
-            _aura_factor_row("Trend",        tl,   tc)  +
-            _aura_factor_row("Setup",        res["setup_type"], sc2) +
-            _aura_factor_row("Volume",       f'{res["vol_ratio"]:.1f}× — {vl}', vc2) +
-            _aura_factor_row("Momentum RSI", f'{res["rsi"]:.0f} — {ml}', mc2) +
-            _aura_factor_row("Entry Quality",f'{res["delta_ema20"]:+.1f}% — {el}', ec) +
-            _aura_factor_row("Stop Quality", res["sl_quality"], slc) +
-            _aura_factor_row("Risk-Reward",  rrl,  rrc)
-        )
-        st.markdown(
-            '<div style="background:#0f1923;border:1px solid #1e3a5f;'
-            'border-radius:10px;padding:14px 16px;margin-bottom:12px;">'
-            '<div style="font-size:11px;font-weight:700;color:#8ab4d8;'
-            'letter-spacing:.5px;margin-bottom:8px;">FACTOR SCORECARD</div>'
-            + factors + '</div>',
-            unsafe_allow_html=True,
-        )
-        if res["market_note"]:
-            nc = "#f0b429" if "caution" in res["market_note"].lower() else "#4a6480"
-            st.markdown(
-                f'<div style="font-size:11px;color:{nc};padding:4px 0;">'
-                f'🌐 {res["market_note"]}</div>',
-                unsafe_allow_html=True,
-            )
-
-    st.markdown(
-        '<div style="font-size:10px;color:#2a3f58;margin-top:12px;text-align:center;">'
-        '⚠️ Stock Aura is for educational purposes only. Not financial advice.</div>',
-        unsafe_allow_html=True,
-    )
-
-def render_stock_aura_panel() -> None:
     """Render the Stock Aura panel with persistent result actions."""
     if not st.session_state.get("aura_show_panel", False):
         return
@@ -3443,587 +3500,8 @@ def render_stock_aura_panel() -> None:
     )
 
 
-def render_tomorrow_picks_panel() -> None:
-    if not st.session_state.get("tomorrow_picks_show_panel", False):
-        return
-
-    store, storage_mode = _load_tomorrow_store()
-    saved_picks = list(store.get("picks", []))
-    saved_notes = str(store.get("notes", "") or "")
-    saved_count = len(saved_picks)
-    slots_left = max(0, 20 - saved_count)
-    notes_words = len(saved_notes.split()) if saved_notes.strip() else 0
-    notes_feedback = st.session_state.get("tmr_notes_feedback", {}) or {}
-    notes_feedback_kind = str(notes_feedback.get("kind", "") or "").strip().lower()
-    notes_feedback_msg = str(notes_feedback.get("message", "") or "").strip()
-    notes_feedback_at = str(notes_feedback.get("at", "") or "").strip()
-    if notes_feedback_kind not in {"success", "error", "info"}:
-        notes_feedback_kind = "info"
-
-    if st.session_state.get("tmr_notes_area") != store["notes"]:
-        st.session_state["tmr_notes_area"] = store["notes"]
-
-    sync_caption = "Saved permanently across all devices until you delete them" if storage_mode == "cloud" else "Saved permanently on this machine until you delete them"
-    lead_copy = (
-        "Add stocks once and keep them saved until you remove them manually."
-        if storage_mode == "cloud"
-        else "Add stocks once and keep them saved locally until you remove them manually."
-    )
-    status_tone = "cloud" if storage_mode == "cloud" else "local"
-    status_copy = (
-        "Cloud sync active via Google Sheets. Picks stay saved until deleted."
-        if storage_mode == "cloud"
-        else "Local persistence active on this machine. Picks stay saved until deleted."
-    )
-    notes_status_value = "Verified Saved" if saved_notes.strip() else "Empty"
-    notes_status_caption = f"{notes_words} word{'s' if notes_words != 1 else ''}" if saved_notes.strip() else "No saved note yet"
-    storage_label = "Cloud Sync" if storage_mode == "cloud" else "Local Save"
-
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) {
-          background:
-            radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 32%),
-            radial-gradient(circle at top left, rgba(0,148,255,0.10), transparent 28%),
-            linear-gradient(180deg, rgba(9,13,20,0.96), rgba(5,8,13,0.99));
-          border:1px solid rgba(88,120,154,0.34);
-          border-radius:18px;
-          padding:24px 24px 20px 24px;
-          box-shadow:
-            0 22px 48px rgba(0,0,0,0.42),
-            inset 0 1px 0 rgba(255,255,255,0.04),
-            inset 0 0 0 1px rgba(0,148,255,0.05);
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor),
-        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) {
-          background:
-            linear-gradient(180deg, rgba(14,20,30,0.94), rgba(9,14,22,0.98));
-          border:1px solid rgba(61,86,114,0.42);
-          border-radius:16px;
-          padding:18px 18px 20px 18px;
-          height:100%;
-          box-shadow:
-            inset 0 0 0 1px rgba(36,53,80,0.24),
-            0 16px 34px rgba(0,0,0,0.20);
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] input,
-        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
-          background:rgba(9,17,27,0.94) !important;
-          color:#e0e8f0 !important;
-          border:1px solid rgba(56,86,116,0.52) !important;
-          box-shadow:none !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-left-panel-anchor) div[data-testid="stTextInput"] label p,
-        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] label p {
-          color:#dbe8f6 !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-notes-panel-anchor) div[data-testid="stTextArea"] textarea {
-          min-height:400px !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) div[data-testid="stAlert"] {
-          background:linear-gradient(90deg, rgba(79,67,18,0.44), rgba(126,109,31,0.30)) !important;
-          border:1px solid rgba(240,180,41,0.42) !important;
-          border-left:3px solid #f0b429 !important;
-          border-radius:12px !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-panel-anchor) div[data-testid="stAlert"] * {
-          color:#fff2bf !important;
-        }
-        .tmr-status-pill {
-          display:flex;
-          align-items:center;
-          gap:10px;
-          border-radius:12px;
-          padding:12px 16px;
-          margin:0 0 20px 0;
-          font-size:13px;
-          line-height:1.45;
-          border:1px solid rgba(96,132,167,0.30);
-          color:#d8e6f4;
-          background:linear-gradient(90deg, rgba(13,23,34,0.94), rgba(11,18,28,0.98));
-          box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02);
-        }
-        .tmr-status-pill strong {
-          color:#f4f8ff;
-        }
-        .tmr-status-pill-local {
-          border-color:rgba(240,180,41,0.34);
-          background:linear-gradient(90deg, rgba(46,38,12,0.62), rgba(20,24,18,0.94));
-        }
-        .tmr-status-pill-local .tmr-status-icon {
-          color:#f0b429;
-        }
-        .tmr-status-pill-cloud {
-          border-color:rgba(0,212,168,0.34);
-          background:linear-gradient(90deg, rgba(7,40,34,0.68), rgba(10,21,30,0.96));
-        }
-        .tmr-status-pill-cloud .tmr-status-icon {
-          color:#00d4a8;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-remove-scope) .stButton > button {
-          border-color:#ff4d6d !important;
-          color:#ff4d6d !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-remove-scope) .stButton > button:hover {
-          background:#ff4d6d !important;
-          color:#060a0f !important;
-          box-shadow:0 0 18px rgba(255,77,109,0.35) !important;
-        }
-        div[data-testid="stVerticalBlock"]:has(.tmr-add-scope) .stButton > button {
-          white-space:nowrap !important;
-          letter-spacing:0.2px !important;
-          padding:12px 16px !important;
-          min-height:54px !important;
-        }
-        .tmr-main-title {
-          font-family:'Syne',sans-serif;
-          font-size:48px;
-          font-weight:800;
-          letter-spacing:-1px;
-          color:#f0b429;
-          margin:0 0 8px 0;
-        }
-        .tmr-panel-lead {
-          font-size:14px;
-          color:#8eb0cf;
-          margin-bottom:18px;
-        }
-        .tmr-metric-grid {
-          display:grid;
-          grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
-          gap:14px;
-          margin:0 0 22px 0;
-        }
-        .tmr-metric-card {
-          border:1px solid rgba(69,102,136,0.34);
-          border-radius:15px;
-          padding:16px 16px 14px 16px;
-          background:
-            linear-gradient(180deg, rgba(12,18,28,0.96), rgba(8,13,22,0.98));
-          box-shadow:
-            inset 0 0 0 1px rgba(255,255,255,0.03),
-            0 14px 28px rgba(0,0,0,0.18);
-        }
-        .tmr-metric-label {
-          font-size:11px;
-          letter-spacing:1px;
-          text-transform:uppercase;
-          color:#7d9abb;
-          margin-bottom:8px;
-        }
-        .tmr-metric-value {
-          font-family:'Syne',sans-serif;
-          font-size:28px;
-          font-weight:800;
-          line-height:1;
-          color:#f4f8ff;
-          margin-bottom:6px;
-        }
-        .tmr-metric-caption {
-          font-size:12px;
-          color:#97b1cc;
-          line-height:1.45;
-        }
-        .tmr-metric-value-accent {
-          color:#00d4a8;
-        }
-        .tmr-metric-value-warn {
-          color:#f0b429;
-        }
-        .tmr-picks-toolbar {
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          gap:12px;
-          flex-wrap:wrap;
-          margin:0 0 16px 0;
-          padding:12px 14px;
-          border:1px solid rgba(50,81,112,0.42);
-          border-radius:14px;
-          background:linear-gradient(180deg, rgba(11,18,27,0.92), rgba(8,13,20,0.98));
-        }
-        .tmr-picks-toolbar-main {
-          font-size:13px;
-          color:#dce7f4;
-          font-weight:700;
-        }
-        .tmr-picks-toolbar-sub {
-          font-size:11px;
-          color:#88a6c4;
-          margin-top:3px;
-        }
-        .tmr-slot-pill {
-          display:inline-flex;
-          align-items:center;
-          gap:8px;
-          padding:8px 12px;
-          border-radius:999px;
-          border:1px solid rgba(240,180,41,0.35);
-          color:#ffe39a;
-          background:rgba(64,49,15,0.48);
-          font-size:11px;
-          font-weight:700;
-          letter-spacing:0.5px;
-          text-transform:uppercase;
-        }
-        .tmr-pick-row {
-          display:flex;
-          align-items:center;
-          gap:14px;
-          background:linear-gradient(180deg, rgba(10,21,32,0.98), rgba(8,16,25,0.98));
-          border:1px solid rgba(50,79,108,0.34);
-          border-left:3px solid #00d4a8;
-          border-radius:14px;
-          padding:14px 16px;
-          margin-bottom:10px;
-          box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02);
-        }
-        .tmr-pick-badge {
-          width:34px;
-          height:34px;
-          border-radius:50%;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          font-size:12px;
-          font-weight:800;
-          color:#06111a;
-          background:linear-gradient(180deg, #00d4a8, #00a88d);
-          flex:0 0 34px;
-        }
-        .tmr-pick-symbol {
-          color:#00d4a8;
-          font-weight:800;
-          font-size:18px;
-          letter-spacing:0.3px;
-        }
-        .tmr-pick-meta {
-          font-size:11px;
-          color:#8da9c5;
-          margin-top:4px;
-        }
-        .tmr-section-title {
-          font-family:'Syne',sans-serif;
-          font-size:34px;
-          font-weight:800;
-          line-height:1.12;
-          letter-spacing:-0.7px;
-          color:#f4f8ff;
-          margin-bottom:8px;
-          text-shadow:0 8px 24px rgba(0,0,0,0.18);
-        }
-        .tmr-section-caption {
-          font-size:13px;
-          color:#9ab4d0;
-          margin:0 0 22px 0;
-        }
-        .tmr-notes-title {
-          font-family:'Syne',sans-serif;
-          font-size:28px;
-          font-weight:800;
-          color:#f4f8ff;
-          letter-spacing:-0.5px;
-          margin-bottom:8px;
-        }
-        .tmr-notes-caption {
-          font-size:12px;
-          color:#8eaed0;
-          margin:0 0 14px 0;
-        }
-        .tmr-notes-status {
-          border-radius:13px;
-          padding:12px 14px;
-          margin:0 0 14px 0;
-          border:1px solid rgba(59,90,120,0.38);
-          font-size:12px;
-          line-height:1.5;
-          background:linear-gradient(180deg, rgba(10,17,26,0.96), rgba(8,13,20,0.98));
-          color:#dce7f4;
-        }
-        .tmr-notes-status strong {
-          color:#f4f8ff;
-        }
-        .tmr-notes-status-success {
-          border-color:rgba(0,212,168,0.34);
-          background:linear-gradient(180deg, rgba(8,36,30,0.86), rgba(7,16,23,0.98));
-        }
-        .tmr-notes-status-error {
-          border-color:rgba(255,77,109,0.34);
-          background:linear-gradient(180deg, rgba(48,18,25,0.88), rgba(11,14,22,0.98));
-        }
-        .tmr-notes-status-info {
-          border-color:rgba(240,180,41,0.30);
-          background:linear-gradient(180deg, rgba(50,39,14,0.82), rgba(10,15,24,0.98));
-        }
-        .tmr-notes-helper {
-          font-size:11px;
-          color:#7e9aba;
-          margin:10px 0 0 0;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.container():
-        st.markdown('<div class="tmr-panel-anchor"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="tmr-main-title">📈 Tomorrow\'s Picks</div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="tmr-panel-lead">'
-            f'{lead_copy}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="tmr-status-pill tmr-status-pill-'
-            f'{status_tone}">'
-            '<span class="tmr-status-icon">'
-            f'{"☁" if storage_mode == "cloud" else "💾"}</span>'
-            f'<span><strong>{status_copy}</strong> '
-            f'{"Changes sync across sessions and devices." if storage_mode == "cloud" else "You can still enable Google Sheets later for cross-device sync."}</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            (
-                '<div class="tmr-metric-grid">'
-                f'<div class="tmr-metric-card"><div class="tmr-metric-label">Saved Picks</div>'
-                f'<div class="tmr-metric-value tmr-metric-value-accent">{saved_count}</div>'
-                f'<div class="tmr-metric-caption">Stocks pinned in your permanent list</div></div>'
-                f'<div class="tmr-metric-card"><div class="tmr-metric-label">Slots Left</div>'
-                f'<div class="tmr-metric-value tmr-metric-value-warn">{slots_left}</div>'
-                f'<div class="tmr-metric-caption">Up to 20 total saved picks</div></div>'
-                f'<div class="tmr-metric-card"><div class="tmr-metric-label">Notes</div>'
-                f'<div class="tmr-metric-value">{notes_status_value}</div>'
-                f'<div class="tmr-metric-caption">{notes_status_caption}</div></div>'
-                f'<div class="tmr-metric-card"><div class="tmr-metric-label">Storage</div>'
-                f'<div class="tmr-metric-value">{storage_label}</div>'
-                f'<div class="tmr-metric-caption">{sync_caption}</div></div>'
-                '</div>'
-            ),
-            unsafe_allow_html=True,
-        )
-
-        left_col, right_col = st.columns([3, 2], gap="large")
-
-        with left_col:
-            with st.container():
-                st.markdown('<div class="tmr-left-panel-anchor"></div>', unsafe_allow_html=True)
-                st.markdown(
-                    '<div class="tmr-section-title">📈 Tomorrow\'s Trending Stocks</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    f'<div class="tmr-section-caption">📡 {sync_caption}</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    (
-                        '<div class="tmr-picks-toolbar">'
-                        '<div>'
-                        '<div class="tmr-picks-toolbar-main">Permanent picks list</div>'
-                        '<div class="tmr-picks-toolbar-sub">Anything saved here stays until you remove it yourself.</div>'
-                        '</div>'
-                        f'<div class="tmr-slot-pill">{saved_count}/20 saved</div>'
-                        '</div>'
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-                with st.form("tmr_add_form", clear_on_submit=True):
-                    add_input_col, add_btn_col = st.columns([4, 1.3], gap="small")
-                    with add_input_col:
-                        new_symbol = st.text_input(
-                            "List Your Trending Stocks",
-                            key="tmr_symbol_input",
-                            placeholder="e.g. RELIANCE",
-                        )
-                    with add_btn_col:
-                        st.markdown('<div class="tmr-add-scope"></div>', unsafe_allow_html=True)
-                        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                        add_clicked = st.form_submit_button(
-                            "＋ Add",
-                            width="stretch",
-                            disabled=len(store["picks"]) >= 20,
-                        )
-
-                if add_clicked:
-                    symbol = _normalize_tomorrow_symbol(new_symbol)
-                    if symbol:
-                        _save_result = _save_symbols_to_tomorrow_store([symbol])
-                        if _save_result["added"]:
-                            st.rerun()
-                        elif _save_result["limit_reached"]:
-                            st.warning("Maximum 20 stocks reached. Remove one before adding a new symbol.")
-                        else:
-                            st.info(f"{symbol} is already saved.")
-
-                if len(store["picks"]) >= 20:
-                    st.caption("Maximum 20 stocks reached.")
-
-                if not store["picks"]:
-                    st.markdown(
-                        '<div style="font-size:13px;color:#4a6480;padding:18px 0 8px 0;">'
-                        'No stocks added yet.</div>',
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    for idx, symbol in enumerate(store["picks"]):
-                        with st.container():
-                            st.markdown('<div class="tmr-remove-scope"></div>', unsafe_allow_html=True)
-                            card_col, remove_col = st.columns([6, 1], gap="small")
-                            with card_col:
-                                st.markdown(
-                                    f'<div class="tmr-pick-row">'
-                                    f'<div class="tmr-pick-badge">{idx + 1}</div>'
-                                    f'<div><div class="tmr-pick-symbol">{html.escape(symbol)}</div>'
-                                    f'<div class="tmr-pick-meta">Saved permanently until you delete this stock</div></div>'
-                                    f'</div>',
-                                    unsafe_allow_html=True,
-                                )
-                            with remove_col:
-                                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-                                remove_clicked = st.button(
-                                    "✕",
-                                    key=f"tmr_remove_{idx}",
-                                    width="stretch",
-                                )
-                            if remove_clicked:
-                                del store["picks"][idx]
-                                _persist_tomorrow_store(store)
-                                st.rerun()
-
-        with right_col:
-            with st.container():
-                st.markdown('<div class="tmr-notes-panel-anchor"></div>', unsafe_allow_html=True)
-                st.markdown(
-                    '<div class="tmr-notes-title">Notes</div>',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    '<div class="tmr-notes-caption">Keep your thesis, levels, risks, and reminders here. Notes stay saved with your picks.</div>',
-                    unsafe_allow_html=True,
-                )
-                if notes_feedback_msg:
-                    st.markdown(
-                        (
-                            f'<div class="tmr-notes-status tmr-notes-status-{notes_feedback_kind}">'
-                            f'<strong>{html.escape(notes_feedback_msg)}</strong>'
-                            f'{f"<br><span>Checked at {html.escape(notes_feedback_at)}</span>" if notes_feedback_at else ""}'
-                            '</div>'
-                        ),
-                        unsafe_allow_html=True,
-                    )
-                else:
-                    _default_note_status = (
-                        "Saved note is available and ready to edit."
-                        if saved_notes.strip()
-                        else "No saved note yet. Add one and click Save Notes to persist it."
-                    )
-                    st.markdown(
-                        (
-                            '<div class="tmr-notes-status tmr-notes-status-info">'
-                            f'<strong>{_default_note_status}</strong>'
-                            '<br><span>The panel verifies storage after every note save.</span>'
-                            '</div>'
-                        ),
-                        unsafe_allow_html=True,
-                    )
-                with st.form("tmr_notes_form", clear_on_submit=False):
-                    notes_value = st.text_area(
-                        "Notes",
-                        key="tmr_notes_area",
-                        height=400,
-                        placeholder="Example: Breakout above 20D high, watch volume confirmation, invalidation below EMA20...",
-                        label_visibility="collapsed",
-                    )
-                    notes_btn_col, notes_reset_col = st.columns(2, gap="small")
-                    with notes_btn_col:
-                        save_notes_clicked = st.form_submit_button(
-                            "Save Notes",
-                            width="stretch",
-                        )
-                    with notes_reset_col:
-                        reset_notes_clicked = st.form_submit_button(
-                            "Revert Saved",
-                            width="stretch",
-                        )
-                if reset_notes_clicked:
-                    st.session_state["tmr_notes_area"] = saved_notes
-                    _set_tomorrow_notes_feedback("info", "Reverted notes back to the last saved version.")
-                    st.rerun()
-                if save_notes_clicked:
-                    if notes_value == store["notes"]:
-                        _set_tomorrow_notes_feedback("info", "Notes already match the saved version.")
-                    else:
-                        store["notes"] = notes_value
-                        _persist_tomorrow_store(store)
-                        _verified, _verified_mode = _verify_tomorrow_notes_saved(notes_value)
-                        if _verified:
-                            _target_name = "Google Sheets" if _verified_mode == "cloud" else "local storage"
-                            _set_tomorrow_notes_feedback("success", f"Notes saved and verified in {_target_name}.")
-                        else:
-                            _set_tomorrow_notes_feedback("error", "Save was attempted, but verification did not confirm the notes in storage.")
-                    st.rerun()
-                st.markdown(
-                    '<div class="tmr-notes-helper">Tip: Save Notes after any change. The panel will confirm whether the note was really written.</div>',
-                    unsafe_allow_html=True,
-                )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button(
-            "Close",
-            key="tmr_picks_close_btn",
-            width="stretch",
-            on_click=_close_tomorrow_picks_panel,
-        )
 
 
-def render_tomorrow_picks_ticker_strip() -> None:
-    """Render a news-style rolling ticker using Tomorrow's Picks symbols."""
-    store, _storage_mode = _load_tomorrow_store()
-    picks = [
-        str(symbol).strip().upper()
-        for symbol in store.get("picks", [])
-        if str(symbol).strip()
-    ]
-
-    if not picks:
-        picks = ["ADD STOCKS IN TOMORROW'S PICKS PANEL TO START THE LIVE TICKER"]
-
-    if len(picks) == 1:
-        ticker_items = picks * 6
-    elif len(picks) == 2:
-        ticker_items = picks * 4
-    elif len(picks) == 3:
-        ticker_items = picks * 3
-    else:
-        ticker_items = picks
-
-    sequence_html = "".join(
-        (
-            f'<span class="tmr-roll-item">{html.escape(symbol)}</span>'
-            '<span class="tmr-roll-sep">•</span>'
-        )
-        for symbol in ticker_items
-    )
-    duration_s = max(18, min(48, int(len(" ".join(ticker_items)) * 0.42) + 8))
-
-    st.markdown(
-        (
-            '<div class="tmr-roll-shell">'
-            '<div class="tmr-roll-label">Tomorrow&apos;s Picks</div>'
-            '<div class="tmr-roll-viewport">'
-            f'<div class="tmr-roll-track" style="--tmr-roll-duration:{duration_s}s;">'
-            f'<div class="tmr-roll-sequence">{sequence_html}</div>'
-            f'<div class="tmr-roll-sequence" aria-hidden="true">{sequence_html}</div>'
-            '</div>'
-            '</div>'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
 
 _STOCK_AURA_OK = True   # always True — no external dependency
 
@@ -5790,10 +5268,6 @@ def _save_tickers_to_gsheets(tickers: list) -> None:
         import gspread
         from google.oauth2.service_account import Credentials
 
-        _SCOPES = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
         creds = Credentials.from_service_account_info(
             dict(st.secrets["gcp_service_account"]),
             scopes=_SCOPES,
@@ -5830,10 +5304,6 @@ def fetch_nse_tickers() -> list:
         import gspread
         from google.oauth2.service_account import Credentials
 
-        _SCOPES = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ]
         creds = Credentials.from_service_account_info(
             dict(st.secrets["gcp_service_account"]),
             scopes=_SCOPES,
@@ -5899,8 +5369,10 @@ def fetch_nse_tickers() -> list:
     if best_known:
         st.session_state["_ticker_master_list"] = best_known
         _save_local_ticker_master(best_known)
-        if len(best_known) >= _TICKER_GOOD_COUNT:
+        _prev_gs_count = int(st.session_state.get("_gsheets_saved_ticker_count", 0) or 0)
+        if len(best_known) >= _TICKER_GOOD_COUNT and len(best_known) > _prev_gs_count:
             _save_tickers_to_gsheets(best_known)
+            st.session_state["_gsheets_saved_ticker_count"] = len(best_known)
 
     return best_known
 
@@ -6745,6 +6217,11 @@ def _render_scan_diagnostics_panel() -> None:
     scan_filtered = int(report.get("scan_filtered", 0) or 0)
     reasons = report.get("reasons", {}) if isinstance(report.get("reasons"), dict) else {}
     failed_tickers = report.get("failed_tickers", [])
+    low_quality = 0
+    try:
+        low_quality = len(_scan_diag.get_low_quality_tickers())
+    except Exception:
+        low_quality = int(reasons.get("LOW_QUALITY", 0) or 0)
     scan_mode = st.session_state.get("_scan_diag_mode")
     scan_stamp = st.session_state.get("_scan_diag_scan_time", st.session_state.get("scan_time", "—"))
 
@@ -6760,12 +6237,13 @@ def _render_scan_diagnostics_panel() -> None:
         else f"Diagnostics · {scan_stamp}"
     )
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Attempted", f"{attempted:,}")
     c2.metric("Signals Found", f"{succeeded:,}")
     c3.metric("Data Failed", f"{failed_data:,}")
     c4.metric("Scan Filtered", f"{scan_filtered:,}")
     c5.metric("Data OK", f"{report.get('data_ok_pct', 0.0):.1f}%")
+    c6.metric("Low Quality", f"{low_quality:,}")
 
     with st.expander("Failure Breakdown", expanded=False):
         data_problem_reasons = {
@@ -6776,6 +6254,7 @@ def _render_scan_diagnostics_panel() -> None:
             "ZERO_VOLUME",
             "NAN_INDICATORS",
             "EXCEPTION",
+            "LOW_QUALITY",
         }
         rows = [
             {
@@ -7895,6 +7374,13 @@ with st.sidebar:
     except Exception:
         pass
 
+    if not _GRADING_OK:
+        st.warning("⚠️ grading_engine.py failed to load — grades disabled.")
+    if not _ENHANCED_LOGIC_OK:
+        st.warning("⚠️ enhanced_logic_engine.py failed to load — trap/timing disabled.")
+    if not _PHASE4_LOGIC_OK:
+        st.warning("⚠️ phase4_logic_engine.py failed to load — phase 4 signal refinements disabled.")
+
     mode_map = {
         "\U0001F7E1  Mode 1 - Relaxed (Wide Scan)": 3,
         "\U0001F534  Mode 2 - Swing":               6,
@@ -7940,7 +7426,6 @@ with st.sidebar:
     workers = 12
 
     st.markdown("<br>", unsafe_allow_html=True)
-    scan_clicked = False
     sector_screener_clicked = st.button("🔭 Sector Screener Dashboard", key="sector_screener_dashboard_btn")
     battle_compare_clicked = st.button("⚔️ Compare Stocks", key="battle_compare_btn")
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
@@ -8456,7 +7941,7 @@ if _tt_banner and _show_home_scanner:
         unsafe_allow_html=True,
     )
 
-if scan_clicked or main_scan_clicked:
+if main_scan_clicked:
     st.markdown(
         f'<div class="section-lbl">⏳ Scanning {n:,} NSE Equities — Mode {mode_display["display_num"]}: {mode_display["display_name"]}</div>',
         unsafe_allow_html=True)
@@ -8469,7 +7954,8 @@ if scan_clicked or main_scan_clicked:
         st.caption(f"🕰️ Time-travel active — {_snapped} ticker(s) snapshotted to {_tt_active_date}")
         # BUG FIX: Reset Nifty cache so get_nifty_20d_return() re-fetches
         # with the TT cutoff applied, not a previously cached live value.
-        _NIFTY_20D_RET = None
+        with _NIFTY_LOCK:
+            _NIFTY_20D_RET = None
 
     window = get_current_window()
     expected_date = get_expected_data_date()
@@ -8685,7 +8171,8 @@ if scan_clicked or main_scan_clicked:
             _tt.restore()
             # BUG FIX: Reset Nifty cache after restore so next live scan
             # does not reuse the TT-truncated Nifty return value.
-            _NIFTY_20D_RET = None
+            with _NIFTY_LOCK:
+                _NIFTY_20D_RET = None
 
     _scan_time_label = (
         _tt_active_date.strftime("%d %b %Y (TT)") if _tt_active_date
@@ -8773,6 +8260,8 @@ if st.session_state.get("show_sector_screener", False):
     _sector_intel_ready = isinstance(st.session_state.get("last_scan_df"), pd.DataFrame) and not st.session_state.get("last_scan_df").empty
     if _SECTOR_INTELLIGENCE_UI_OK and _sector_intel_ready:
         render_sector_intelligence_section()
+    elif _SECTOR_INTELLIGENCE_UI_OK and not _sector_intel_ready:
+        st.info("Run a main market scan first to enable Sector Intelligence.")
     elif _sector_intel_ready:
         st.warning(
             "Sector Intelligence is unavailable because its UI module could not be imported. "
@@ -8998,6 +8487,7 @@ if _show_home_scanner and "results" in st.session_state:
             st.session_state["_last_scan_df_sig"] = _scan_df_sig
 
         _did_log_predictions = False
+        _fs = {}
         try:
             from prediction_feedback_store import feedback_summary, log_scan_predictions
 
@@ -9090,8 +8580,8 @@ if _show_home_scanner and "results" in st.session_state:
                 _price   = float(row.get("Price (₹)", 0) or 0)
                 _de20    = float(row.get("Δ vs EMA20 (%)", 0) or 0)
                 if _price > 0 and _de20 != 0:
-                    _sl  = round(_price * (1 - (_de20 / 100) * 0.5), 2)
-                    _tgt = round(_price * (1 + (_de20 / 100) * 1.5), 2)
+                    _sl  = max(round(_price * (1 - (_de20 / 100) * 0.5), 2), round(_price * 0.97, 2))
+                    _tgt = min(round(_price * (1 + (_de20 / 100) * 1.5), 2), round(_price * 1.15, 2))
                     _sl_tgt_html = (
                         f'<div style="font-size:11px;color:#4a6480;margin-top:8px;">'
                         f'SL ₹{_sl:,.2f}&nbsp;&nbsp;|&nbsp;&nbsp;Tgt ₹{_tgt:,.2f}</div>'

@@ -183,26 +183,30 @@ def _get_index_df(all_data: dict) -> pd.DataFrame | None:
 
     # Synthetic from proxies
     frames = []
+    min_proxy_rows = max(_MIN_ROWS, int(_MIN_ROWS * 1.2))
     for tk in _STOCK_PROXIES:
         df = all_data.get(tk)
-        if df is not None and "Close" in df.columns and len(df) >= _MIN_ROWS:
-            frames.append(df[["Open", "High", "Low", "Close", "Volume"]].copy())
+        if df is not None and "Close" in df.columns and len(df) >= min_proxy_rows:
+            frames.append(df[["Open", "High", "Low", "Close", "Volume"]].copy().sort_index())
 
     if not frames:
         return None
 
-    # Align on common index then average prices / sum volume
+    # Align prices on a broader calendar so short proxy histories do not erase
+    # older valid data from longer-lived proxies.
     close_stack = pd.concat(
         [f["Close"].rename(str(i)) for i, f in enumerate(frames)], axis=1
-    ).dropna()
+    ).sort_index().ffill()
+    min_active_proxies = max(2, min(len(frames), 3))
+    close_stack = close_stack[close_stack.notna().sum(axis=1) >= min_active_proxies]
     if len(close_stack) < _MIN_ROWS:
         return None
     common = close_stack.index
 
     agg = {
         col: pd.concat(
-            [f[col].reindex(common) for f in frames], axis=1
-        ).mean(axis=1)
+            [f[col].reindex(common).sort_index().ffill() for f in frames], axis=1
+        ).mean(axis=1, skipna=True)
         for col in ("Open", "High", "Low", "Close")
     }
     agg["Volume"] = pd.concat(

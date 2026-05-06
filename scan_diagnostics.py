@@ -125,7 +125,7 @@ def get_report() -> dict:
 
     data_problem_reasons = {
         "NO_DATA", "TOO_SHORT", "STALE", "BAD_PRICE",
-        "ZERO_VOLUME", "NAN_INDICATORS", "EXCEPTION",
+        "ZERO_VOLUME", "NAN_INDICATORS", "EXCEPTION", "LOW_QUALITY",
     }
     failed_data     = [(t, r) for t, r in failed_snapshot.items() if r in data_problem_reasons]
     scan_filtered   = reasons_snapshot.get("SCAN_FILTER", 0)
