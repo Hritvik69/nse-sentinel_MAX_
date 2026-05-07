@@ -2,7 +2,6 @@
   "picks": [
     "PSB",
     "CENTRALBK",
-    "CHAMBLFERT",
     "GSFC",
     "IPCALAB"
   ],
@@ -13,7 +12,6 @@
       "CENTRALBK"
     ],
     "swing": [
-      "CHAMBLFERT",
       "GSFC",
       "IPCALAB"
     ],
