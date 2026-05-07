@@ -6,8 +6,7 @@
     "GSFC",
     "IPCALAB",
     "ZYDUSLIFE",
-    "AFSL",
-    "RAINBOW"
+    "AFSL"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -22,8 +21,7 @@
     ],
     "intraday": [
       "ZYDUSLIFE",
-      "AFSL",
-      "RAINBOW"
+      "AFSL"
     ],
     "breakout": []
   }
