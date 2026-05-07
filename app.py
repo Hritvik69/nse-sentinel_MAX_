@@ -8563,14 +8563,7 @@ if main_scan_clicked:
     # FIX 6 - Auto-backfill actual returns in the background.
     def _bg_backfill_actual_returns() -> None:
         try:
-            _backfill_post_close_outcomes(force=True)
-            return
-        except Exception:
-            pass
-        try:
-            from grading_engine import backfill_actual_returns
-
-            backfill_actual_returns()
+            _run_post_close_outcome_refresh(force=True)
         except Exception:
             pass
 
