@@ -2899,7 +2899,7 @@ def render_imported_ai_learning_panel() -> None:
     with _m4:
         st.metric("Validated", f"{int(panel.get('validated_count', 0) or 0):,}")
 
-    _action1, _action2, _action3, _action4 = st.columns(4)
+    _action1, _action2, _action3, _action4, _action5 = st.columns(5)
     with _action1:
         _self_improve_clicked = st.button(
             "Self Improve",
@@ -2915,6 +2915,31 @@ def render_imported_ai_learning_panel() -> None:
             else:
                 st.info("No imported AI stocks are stored yet in the permanent basket.")
     with _action3:
+        if st.button(
+            "Refresh Last Outcome And Correct",
+            key="imported_ai_learning_refresh_last_outcome_btn",
+            width="stretch",
+            type="secondary",
+            help="Import the latest available next-session outcome and correctness by prediction date.",
+        ):
+            status = _run_post_close_outcome_refresh(force=True, allow_open_session=True)
+            try:
+                from prediction_feedback_store import feedback_summary as _feedback_summary
+
+                _refresh_learning_after_prediction_log(_feedback_summary())
+            except Exception:
+                pass
+            filled = int(status.get("filled_stock", 0) or 0) + int(status.get("filled_sector", 0) or 0)
+            pending = int(status.get("pending_stock", 0) or 0) + int(status.get("pending_sector", 0) or 0)
+            if filled > 0:
+                msg = f"Imported {filled} last outcome/correct row(s) from available next-session data."
+            else:
+                msg = str(status.get("message", "") or "").strip()
+                if not msg:
+                    msg = f"Checked last outcomes by date. Pending rows: {pending}."
+            st.session_state["_imported_ai_outcome_refresh_msg"] = msg
+            st.rerun()
+    with _action4:
         if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
             _persist_imported_ai_learning_store([], updated_at="")
             for key in (
@@ -2932,7 +2957,7 @@ def render_imported_ai_learning_panel() -> None:
             ):
                 st.session_state.pop(key, None)
             st.rerun()
-    with _action4:
+    with _action5:
         if st.button("Back To Scanner", key="imported_ai_learning_back_btn", width="stretch"):
             _activate_sidebar_panel(None)
 
@@ -2991,34 +3016,6 @@ def render_imported_ai_learning_panel() -> None:
             width="stretch",
             hide_index=True,
         )
-
-    st.write("")
-    _refresh_left, _refresh_mid, _refresh_right = st.columns([1, 2, 1])
-    with _refresh_mid:
-        if st.button(
-            "Refresh Last Outcome And Correct",
-            key="imported_ai_learning_refresh_last_outcome_btn",
-            width="stretch",
-            type="secondary",
-            help="Import the latest available next-session outcome and correctness by prediction date.",
-        ):
-            status = _run_post_close_outcome_refresh(force=True, allow_open_session=True)
-            try:
-                from prediction_feedback_store import feedback_summary as _feedback_summary
-
-                _refresh_learning_after_prediction_log(_feedback_summary())
-            except Exception:
-                pass
-            filled = int(status.get("filled_stock", 0) or 0) + int(status.get("filled_sector", 0) or 0)
-            pending = int(status.get("pending_stock", 0) or 0) + int(status.get("pending_sector", 0) or 0)
-            if filled > 0:
-                msg = f"Imported {filled} last outcome/correct row(s) from available next-session data."
-            else:
-                msg = str(status.get("message", "") or "").strip()
-                if not msg:
-                    msg = f"Checked last outcomes by date. Pending rows: {pending}."
-            st.session_state["_imported_ai_outcome_refresh_msg"] = msg
-            st.rerun()
 
 
 def _build_mode_ai_top3_preview(
