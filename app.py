@@ -3009,18 +3009,6 @@ def render_imported_ai_learning_panel() -> None:
             f"Stored row data is still missing for some imported symbols: {_missing_preview}"
         )
 
-    st.write("")
-    if st.button(
-        "Refresh Last Outcome And Correct",
-        key="imported_ai_learning_refresh_last_outcome_wide_btn",
-        width="stretch",
-        type="primary",
-        help="Fetch and fill the Last Outcome and Correct columns using the latest next-session data by imported date.",
-    ):
-        st.session_state["_imported_ai_outcome_refresh_msg"] = _refresh_imported_ai_last_outcomes()
-        st.rerun()
-    st.write("")
-
     if not table.empty:
         st.dataframe(
             table,
@@ -3044,6 +3032,17 @@ def render_imported_ai_learning_panel() -> None:
             width="stretch",
             hide_index=True,
         )
+
+    st.write("")
+    if st.button(
+        "Refresh Last Outcome And Correct",
+        key="imported_ai_learning_refresh_last_outcome_wide_btn",
+        width="stretch",
+        type="primary",
+        help="Fetch and fill the Last Outcome and Correct columns using the latest next-session data by imported date.",
+    ):
+        st.session_state["_imported_ai_outcome_refresh_msg"] = _refresh_imported_ai_last_outcomes()
+        st.rerun()
 
 
 def _build_mode_ai_top3_preview(
