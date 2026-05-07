@@ -1066,7 +1066,97 @@
         "AI Key Signal": "Bullish Pct",
         "AI Regime": "Range Bound"
       }
+    },
+    {
+      "ticker": "SAGCEM",
+      "categories": [
+        "Breakout Pulse"
+      ],
+      "sources": [
+        "Live Breakout Pulse Top 3"
+      ],
+      "modes": [
+        0
+      ],
+      "last_imported_at": "2026-05-07T14:08:35",
+      "snapshot": {
+        "Symbol": "SAGCEM",
+        "Price (₹)": 193.36,
+        "RSI": 65.3,
+        "Vol / Avg": 3.62,
+        "Dist to High (%)": 0.84,
+        "Δ vs EMA20 (%)": 5.76,
+        "EMA20 Slope": "Rising",
+        "Momentum": "Strong",
+        "Final Score": 88.0,
+        "Signal": "LIVE BREAKOUT",
+        "Chart Link": "https://www.tradingview.com/chart/?symbol=NSE:SAGCEM",
+        "Action": "🔵 Wait",
+        "Hold Days": "—",
+        "Decision Score": 77.4,
+        "Why This Stock?": "Meta 88.0% | Calibrated 88.0% | Regime fit 55.0% | Accuracy history 55.0%"
+      }
+    },
+    {
+      "ticker": "JISLDVREQS",
+      "categories": [
+        "Breakout Pulse"
+      ],
+      "sources": [
+        "Live Breakout Pulse Top 3"
+      ],
+      "modes": [
+        0
+      ],
+      "last_imported_at": "2026-05-07T14:08:35",
+      "snapshot": {
+        "Symbol": "JISLDVREQS",
+        "Price (₹)": 24.97,
+        "RSI": 62.7,
+        "Vol / Avg": 8.34,
+        "Dist to High (%)": 1.11,
+        "Δ vs EMA20 (%)": 5.74,
+        "EMA20 Slope": "Rising",
+        "Momentum": "Strong",
+        "Final Score": 84.0,
+        "Signal": "LIVE BREAKOUT",
+        "Chart Link": "https://www.tradingview.com/chart/?symbol=NSE:JISLDVREQS",
+        "Action": "🔵 Wait",
+        "Hold Days": "—",
+        "Decision Score": 74.7,
+        "Why This Stock?": "Meta 84.0% | Calibrated 84.0% | Regime fit 55.0% | Accuracy history 55.0%"
+      }
+    },
+    {
+      "ticker": "SALONA",
+      "categories": [
+        "Breakout Pulse"
+      ],
+      "sources": [
+        "Live Breakout Pulse Top 3"
+      ],
+      "modes": [
+        0
+      ],
+      "last_imported_at": "2026-05-07T14:08:35",
+      "snapshot": {
+        "Symbol": "SALONA",
+        "Price (₹)": 293.45,
+        "RSI": 65.5,
+        "Vol / Avg": 3.65,
+        "Dist to High (%)": 1.2,
+        "Δ vs EMA20 (%)": 5.57,
+        "EMA20 Slope": "Rising",
+        "Momentum": "Strong",
+        "Final Score": 84.0,
+        "Signal": "LIVE BREAKOUT",
+        "Chart Link": "https://www.tradingview.com/chart/?symbol=NSE:SALONA",
+        "Action": "🔵 Wait",
+        "Hold Days": "—",
+        "Decision Score": 74.7,
+        "Why This Stock?": "Meta 84.0% | Calibrated 84.0% | Regime fit 55.0% | Accuracy history 55.0%"
+      }
     }
   ],
-  "updated_at": "2026-05-07T14:06:10"
+  "updated_at": "2026-05-07T14:08:35"
 }
