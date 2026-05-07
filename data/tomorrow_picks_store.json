@@ -2,8 +2,8 @@
   "picks": [
     "IMPAL",
     "YASHO",
-    "GOKEX",
     "OBCL",
+    "GOKEX",
     "UDS"
   ],
   "notes": "jniiknjknji",
@@ -12,12 +12,12 @@
       "IMPAL",
       "YASHO"
     ],
-    "swing": [
-      "GOKEX",
+    "swing": [],
+    "intraday": [
       "OBCL",
+      "GOKEX",
       "UDS"
     ],
-    "intraday": [],
     "breakout": []
   }
 }
