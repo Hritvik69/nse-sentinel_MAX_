@@ -2426,34 +2426,6 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
             mode_int = 0
         result["mode"] = mode_int
 
-        existing_today: set[str] = set()
-        try:
-            from prediction_feedback_store import read_feedback_log
-
-            existing_log = read_feedback_log()
-            if isinstance(existing_log, pd.DataFrame) and not existing_log.empty:
-                existing = existing_log.copy()
-                existing["_symbol_norm"] = existing.get("symbol", "").map(_normalize_tomorrow_symbol)
-                existing["_mode_norm"] = pd.to_numeric(existing.get("mode", 0), errors="coerce").fillna(0).astype(int)
-                existing["_logged_date"] = pd.to_datetime(existing.get("logged_at", ""), errors="coerce").dt.date
-                target_date = get_expected_data_date()
-                existing_today = {
-                    sym
-                    for sym in existing.loc[
-                        (existing["_mode_norm"] == mode_int) & (existing["_logged_date"] == target_date),
-                        "_symbol_norm",
-                    ].tolist()
-                    if sym
-                }
-        except Exception:
-            existing_today = set()
-
-        to_log = working[~working["_learn_symbol"].isin(existing_today)].copy()
-        result["already_logged"] = int(len(working) - len(to_log))
-        if to_log.empty:
-            result["message"] = "These imported stocks are already being tracked by the self-learning engine."
-            return result
-
         def _record_categories(symbol: object) -> str:
             record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
             categories = _normalize_import_text_list(record.get("categories", []))
@@ -2469,9 +2441,59 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
             modes = _normalize_import_mode_list(record.get("modes", []))
             return modes[0] if modes else mode_int
 
-        to_log["Import Category"] = to_log["_learn_symbol"].map(_record_categories)
-        to_log["Import Source"] = to_log["_learn_symbol"].map(_record_sources)
-        to_log["Import Mode"] = to_log["_learn_symbol"].map(_record_mode)
+        def _record_logged_at(symbol: object) -> str:
+            record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
+            raw = str(record.get("last_imported_at", "") or "").strip()
+            if raw:
+                return raw
+            return datetime.now().isoformat(timespec="seconds")
+
+        def _logged_date(value: object):
+            try:
+                parsed = pd.to_datetime(str(value or "").strip(), errors="coerce")
+                if pd.isnull(parsed):
+                    return get_expected_data_date()
+                return parsed.date()
+            except Exception:
+                return get_expected_data_date()
+
+        working["Import Category"] = working["_learn_symbol"].map(_record_categories)
+        working["Import Source"] = working["_learn_symbol"].map(_record_sources)
+        working["Import Mode"] = working["_learn_symbol"].map(_record_mode)
+        working["Logged At"] = working["_learn_symbol"].map(_record_logged_at)
+        working["_learn_logged_date"] = working["Logged At"].map(_logged_date)
+
+        existing_keys: set[tuple[str, int, object]] = set()
+        try:
+            from prediction_feedback_store import read_feedback_log
+
+            existing_log = read_feedback_log()
+            if isinstance(existing_log, pd.DataFrame) and not existing_log.empty:
+                existing = existing_log.copy()
+                existing["_symbol_norm"] = existing.get("symbol", "").map(_normalize_tomorrow_symbol)
+                existing["_mode_norm"] = pd.to_numeric(existing.get("mode", 0), errors="coerce").fillna(0).astype(int)
+                existing["_logged_date"] = pd.to_datetime(existing.get("logged_at", ""), errors="coerce").dt.date
+                existing_keys = {
+                    (str(row.get("_symbol_norm", "") or ""), int(row.get("_mode_norm", 0) or 0), row.get("_logged_date"))
+                    for _, row in existing.iterrows()
+                    if str(row.get("_symbol_norm", "") or "")
+                }
+        except Exception:
+            existing_keys = set()
+
+        row_keys = working.apply(
+            lambda row: (
+                str(row.get("_learn_symbol", "") or ""),
+                int(row.get("Import Mode", mode_int) or 0),
+                row.get("_learn_logged_date"),
+            ),
+            axis=1,
+        )
+        to_log = working[[key not in existing_keys for key in row_keys]].copy()
+        result["already_logged"] = int(len(working) - len(to_log))
+        if to_log.empty:
+            result["message"] = "These imported stocks are already being tracked by the self-learning engine."
+            return result
 
         try:
             from prediction_feedback_store import log_scan_predictions
@@ -2492,9 +2514,16 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
             _refresh_learning_after_prediction_log(_feedback_summary())
         except Exception:
             pass
+        try:
+            _run_post_close_outcome_refresh(force=True)
+        except Exception:
+            pass
 
         if result["added"]:
-            result["message"] = f"Added {result['added']} imported stock(s) to self-learning."
+            result["message"] = (
+                f"Added {result['added']} imported stock(s) to self-learning. "
+                "They will train the model after the next-session outcome is available."
+            )
         else:
             result["message"] = "Imported stocks were reviewed, but nothing new needed to be logged."
         return result
@@ -2678,6 +2707,7 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
         payload["matched_count"] = int(len(stored_symbols))
 
         latest_log_map: dict[str, dict[str, object]] = {}
+        latest_validated_log_map: dict[str, dict[str, object]] = {}
         today_logged: set[str] = set()
         try:
             from prediction_feedback_store import read_feedback_log
@@ -2714,26 +2744,32 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
                     symbol = _normalize_tomorrow_symbol(row.get("_panel_symbol"))
                     if symbol:
                         latest_log_map[symbol] = row.to_dict()
-                payload["logged_today_count"] = int(len(today_logged & set(imported)))
-                payload["validated_count"] = int(
-                    sum(
-                        1
-                        for sym in imported
-                        if str((latest_log_map.get(sym) or {}).get("correct", "")).strip() in ("True", "False")
-                    )
+                valid_mask = log_work.get("correct", fallback_blank).astype(str).str.strip().isin(["True", "False"])
+                latest_validated = (
+                    log_work.loc[valid_mask]
+                    .sort_values("_logged_dt")
+                    .drop_duplicates("_panel_symbol", keep="last")
                 )
+                for _, row in latest_validated.iterrows():
+                    symbol = _normalize_tomorrow_symbol(row.get("_panel_symbol"))
+                    if symbol:
+                        latest_validated_log_map[symbol] = row.to_dict()
+                payload["logged_today_count"] = int(len(today_logged & set(imported)))
+                payload["validated_count"] = int(len(set(imported) & set(latest_validated_log_map)))
         except Exception:
             latest_log_map = {}
+            latest_validated_log_map = {}
 
         rows: list[dict[str, object]] = []
         for symbol in imported:
             scan_row = dict(scan_map.get(symbol) or {})
             snapshot_row = dict(snapshot_map.get(symbol) or {})
             source_row = scan_row if scan_row else snapshot_row
-            log_row = dict(latest_log_map.get(symbol) or {})
+            latest_pending_or_current_log = dict(latest_log_map.get(symbol) or {})
+            outcome_log_row = dict(latest_validated_log_map.get(symbol) or latest_pending_or_current_log)
             record = record_map.get(symbol, {})
-            actual_return = _to_float(log_row.get("actual_next_return_pct"))
-            correct_value = log_row.get("correct")
+            actual_return = _to_float(outcome_log_row.get("actual_next_return_pct"))
+            correct_value = outcome_log_row.get("correct")
             correct_text = str(correct_value).strip()
             if correct_text.lower() in {"", "nan", "none"}:
                 correct_text = "-"
@@ -2803,6 +2839,11 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
 def render_imported_ai_learning_panel() -> None:
     if not st.session_state.get("imported_ai_learning_show_panel", False):
         return
+
+    try:
+        _run_post_close_outcome_refresh()
+    except Exception:
+        pass
 
     panel = _build_imported_ai_learning_panel_data()
     imported = list(panel.get("imported", []) or [])

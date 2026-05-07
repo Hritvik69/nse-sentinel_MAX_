@@ -141,6 +141,21 @@ def _outcome_from_correct(correct: object) -> str:
     return ""
 
 
+def _coerce_logged_at(value: object, fallback: str) -> str:
+    try:
+        text = str(value or "").strip()
+        if not text:
+            return fallback
+        parsed = pd.to_datetime(text, errors="coerce")
+        if pd.isnull(parsed):
+            return fallback
+        if getattr(parsed, "tzinfo", None) is not None:
+            parsed = parsed.tz_localize(None)
+        return parsed.isoformat(timespec="seconds")
+    except Exception:
+        return fallback
+
+
 def _coerce_schema(df: pd.DataFrame | None) -> pd.DataFrame:
     try:
         out = df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
@@ -283,6 +298,10 @@ def log_scan_predictions(
                     sector = str(row.get("Sector") or get_sector(sym) or "").strip()
                     import_source = str(row.get("Import Source", "") or "")[:160]
                     import_category = str(row.get("Import Category", "") or "")[:80]
+                    logged_at = _coerce_logged_at(
+                        row.get("Logged At", row.get("logged_at", row.get("Imported At", ""))),
+                        ts,
+                    )
                     ps = row.get("Prediction Score", np.nan)
                     fs = row.get("Final Score", np.nan)
                     sig = str(row.get("Signal", "") or "")[:40]
@@ -306,7 +325,7 @@ def log_scan_predictions(
                         ps_f = float("nan")
                     writer.writerow(
                         {
-                            "logged_at": ts,
+                            "logged_at": logged_at,
                             "symbol": sym,
                             "sector": sector,
                             "mode": row_mode,
