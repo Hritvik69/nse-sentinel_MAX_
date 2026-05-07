@@ -700,7 +700,7 @@ def _get_all_tickers() -> list[str]:
 # ENRICHMENT MODE  (called with existing scan DataFrame)
 # ──────────────────────────────────────────────────────────────────────
 
-def _enrich_from_scan_df(df: pd.DataFrame) -> pd.DataFrame:
+def _enrich_from_scan_df(df: pd.DataFrame, cutoff_date=None) -> pd.DataFrame:
     """
     Enrich an existing scan results DataFrame with breakout-radar columns.
     Pulls OHLCV from ALL_DATA / CSV for each symbol; uses row indicators as
@@ -717,7 +717,7 @@ def _enrich_from_scan_df(df: pd.DataFrame) -> pd.DataFrame:
         df_h = _get_df(ticker_ns)
 
         if df_h is not None and len(df_h) >= 45:
-            result = _analyze_ohlcv(df_h, sym_raw)
+            result = _analyze_ohlcv(df_h, sym_raw, cutoff_date=cutoff_date)
         else:
             # Fallback: reconstruct from scan-result row indicators
             rsi     = _sf(row.get("RSI", 55))
@@ -929,7 +929,7 @@ def run_breakout_radar(
         if df is not None and isinstance(df, pd.DataFrame) and not df.empty and (
             "RSI" in df.columns or "Symbol" in df.columns
         ):
-            return _enrich_from_scan_df(df)
+            return _enrich_from_scan_df(df, cutoff_date=cutoff_date)
 
         # ── Branch B: full universe scan ───────────────────────────────
         return _scan_universe(

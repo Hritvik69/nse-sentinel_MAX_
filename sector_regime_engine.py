@@ -171,13 +171,46 @@ def _realized_vol(close: pd.Series, n: int = 20) -> float:
     return float(rets.tail(n).std() * math.sqrt(252) * 100)
 
 
+def _current_time_travel_cutoff():
+    try:
+        from feature_data_manager import get_time_travel_date
+        cutoff = get_time_travel_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    try:
+        from time_travel_engine import get_reference_date
+        cutoff = get_reference_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    return None
+
+
+def _trim_to_cutoff(df: pd.DataFrame | None, cutoff) -> pd.DataFrame | None:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty or cutoff is None:
+        return df
+    try:
+        idx_dates = pd.to_datetime(df.index, errors="coerce").date
+        out = df.loc[idx_dates <= cutoff].copy()
+        return out if len(out) >= _MIN_ROWS else None
+    except Exception:
+        return df
+
+
 def _get_index_df(all_data: dict) -> pd.DataFrame | None:
     """
     Try index tickers first, then fall back to a synthetic equal-weight
     close built from large-cap proxies already in ALL_DATA.
     """
+    if not isinstance(all_data, dict):
+        return None
+    cutoff = _current_time_travel_cutoff()
     for tk in _INDEX_TICKERS:
         df = all_data.get(tk)
+        df = _trim_to_cutoff(df, cutoff)
         if df is not None and len(df) >= _MIN_ROWS:
             return df
 
@@ -186,6 +219,7 @@ def _get_index_df(all_data: dict) -> pd.DataFrame | None:
     min_proxy_rows = max(_MIN_ROWS, int(_MIN_ROWS * 1.2))
     for tk in _STOCK_PROXIES:
         df = all_data.get(tk)
+        df = _trim_to_cutoff(df, cutoff)
         if df is not None and "Close" in df.columns and len(df) >= min_proxy_rows:
             frames.append(df[["Open", "High", "Low", "Close", "Volume"]].copy().sort_index())
 

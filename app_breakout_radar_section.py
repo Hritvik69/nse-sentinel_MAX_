@@ -835,6 +835,20 @@ def render_breakout_radar_section(
 
     # ── TT date (pass-through from session state) ─────────────────────
     tt_date = st.session_state.get("tt_date_val")   # None in live mode
+    _tt_cache_key = str(tt_date or "live")
+    if st.session_state.get("breakout_radar_tt_cache_key") != _tt_cache_key:
+        for _key in (
+            "radar_results_df",
+            "radar_last_error",
+            "radar_last_scan_at",
+            "csv_next_day_results_df",
+            "csv_next_day_last_error",
+            "csv_next_day_last_scan_at",
+            "csv_next_day_empty_reason",
+            "csv_next_day_cache_status",
+        ):
+            st.session_state.pop(_key, None)
+        st.session_state["breakout_radar_tt_cache_key"] = _tt_cache_key
 
     # ── Dual tabs ─────────────────────────────────────────────────────
     tab_radar, tab_csv = st.tabs([

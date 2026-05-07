@@ -52,7 +52,7 @@ from __future__ import annotations
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import numpy as np
@@ -186,6 +186,7 @@ _MAX_WORKERS    = 4          # per-ticker fallback concurrency
 _REQUEST_DELAY  = 0.01       # only used by per-ticker fallback
 _MIN_ROWS       = 20         # minimum candles needed for indicators
 _PERIOD         = "2mo"      # ~60 calendar days
+_TT_LOOKBACK_DAYS = 120      # enough candles before a simulated cutoff
 _MIN_SCORE      = 50         # minimum score to appear in results
 _MIN_VOL_RATIO  = 1.2        # hard reject below this
 _MAX_RSI        = 78         # hard reject above this
@@ -246,6 +247,23 @@ def _clean_live_df(df: pd.DataFrame | None, cutoff: date | None) -> pd.DataFrame
         return None
 
 
+def _yf_download_kwargs(cutoff: date | None, timeout: int, threads: bool) -> dict:
+    kwargs = {
+        "interval": "1d",
+        "auto_adjust": True,
+        "progress": False,
+        "timeout": timeout,
+        "threads": threads,
+    }
+    if cutoff is not None:
+        cutoff_day = pd.to_datetime(cutoff).date()
+        kwargs["start"] = (cutoff_day - timedelta(days=_TT_LOOKBACK_DAYS)).isoformat()
+        kwargs["end"] = (cutoff_day + timedelta(days=1)).isoformat()
+    else:
+        kwargs["period"] = _PERIOD
+    return kwargs
+
+
 def _build_live_universe() -> list[str]:
     """
     Build the live scan universe.
@@ -289,15 +307,7 @@ def _download_live(ticker_ns: str, cutoff: date | None) -> pd.DataFrame | None:
     """
     try:
         time.sleep(_REQUEST_DELAY)
-        df = yf.download(
-            ticker_ns,
-            period=_PERIOD,
-            interval="1d",
-            auto_adjust=True,
-            progress=False,
-            timeout=10,
-            threads=False,
-        )
+        df = yf.download(ticker_ns, **_yf_download_kwargs(cutoff, timeout=10, threads=False))
         if df is None or df.empty:
             return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -327,13 +337,8 @@ def _download_live_batch(tickers_ns: list[str], cutoff: date | None) -> dict[str
     try:
         batch_df = yf.download(
             normalized,
-            period=_PERIOD,
-            interval="1d",
-            auto_adjust=True,
-            progress=False,
-            timeout=20,
-            threads=True,
             group_by="ticker",
+            **_yf_download_kwargs(cutoff, timeout=20, threads=True),
         )
     except Exception:
         return {ticker_ns: None for ticker_ns in normalized}
@@ -611,11 +616,15 @@ def run_live_breakout_pulse(
     if not results:
         empty = pd.DataFrame()
         empty.attrs["universe_scanned"] = total
+        if cutoff_date is not None:
+            empty.attrs["time_travel_date"] = pd.to_datetime(cutoff_date).date().isoformat()
         return empty
 
     df = pd.DataFrame(results)
     df = df.sort_values("Final Score", ascending=False).reset_index(drop=True)
     df.attrs["universe_scanned"] = total
+    if cutoff_date is not None:
+        df.attrs["time_travel_date"] = pd.to_datetime(cutoff_date).date().isoformat()
     return df
 
 

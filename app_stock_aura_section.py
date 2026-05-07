@@ -173,8 +173,15 @@ def _fetch_data(symbol: str) -> pd.DataFrame | None:
 
     cutoff_date = None
     try:
+        from feature_data_manager import get_time_travel_date as _feature_tt_date
+        raw = _feature_tt_date()
+        if raw is not None:
+            cutoff_date = pd.to_datetime(raw).date()
+    except Exception:
+        pass
+    try:
         from datetime import date as _date_cls
-        raw = st.session_state.get("aura_tt_date")
+        raw = st.session_state.get("aura_tt_date") or st.session_state.get("tt_date_val")
         if isinstance(raw, _date_cls):
             cutoff_date = raw
     except Exception:
@@ -200,6 +207,20 @@ def _fetch_data(symbol: str) -> pd.DataFrame | None:
 
     _tt_active = cutoff_date is not None
 
+    try:
+        from feature_data_manager import feature_manager as _feature_manager
+        df = _feature_manager.get_stock_data(
+            ticker_ns,
+            period="6mo",
+            interval="1d",
+            force_refresh=False,
+        )
+        df = _trunc(df)
+        if df is not None and len(df) >= 20:
+            return df
+    except Exception:
+        pass
+
     if _GETDF_OK:
         try:
             df = _get_df(ticker_ns)
@@ -217,10 +238,20 @@ def _fetch_data(symbol: str) -> pd.DataFrame | None:
 
     if _YF_OK:
         try:
-            df = yf.download(
-                ticker_ns, period="3mo", interval="1d",
-                auto_adjust=True, progress=False, timeout=15, threads=False,
+            _kwargs = dict(
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+                timeout=15,
+                threads=False,
             )
+            if cutoff_date is not None:
+                _cutoff_ts = pd.to_datetime(cutoff_date)
+                _kwargs["start"] = (_cutoff_ts - pd.Timedelta(days=140)).date().isoformat()
+                _kwargs["end"] = (_cutoff_ts + pd.Timedelta(days=1)).date().isoformat()
+            else:
+                _kwargs["period"] = "3mo"
+            df = yf.download(ticker_ns, **_kwargs)
             if df is None or df.empty:
                 return None
             if isinstance(df.columns, pd.MultiIndex):

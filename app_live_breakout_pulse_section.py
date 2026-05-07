@@ -200,6 +200,15 @@ def render_live_breakout_pulse(
         return
     _auto_run_scan = bool(st.session_state.pop("live_pulse_autorun", False))
     _run_scan_now = live_pulse_clicked or _auto_run_scan
+    _tt_cache_key = str(tt_date_val or "live")
+    if st.session_state.get("live_pulse_tt_cache_key") != _tt_cache_key:
+        for _key in (
+            "live_pulse_results_df",
+            "live_pulse_last_scan_at",
+            "live_pulse_last_error",
+        ):
+            st.session_state.pop(_key, None)
+        st.session_state["live_pulse_tt_cache_key"] = _tt_cache_key
 
     try:
         from trade_decision_simple import apply_trade_decision_simple_any

@@ -2994,14 +2994,37 @@ def _aura_rsi_last(close: "pd.Series", period: int = 14) -> float:
     except Exception:
         return 50.0
 
+
+def _aura_time_travel_cutoff():
+    try:
+        from feature_data_manager import get_time_travel_date as _feature_tt_date
+        cutoff = _feature_tt_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    try:
+        cutoff = _tt.get_reference_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    try:
+        cutoff = st.session_state.get("aura_tt_date") or st.session_state.get("tt_date_val")
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    return None
+
+
 def _aura_fetch(symbol: str) -> "pd.DataFrame | None":
     """Fetch OHLCV; always truncates to TT cutoff if active — no leakage."""
     ticker_ns = symbol.upper().strip()
     if not ticker_ns.endswith(".NS"):
         ticker_ns += ".NS"
 
-    # Use the engine's authoritative cutoff (works even in worker threads)
-    cutoff = _tt.get_reference_date()  # None when TT is off
+    cutoff = _aura_time_travel_cutoff()
 
     def _cut(df):
         if df is None or df.empty or cutoff is None:
@@ -3307,6 +3330,12 @@ def render_stock_aura_panel() -> None:
             f'No future data used.</div>',
             unsafe_allow_html=True,
         )
+
+    _aura_cache_key = str(aura_tt or "live")
+    if st.session_state.get("aura_tt_cache_key") != _aura_cache_key:
+        st.session_state.pop("aura_last_payload", None)
+        st.session_state.pop("aura_last_error", None)
+        st.session_state["aura_tt_cache_key"] = _aura_cache_key
 
     configure_nse_stock_search(_get_cached_nse_tickers())
     form_col, close_col = st.columns([4, 1])

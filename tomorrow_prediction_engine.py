@@ -105,13 +105,60 @@ def _plain_ticker(ticker: str) -> str:
     return _normalise_ticker(ticker).replace(".NS", "")
 
 
+def _get_time_travel_cutoff():
+    try:
+        from feature_data_manager import get_time_travel_date
+        cutoff = get_time_travel_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    try:
+        from time_travel_engine import get_reference_date
+        cutoff = get_reference_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    return None
+
+
+def _apply_history_cutoff(hist: pd.DataFrame | None, cutoff_date=None, min_rows: int = 30) -> pd.DataFrame | None:
+    if hist is None or not isinstance(hist, pd.DataFrame) or hist.empty or cutoff_date is None:
+        return hist
+    try:
+        cutoff = pd.to_datetime(cutoff_date).date()
+        idx_dates = pd.to_datetime(hist.index, errors="coerce").date
+        trimmed = hist.loc[idx_dates <= cutoff].copy()
+        if len(trimmed) < min_rows:
+            return None
+        return trimmed
+    except Exception:
+        return hist
+
+
 def _resolve_all_data(all_data: dict | None) -> dict:
     if isinstance(all_data, dict) and all_data:
         return all_data
     return _GLOBAL_ALL_DATA if isinstance(_GLOBAL_ALL_DATA, dict) else {}
 
 
-def _resolve_history(ticker: str, all_data: dict | None) -> pd.DataFrame | None:
+def _resolve_regime_store(all_data: dict | None, cutoff_date=None) -> dict:
+    store = _resolve_all_data(all_data)
+    if cutoff_date is None or not isinstance(store, dict):
+        return store
+    trimmed_store: dict = {}
+    for key, df in store.items():
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            trimmed_store[key] = df
+            continue
+        trimmed = _apply_history_cutoff(df, cutoff_date, min_rows=5)
+        if isinstance(trimmed, pd.DataFrame) and not trimmed.empty:
+            trimmed_store[key] = trimmed
+    return trimmed_store
+
+
+def _resolve_history(ticker: str, all_data: dict | None, cutoff_date=None) -> pd.DataFrame | None:
     try:
         store = _resolve_all_data(all_data)
         ticker_ns = _normalise_ticker(ticker)
@@ -135,7 +182,8 @@ def _resolve_history(ticker: str, all_data: dict | None) -> pd.DataFrame | None:
             for col in required:
                 hist[col] = pd.to_numeric(hist[col], errors="coerce")
             hist = hist.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
-            if len(hist) >= 30:
+            hist = _apply_history_cutoff(hist, cutoff_date, min_rows=30)
+            if hist is not None and len(hist) >= 30:
                 return hist
         return None
     except Exception:
@@ -231,8 +279,9 @@ def _build_trade_row(indicators: dict, score: float) -> pd.DataFrame:
 
 def get_tomorrow_prediction(ticker, all_data, mode):
     try:
-        hist = _resolve_history(str(ticker or ""), all_data)
-        regime_store = _resolve_all_data(all_data)
+        cutoff_date = _get_time_travel_cutoff()
+        hist = _resolve_history(str(ticker or ""), all_data, cutoff_date=cutoff_date)
+        regime_store = _resolve_regime_store(all_data, cutoff_date=cutoff_date)
         if hist is None or hist.empty:
             return {
                 "ticker": _plain_ticker(str(ticker or "")),

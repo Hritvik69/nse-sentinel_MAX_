@@ -39,19 +39,63 @@ _NO_DATA_TICKERS: set[str] = set()
 _NO_DATA_LOCK = threading.Lock()
 _LAST_LIVE_CACHE_DATE: date | None = None
 _LIVE_CACHE_LOCK = threading.Lock()
+_TT_DOWNLOAD_LOOKBACK_DAYS = 420
+
+
+def _current_time_travel_cutoff() -> date | None:
+    try:
+        import time_travel_engine as _tt
+        cutoff = _tt.get_reference_date()
+        if cutoff is not None:
+            return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    try:
+        import streamlit as st
+        for key in ("tt_date_val", "aura_tt_date", "tt_date_picker"):
+            cutoff = st.session_state.get(key)
+            if cutoff is not None:
+                return pd.to_datetime(cutoff).date()
+    except Exception:
+        pass
+    return None
+
+
+def _yf_history_kwargs(period: str, *, timeout: int, threads: bool) -> dict:
+    kwargs = {
+        "interval": "1d",
+        "auto_adjust": True,
+        "progress": False,
+        "timeout": timeout,
+        "threads": threads,
+    }
+    cutoff = _current_time_travel_cutoff()
+    if cutoff is not None:
+        kwargs["start"] = (cutoff - timedelta(days=_TT_DOWNLOAD_LOOKBACK_DAYS)).isoformat()
+        kwargs["end"] = (cutoff + timedelta(days=1)).isoformat()
+    else:
+        kwargs["period"] = period
+    return kwargs
 
 
 def _apply_time_travel_cutoff_if_needed(df: pd.DataFrame | None) -> pd.DataFrame | None:
-    """Apply the active Time Travel cutoff to frames entering ALL_DATA."""
+    """Apply the selected Time Travel cutoff to frames entering ALL_DATA."""
     if df is None or df.empty:
+        return df
+    cutoff = _current_time_travel_cutoff()
+    if cutoff is None:
         return df
     try:
         import time_travel_engine as _tt
-        if hasattr(_tt, "apply_time_travel_cutoff"):
-            return _tt.apply_time_travel_cutoff(df)
+        if hasattr(_tt, "truncate_df"):
+            return _tt.truncate_df(df, cutoff)
     except Exception:
         pass
-    return df
+    try:
+        idx_dates = pd.to_datetime(df.index, errors="coerce").date
+        return df.loc[idx_dates <= cutoff].copy()
+    except Exception:
+        return df
 
 
 # ── optional sklearn ──────────────────────────────────────────────────
@@ -214,6 +258,8 @@ def _expected_live_data_date() -> date | None:
     In Time Travel mode we disable date-based cache resets entirely because the
     active cutoff date is intentionally historical.
     """
+    if _current_time_travel_cutoff() is not None:
+        return None
     try:
         import time_travel_engine as _tt
 
@@ -249,6 +295,8 @@ def _frame_last_market_date(df: pd.DataFrame | None) -> date | None:
 def _is_stale_live_frame(df: pd.DataFrame | None) -> bool:
     if df is None or df.empty:
         return True
+    if _current_time_travel_cutoff() is not None:
+        return False
 
     try:
         return not _is_data_fresh(df)
@@ -271,6 +319,8 @@ def _is_fresh_live_frame(df: pd.DataFrame | None) -> bool:
 def _should_force_live_refresh(force_live_refresh: bool | None = None) -> bool:
     if force_live_refresh is not None:
         return bool(force_live_refresh)
+    if _current_time_travel_cutoff() is not None:
+        return False
 
     try:
         import time_travel_engine as _tt
@@ -289,6 +339,8 @@ def _should_force_live_refresh(force_live_refresh: bool | None = None) -> bool:
 
 def _should_allow_live_fallback(force_live_refresh: bool | None = None) -> bool:
     if _should_force_live_refresh(force_live_refresh):
+        return True
+    if _current_time_travel_cutoff() is not None:
         return True
 
     try:
@@ -427,14 +479,14 @@ def download_history(
     suppress_no_data_mark: bool = False,
 ) -> pd.DataFrame | None:
     """Download daily OHLCV; returns None on failure or if < 30 rows."""
-    if not ignore_no_data_cache and _has_recent_no_data(ticker_ns):
+    if _current_time_travel_cutoff() is None and not ignore_no_data_cache and _has_recent_no_data(ticker_ns):
         return None
 
     try:
         with _SEM:
             df = yf.download(
-                ticker_ns, period=period, interval="1d",
-                auto_adjust=True, progress=False, timeout=12, threads=False,
+                ticker_ns,
+                **_yf_history_kwargs(period, timeout=12, threads=False),
             )
         if df is None or df.empty:
             if not suppress_no_data_mark:
@@ -466,14 +518,9 @@ def get_market_data_signature(live_bucket_minutes: int = 5) -> str:
     Live sessions intentionally rotate on a short time bucket so UI panels can
     refresh during the day instead of staying pinned to a stale first fetch.
     """
-    try:
-        import time_travel_engine as _tt
-
-        tt_date = _tt.get_reference_date()
-        if tt_date is not None:
-            return f"tt:{tt_date.isoformat()}"
-    except Exception:
-        pass
+    tt_date = _current_time_travel_cutoff()
+    if tt_date is not None:
+        return f"tt:{tt_date.isoformat()}"
 
     try:
         plan = _get_scan_data_plan()
@@ -590,6 +637,13 @@ def get_shared_market_frame(
             require_volume=require_volume,
         )
         if prepared_cached is not None:
+            prepared_cached = _apply_time_travel_cutoff_if_needed(prepared_cached)
+            prepared_cached = _normalize_shared_market_frame(
+                prepared_cached,
+                min_rows=min_rows,
+                require_volume=require_volume,
+            )
+        if prepared_cached is not None:
             if force_live_refresh:
                 if _is_live_sourced_frame(prepared_cached) and not _is_stale_live_frame(prepared_cached):
                     return prepared_cached
@@ -631,19 +685,14 @@ def get_shared_market_frame(
         except Exception:
             pass
 
-    if not force_live_refresh and _has_recent_no_data(cache_key):
+    if _current_time_travel_cutoff() is None and not force_live_refresh and _has_recent_no_data(cache_key):
         return stale_fallback
 
     try:
         with _SEM:
             live_df = yf.download(
                 cache_key,
-                period=period,
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                timeout=15,
-                threads=False,
+                **_yf_history_kwargs(period, timeout=15, threads=False),
             )
     except Exception:
         live_df = None
@@ -716,13 +765,8 @@ def _download_batch(
         with _SEM:
             batch_df = yf.download(
                 tickers_ns,
-                period=period,
-                interval="1d",
-                auto_adjust=True,
-                progress=False,
-                timeout=20,
-                threads=True,
                 group_by="ticker",
+                **_yf_history_kwargs(period, timeout=20, threads=True),
             )
     except Exception:
         return {ticker_ns: None for ticker_ns in tickers_ns}, False
@@ -809,11 +853,14 @@ def preload_all(
         existing = {ticker_ns: ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
     with _NO_DATA_LOCK:
         known_no_data = set(_coerce_no_data_tickers())
+    if _current_time_travel_cutoff() is not None:
+        known_no_data = set()
 
     remaining: list[str] = []
     stale_fallbacks: dict[str, pd.DataFrame] = {}
     for ticker_ns in tickers_ns:
         cached = existing.get(ticker_ns)
+        cached = _apply_time_travel_cutoff_if_needed(cached)
         if cached is not None and isinstance(cached, pd.DataFrame) and not cached.empty:
             if force_live_refresh:
                 if _is_live_sourced_frame(cached) and not _is_stale_live_frame(cached):
@@ -1013,6 +1060,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     allow_live_fallback = _should_allow_live_fallback(force_live_refresh)
     with _ALL_DATA_LOCK:
         df = ALL_DATA.get(ticker_ns)
+    df = _apply_time_travel_cutoff_if_needed(df)
     stale_fallback = None
     if df is not None:
         if force_live_refresh:
@@ -1022,7 +1070,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
             return df
         stale_fallback = df
 
-    if not force_live_refresh and _has_recent_no_data(ticker_ns):
+    if _current_time_travel_cutoff() is None and not force_live_refresh and _has_recent_no_data(ticker_ns):
         return stale_fallback
 
     try:
