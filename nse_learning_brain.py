@@ -12,6 +12,12 @@ import pandas as pd
 import streamlit as st
 
 try:
+    from persistent_store import push_file as _push_file
+except Exception:
+    def _push_file(*a, **kw):  # type: ignore[misc]
+        pass
+
+try:
     import learning_engine as _learning_engine
 except Exception:
     _learning_engine = None  # type: ignore[assignment]
@@ -155,6 +161,7 @@ def _save_master_predictions(df: pd.DataFrame) -> None:
     try:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
         df.to_csv(_MASTER_PREDICTIONS_PATH, index=False)
+        _push_file(_MASTER_PREDICTIONS_PATH)
     except Exception:
         return
 

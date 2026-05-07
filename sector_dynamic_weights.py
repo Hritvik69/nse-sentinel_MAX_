@@ -31,6 +31,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+try:
+    from persistent_store import push_file as _push_file
+except Exception:
+    def _push_file(*a, **kw):  # type: ignore[misc]
+        pass
+
 
 # ══════════════════════════════════════════════════════════════════════
 # STATIC PRIORS (used when no history exists)
@@ -122,6 +128,7 @@ def _save_perf(perf: dict[str, dict]) -> None:
             })
         df = pd.DataFrame(rows, columns=_PERF_FIELDS)
         df.to_csv(_PERF_PATH, index=False)
+        _push_file(_PERF_PATH)
     except Exception:
         pass
 

@@ -146,6 +146,36 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+try:
+    from persistent_store import push_file as _push_persistent_file
+except Exception:
+    def _push_persistent_file(*a, **kw):  # type: ignore[misc]
+        pass
+
+# Persistent store: pull remote data before any local data readers run.
+if not st.session_state.get("_persistence_pulled", False):
+    try:
+        from persistent_store import health_check as _persistence_health_check, pull_all
+
+        _pulled = pull_all()
+        _persistence_health = _persistence_health_check()
+        st.session_state["_persistence_health"] = _persistence_health
+        try:
+            from learning_engine import load_persisted_model
+
+            load_persisted_model()
+        except Exception:
+            pass
+        st.session_state["_persistence_pulled"] = True
+        if _pulled > 0:
+            st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
+        elif not _persistence_health.get("connected"):
+            st.session_state["_persistence_warning"] = (
+                "Cloud persistence is NOT active. Add the [github_store] secrets below or Streamlit reboot will wipe saved picks."
+            )
+    except Exception:
+        st.session_state["_persistence_pulled"] = True
+
 _learning_engine = None
 _run_learning_cycle = None
 
@@ -416,6 +446,7 @@ def _write_learning_status_snapshot(
             json.dumps(payload, ensure_ascii=True, indent=2),
             encoding="utf-8",
         )
+        _push_persistent_file(_LEARNING_STATUS_SNAPSHOT_PATH)
     except Exception:
         return
 
@@ -476,6 +507,14 @@ def _bootstrap_learning_status() -> tuple[dict, dict]:
         st.session_state["_signal_weight_status"] = default_signal_status
         st.session_state["_signal_weight_sig"] = snapshot.get("signature") or current_sig
         return snapshot_status, default_signal_status
+
+    persisted_status = get_training_status()
+    if isinstance(persisted_status, dict) and persisted_status.get("trained"):
+        st.session_state["_learning_status"] = persisted_status
+        st.session_state["_learning_refresh_sig"] = current_sig
+        st.session_state["_signal_weight_status"] = default_signal_status
+        st.session_state["_signal_weight_sig"] = current_sig
+        return persisted_status, default_signal_status
 
     fallback_status = _default_learning_status()
     fallback_status["message"] = "Learning warm-up pending. Full refresh runs after the next scan."
@@ -757,6 +796,217 @@ def _refresh_learning_after_prediction_log(feedback_stats: dict | None = None) -
     except Exception:
         pass
     return True
+
+_POST_CLOSE_OUTCOME_INTERVAL_SEC = 15 * 60
+_POST_CLOSE_OUTCOME_SYMBOL_LIMIT = 160
+
+
+def _is_blank_outcome_value(value: object) -> bool:
+    try:
+        if value is None:
+            return True
+        if isinstance(value, float) and np.isnan(value):
+            return True
+        return str(value).strip().lower() in {"", "nan", "none", "nat", "null"}
+    except Exception:
+        return True
+
+
+def _is_valid_correct_value(value: object) -> bool:
+    return str(value).strip() in {"True", "False"}
+
+
+def _post_close_outcome_window() -> bool:
+    try:
+        if bool(st.session_state.get("tt_toggle_val")):
+            return False
+        tt_mod = globals().get("_tt")
+        if globals().get("_TIME_TRAVEL_OK", False) and getattr(tt_mod, "is_active", lambda: False)():
+            return False
+        window = str(get_current_window() or "").upper()
+        return window in {"CLOSED", "PRE_MARKET", "WEEKEND"}
+    except Exception:
+        return False
+
+
+def _pending_outcome_symbols(limit: int = _POST_CLOSE_OUTCOME_SYMBOL_LIMIT) -> dict[str, object]:
+    symbols: list[str] = []
+    seen: set[str] = set()
+    pending_stock = 0
+    pending_sector = 0
+
+    def _add_symbol(value: object) -> None:
+        try:
+            sym = _normalize_tomorrow_symbol(value)
+            if sym and sym not in seen:
+                seen.add(sym)
+                symbols.append(sym)
+        except Exception:
+            pass
+
+    try:
+        from prediction_feedback_store import read_feedback_log
+
+        feedback_df = read_feedback_log()
+        if isinstance(feedback_df, pd.DataFrame) and not feedback_df.empty:
+            for _, row in feedback_df.iterrows():
+                ret_missing = (
+                    "actual_next_return_pct" not in feedback_df.columns
+                    or _is_blank_outcome_value(row.get("actual_next_return_pct"))
+                )
+                correct_missing = (
+                    "correct" not in feedback_df.columns
+                    or not _is_valid_correct_value(row.get("correct"))
+                )
+                if ret_missing or correct_missing:
+                    pending_stock += 1
+                    _add_symbol(row.get("symbol", row.get("ticker", "")))
+    except Exception:
+        pass
+
+    try:
+        from sector_prediction_tracker import read_log as read_sector_log
+
+        sector_df = read_sector_log()
+        if isinstance(sector_df, pd.DataFrame) and not sector_df.empty:
+            for _, row in sector_df.iterrows():
+                exit_missing = "exit_price" not in sector_df.columns or _is_blank_outcome_value(row.get("exit_price"))
+                ret_missing = "return_pct" not in sector_df.columns or _is_blank_outcome_value(row.get("return_pct"))
+                correct_missing = "correct" not in sector_df.columns or not _is_valid_correct_value(row.get("correct"))
+                if not (exit_missing or ret_missing or correct_missing):
+                    continue
+                pending_sector += 1
+                _add_symbol(row.get("ohlc_symbol", ""))
+                _add_symbol(row.get("leader_ticker", ""))
+                try:
+                    members = json.loads(str(row.get("stocks_used_json", "") or "[]"))
+                except Exception:
+                    members = []
+                if isinstance(members, list):
+                    for member in members:
+                        _add_symbol(member)
+    except Exception:
+        pass
+
+    limited = len(symbols) > int(limit or 0) > 0
+    if limited:
+        symbols = symbols[:limit]
+    return {
+        "symbols": symbols,
+        "pending_stock": pending_stock,
+        "pending_sector": pending_sector,
+        "limited": limited,
+    }
+
+
+def _build_outcome_backfill_data(symbols: list[str]) -> dict[str, Any]:
+    all_data: dict[str, Any] = {}
+    try:
+        from strategy_engines._engine_utils import ALL_DATA as ENGINE_ALL_DATA
+    except Exception:
+        ENGINE_ALL_DATA = {}
+
+    if isinstance(ENGINE_ALL_DATA, dict):
+        all_data.update(ENGINE_ALL_DATA)
+
+    for raw_symbol in symbols:
+        try:
+            symbol = _normalize_tomorrow_symbol(raw_symbol)
+            if not symbol:
+                continue
+            ticker_ns = symbol if symbol.startswith("^") or symbol.endswith(".NS") else f"{symbol}.NS"
+            hist = None
+            for key in (ticker_ns, symbol):
+                try:
+                    if isinstance(ENGINE_ALL_DATA, dict) and ENGINE_ALL_DATA.get(key) is not None:
+                        hist = ENGINE_ALL_DATA.get(key)
+                        break
+                except Exception:
+                    pass
+            if hist is None:
+                hist = None if symbol.startswith("^") else get_df_for_ticker(ticker_ns)
+            if hist is None:
+                continue
+            all_data[symbol] = hist
+            all_data[ticker_ns] = hist
+        except Exception:
+            continue
+    return all_data
+
+
+def _run_post_close_outcome_refresh(*, force: bool = False) -> dict[str, object]:
+    """
+    After market close, fill pending prediction outcomes without requiring a
+    manual scan. This drives Imported AI's Last Outcome/Correct columns.
+    """
+    default = {
+        "ran": False,
+        "filled_stock": 0,
+        "filled_sector": 0,
+        "pending_stock": 0,
+        "pending_sector": 0,
+        "message": "",
+        "checked_at": "",
+    }
+    try:
+        if not _post_close_outcome_window():
+            return default
+
+        now = time.time()
+        last_checked = float(st.session_state.get("_post_close_outcome_checked_at", 0.0) or 0.0)
+        if not force and last_checked and (now - last_checked) < _POST_CLOSE_OUTCOME_INTERVAL_SEC:
+            cached = st.session_state.get("_post_close_outcome_status")
+            return cached if isinstance(cached, dict) else default
+        st.session_state["_post_close_outcome_checked_at"] = now
+
+        pending = _pending_outcome_symbols()
+        symbols = list(pending.get("symbols", []) or [])
+        status = dict(default)
+        status["ran"] = True
+        status["pending_stock"] = int(pending.get("pending_stock", 0) or 0)
+        status["pending_sector"] = int(pending.get("pending_sector", 0) or 0)
+        status["checked_at"] = datetime.now().isoformat(timespec="minutes")
+
+        if not symbols:
+            status["message"] = "Post-close validation: no pending logged predictions."
+            st.session_state["_post_close_outcome_status"] = status
+            return status
+
+        outcome_data = _build_outcome_backfill_data(symbols)
+        if not outcome_data:
+            status["message"] = "Post-close validation: waiting for next close data."
+            st.session_state["_post_close_outcome_status"] = status
+            return status
+
+        filled_stock = 0
+        filled_sector = 0
+        try:
+            from prediction_feedback_store import backfill_actual_returns
+
+            filled_stock = int(backfill_actual_returns(outcome_data) or 0)
+        except Exception:
+            filled_stock = 0
+        try:
+            from sector_prediction_tracker import backfill_outcomes
+
+            filled_sector = int(backfill_outcomes(outcome_data) or 0)
+        except Exception:
+            filled_sector = 0
+
+        status["filled_stock"] = filled_stock
+        status["filled_sector"] = filled_sector
+        total_filled = filled_stock + filled_sector
+        if total_filled > 0:
+            _refresh_feedback_learning_system(force=True)
+            _refresh_signal_weight_status(force_update=True)
+            status["message"] = f"Post-close validation filled {total_filled} outcome(s)."
+        else:
+            status["message"] = "Post-close validation checked; outcomes are waiting for next-session close."
+        st.session_state["_post_close_outcome_status"] = status
+        return status
+    except Exception:
+        return default
+
 
 try:
     import gspread
@@ -1319,6 +1569,7 @@ def _save_local_tomorrow_store(store: dict) -> bool:
             json.dumps(store, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        _push_persistent_file(_TOMORROW_STORE_PATH)
         return True
     except Exception:
         return False
@@ -1825,6 +2076,7 @@ def _save_local_imported_ai_learning_store(payload: dict[str, object]) -> bool:
             json.dumps(normalized, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        _push_persistent_file(_IMPORTED_AI_STORE_PATH)
         return True
     except Exception:
         return False
@@ -2563,9 +2815,15 @@ def render_imported_ai_learning_panel() -> None:
     _category_text = ", ".join(list(panel.get("categories", []) or [])[:4]) or "Imported AI Stocks"
     _storage_mode = str(panel.get("storage_mode", "local") or "local")
     _storage_label = "Cloud + Local backup" if _storage_mode == "cloud" else "Local persistent store"
+    _persistence_health = st.session_state.get("_persistence_health", {})
+    _github_backup_label = (
+        "GitHub backup ON"
+        if isinstance(_persistence_health, dict) and _persistence_health.get("connected")
+        else "GitHub backup OFF"
+    )
     _updated_at = str(panel.get("updated_at", "") or "").strip()
     st.caption(
-        f"Categories: {_category_text} | {_mode_label} | Storage: {_storage_label} | Imported stocks: {len(imported)}"
+        f"Categories: {_category_text} | {_mode_label} | Storage: {_storage_label} | {_github_backup_label} | Imported stocks: {len(imported)}"
     )
     if _updated_at:
         st.caption(f"Last saved: {_updated_at}")
@@ -7385,6 +7643,26 @@ with st.sidebar:
         '<span class="live-dot"></span>NSE SENTINEL</div>',
         unsafe_allow_html=True)
 
+    if st.session_state.get("_persistence_msg"):
+        st.success(st.session_state.pop("_persistence_msg"))
+    if st.session_state.get("_persistence_warning"):
+        st.warning(st.session_state.get("_persistence_warning"))
+        with st.expander("Fix permanent storage", expanded=True):
+            st.caption("Copy this into Streamlit Cloud -> App settings -> Secrets, then reboot the app.")
+            st.code(
+                '[github_store]\n'
+                'token  = "PASTE_YOUR_GITHUB_PAT_HERE"\n'
+                'owner  = "Hritvik69"\n'
+                'repo   = "nse-sentinel_MAX_"\n'
+                'branch = "main"',
+                language="toml",
+            )
+            st.caption("PAT needs repo scope. Until this is added, saves are local-only and not permanent.")
+    else:
+        _persistence_health = st.session_state.get("_persistence_health", {})
+        if isinstance(_persistence_health, dict) and _persistence_health.get("connected"):
+            st.success("Cloud persistence connected.")
+
     st.markdown('<div class="section-lbl">Strategy Mode</div>', unsafe_allow_html=True)
 
     # ── FIX 8 — Mode hint from cached market regime ───────────────────
@@ -7691,6 +7969,13 @@ with st.sidebar:
 # MAIN PAGE
 # ─────────────────────────────────────────────────────────────────────
 learning_status, signal_weight_status = _bootstrap_learning_status()
+_post_close_outcome_status = _run_post_close_outcome_refresh()
+if isinstance(_post_close_outcome_status, dict) and (
+    int(_post_close_outcome_status.get("filled_stock", 0) or 0)
+    + int(_post_close_outcome_status.get("filled_sector", 0) or 0)
+) > 0:
+    learning_status = st.session_state.get("_learning_status", learning_status)
+    signal_weight_status = st.session_state.get("_signal_weight_status", signal_weight_status)
 
 mc = mode_colors[mode]
 _mc_soft = _hex_to_rgba(mc, 0.10)
@@ -7839,6 +8124,11 @@ with st.sidebar:
         _badge = str(st.session_state.get("_validated_today_badge", "") or "").strip()
         if _badge:
             st.caption(_badge)
+        _outcome_status = st.session_state.get("_post_close_outcome_status")
+        if isinstance(_outcome_status, dict):
+            _outcome_msg = str(_outcome_status.get("message", "") or "").strip()
+            if _outcome_msg:
+                st.caption(_outcome_msg)
 
         if _ls.get("trained"):
             st.caption(f"ðŸ§  Model trained on {_trained_samples} samples | Accuracy: {_train_acc_txt}")
