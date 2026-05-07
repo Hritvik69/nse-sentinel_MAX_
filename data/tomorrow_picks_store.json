@@ -1,37 +1,30 @@
 {
   "picks": [
-    "PSB",
-    "CENTRALBK",
-    "CHAMBLFERT",
-    "GSFC",
-    "IPCALAB",
-    "ZYDUSLIFE",
-    "AFSL",
-    "RAINBOW",
-    "KKCL",
-    "APLLTD",
-    "RAYMONDLSL"
+    "IMPAL",
+    "YASHO",
+    "OBCL",
+    "GOKEX",
+    "UDS",
+    "SAGCEM",
+    "JISLDVREQS",
+    "SALONA"
   ],
-  "notes": "",
+  "notes": "jniiknjknji",
   "sections": {
     "relax": [
-      "PSB",
-      "CENTRALBK"
+      "IMPAL",
+      "YASHO"
     ],
-    "swing": [
-      "CHAMBLFERT",
-      "GSFC",
-      "IPCALAB"
-    ],
+    "swing": [],
     "intraday": [
-      "ZYDUSLIFE",
-      "AFSL",
-      "RAINBOW"
+      "OBCL",
+      "GOKEX",
+      "UDS"
     ],
     "breakout": [
-      "KKCL",
-      "APLLTD",
-      "RAYMONDLSL"
+      "SAGCEM",
+      "JISLDVREQS",
+      "SALONA"
     ]
   }
 }
