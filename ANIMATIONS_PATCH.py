@@ -282,19 +282,28 @@ function wireScanHeaders() {
 function runAll() {
   patchSignals();
   patchGrades();
-  staggerCards();
-  animCounters();
-  staggerRows();
   flashNewRows();
-  wireScanHeaders();
 }
 
-runAll();
-const _animObserver = new MutationObserver(runAll);
+patchSignals();
+patchGrades();
+flashNewRows();
+staggerCards();
+animCounters();
+staggerRows();
+wireScanHeaders();
+
+let _animTimer = null;
+const _animObserver = new MutationObserver(() => {
+  if (_animTimer) return;
+  _animTimer = setTimeout(() => {
+    _animTimer = null;
+    runAll();
+  }, 150);
+});
 _animObserver.observe(document.body, { childList: true, subtree: true });
 ----- END JS -----
 
 DONE. Save app.py, then run:
     .\.venv\Scripts\python.exe -m streamlit run app.py
 """
-

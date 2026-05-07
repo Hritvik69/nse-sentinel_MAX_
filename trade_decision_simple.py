@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+
+_STRIP_RE = re.compile(r"[%xX×,]")
 
 def _safe_float(value, default):
     try:
@@ -9,9 +12,7 @@ def _safe_float(value, default):
             text = value.strip()
             if not text or text.lower() in {"nan", "none"} or text in {"-", "—"}:
                 return default
-            for token in ("%", "x", "X", "×", ","):
-                text = text.replace(token, "")
-            value = text
+            value = _STRIP_RE.sub("", text)
         return float(value)
     except Exception:
         return default

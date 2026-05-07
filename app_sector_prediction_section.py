@@ -75,10 +75,19 @@ except ImportError:
     def recent_predictions(s, n=5): return pd.DataFrame()
 
 try:
-    from sector_evaluation_engine import compute_full_evaluation, compute_sector_report
+    from sector_evaluation_engine import compute_full_evaluation as _compute_full_evaluation, compute_sector_report
     _EV_OK = True
 except ImportError:
     _EV_OK = False
+
+
+if _EV_OK:
+    @st.cache_data(ttl=300, show_spinner=False)
+    def _cached_full_evaluation():
+        return _compute_full_evaluation()
+else:
+    def _cached_full_evaluation():
+        return None
 
 try:
     from sector_master import get_all_sectors, SECTOR_DESCRIPTIONS
@@ -608,7 +617,10 @@ def _render_performance_dashboard() -> None:
         st.error("sector_evaluation_engine could not be loaded.")
         return
 
-    ev = compute_full_evaluation()
+    ev = _cached_full_evaluation()
+    if ev is None:
+        st.error("sector_evaluation_engine could not be loaded.")
+        return
 
     if ev.total_predictions == 0:
         st.info(

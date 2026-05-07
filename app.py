@@ -154,27 +154,34 @@ except Exception:
 
 # Persistent store: pull remote data before any local data readers run.
 if not st.session_state.get("_persistence_pulled", False):
-    try:
-        from persistent_store import health_check as _persistence_health_check, pull_all
+    st.session_state["_persistence_pulled"] = True
 
-        _pulled = pull_all()
-        _persistence_health = _persistence_health_check()
-        st.session_state["_persistence_health"] = _persistence_health
+    def _bg_pull_persistence() -> None:
         try:
-            from learning_engine import load_persisted_model
+            from persistent_store import health_check as _persistence_health_check, pull_all
 
-            load_persisted_model()
+            _pulled = pull_all()
+            _persistence_health = _persistence_health_check()
+            try:
+                from learning_engine import load_persisted_model
+
+                load_persisted_model()
+            except Exception:
+                pass
+            try:
+                st.session_state["_persistence_health"] = _persistence_health
+                if _pulled > 0:
+                    st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
+                elif not _persistence_health.get("connected"):
+                    st.session_state["_persistence_warning"] = (
+                        "Cloud persistence is NOT active. Add the [github_store] secrets below or Streamlit reboot will wipe saved picks."
+                    )
+            except Exception:
+                pass
         except Exception:
             pass
-        st.session_state["_persistence_pulled"] = True
-        if _pulled > 0:
-            st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
-        elif not _persistence_health.get("connected"):
-            st.session_state["_persistence_warning"] = (
-                "Cloud persistence is NOT active. Add the [github_store] secrets below or Streamlit reboot will wipe saved picks."
-            )
-    except Exception:
-        st.session_state["_persistence_pulled"] = True
+
+    threading.Thread(target=_bg_pull_persistence, daemon=True).start()
 
 _learning_engine = None
 _run_learning_cycle = None
@@ -1766,10 +1773,7 @@ def _render_add_in_picks_actions(
 ) -> None:
     normalized = _normalize_tomorrow_symbols(symbols)
     if helper_text:
-        st.markdown(
-            f'<div style="font-size:11px;color:#88a6c4;margin:10px 0 12px 0;">{helper_text}</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption(helper_text)
 
     add_col, open_col = st.columns([1.15, 1], gap="small")
     with add_col:
@@ -2791,18 +2795,16 @@ def render_imported_ai_learning_panel() -> None:
     if not isinstance(table, pd.DataFrame):
         table = pd.DataFrame()
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
     _hdr_col, _close_col = st.columns([6, 1])
     with _hdr_col:
-        st.markdown('<h2>Imported AI Stocks</h2>', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-            'This screen shows the imported AI stocks already saved in permanent storage, their saved scan or snapshot data, '
-            'their import category/source, and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine.</div>',
-            unsafe_allow_html=True,
+        st.header("Imported AI Stocks")
+        st.caption(
+            "This screen shows the imported AI stocks already saved in permanent storage, their saved scan or snapshot data, "
+            "their import category/source, and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine."
         )
     with _close_col:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("")
         if st.button("Close", key="imported_ai_learning_close_btn", width="stretch"):
             _activate_sidebar_panel(None)
 
@@ -3024,10 +3026,7 @@ def _render_ai_prediction_import_action(
 ) -> None:
     normalized = _normalize_prediction_chart_imports(symbols, limit=12)
     if helper_text:
-        st.markdown(
-            f'<div style="font-size:11px;color:#88a6c4;margin:8px 0 12px 0;">{helper_text}</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption(helper_text)
 
     import_clicked = st.button(
         "ADD TO IMPORTED AI STOCKS",
@@ -3565,14 +3564,9 @@ def render_stock_aura_panel() -> None:
     if not st.session_state.get("aura_show_panel", False):
         return
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown(
-        '<h2 style="font-family:\'Syne\',sans-serif;font-weight:900;font-size:22px;'
-        'color:#ccd9e8;margin-bottom:4px;">Stock Aura</h2>'
-        '<div style="font-size:12px;color:#4a6480;margin-bottom:18px;">'
-        "Single-stock decision engine with a direct add-to-picks action.</div>",
-        unsafe_allow_html=True,
-    )
+    st.divider()
+    st.subheader("Stock Aura")
+    st.caption("Single-stock decision engine with a direct add-to-picks action.")
 
     aura_tt = st.session_state.get("aura_tt_date")
     aura_tt_str = ""
@@ -3581,13 +3575,7 @@ def render_stock_aura_panel() -> None:
             aura_tt_str = aura_tt.strftime("%d %b %Y")
         except Exception:
             aura_tt_str = str(aura_tt)
-        st.markdown(
-            f'<div style="background:#1a0a00;border:1.5px solid #f0b429;border-radius:8px;'
-            f'padding:8px 14px;margin-bottom:14px;font-size:12px;color:#f0b429;">'
-            f'<b>TIME TRAVEL ACTIVE</b> - Evaluating {aura_tt_str} post-market. '
-            f'No future data used.</div>',
-            unsafe_allow_html=True,
-        )
+        st.warning(f"TIME TRAVEL ACTIVE - Evaluating {aura_tt_str} post-market. No future data used.")
 
     _aura_cache_key = str(aura_tt or "live")
     if st.session_state.get("aura_tt_cache_key") != _aura_cache_key:
@@ -3766,11 +3754,7 @@ def render_stock_aura_panel() -> None:
         market_note = str(res.get("market_note", "") or "")
         if market_note:
             note_color = "#f0b429" if "caution" in market_note.lower() else "#4a6480"
-            st.markdown(
-                f'<div style="font-size:11px;color:{note_color};padding:4px 0;">'
-                f'Market note: {market_note}</div>',
-                unsafe_allow_html=True,
-            )
+            st.caption(f"Market note: {market_note}")
 
     _render_add_in_picks_actions(
         [symbol],
@@ -3780,11 +3764,7 @@ def render_stock_aura_panel() -> None:
         helper_text="Add this Stock Aura result into Tomorrow's Picks and keep it saved until you delete it.",
     )
 
-    st.markdown(
-        '<div style="font-size:10px;color:#2a3f58;margin-top:12px;text-align:center;">'
-        'Stock Aura is for educational purposes only. Not financial advice.</div>',
-        unsafe_allow_html=True,
-    )
+    st.caption("Stock Aura is for educational purposes only. Not financial advice.")
 
 
 
@@ -3826,6 +3806,25 @@ def get_mktcap_cr(ticker: str) -> float:
         if ticker in _MKT_CACHE:
             return _MKT_CACHE[ticker]
     try:
+        ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+        df = _engine_utils.ALL_DATA.get(ticker_ns) if _engine_utils is not None else None
+        if df is not None and not df.empty and {"Close", "Volume"}.issubset(df.columns):
+            close = df["Close"].dropna()
+            volume = df["Volume"].dropna()
+            if not close.empty and not volume.empty:
+                lc = float(close.iloc[-1])
+                av = float(volume.tail(20).mean())
+                mc_cr = round(lc * av * 250 / 1e7, 2)
+                with _MKT_LOCK:
+                    _MKT_CACHE[ticker] = mc_cr
+                try:
+                    st.session_state.setdefault("_mkt_cache_store", {})[ticker] = mc_cr
+                except Exception:
+                    pass
+                return mc_cr
+    except Exception:
+        pass
+    try:
         with _YF_SEM:
             info = yf.Ticker(ticker).fast_info
             raw  = getattr(info, "market_cap", 0) or 0
@@ -3853,6 +3852,25 @@ def get_nifty_20d_return() -> float | None:
     with _NIFTY_LOCK:
         if _NIFTY_20D_RET is not None:
             return _NIFTY_20D_RET
+    try:
+        if _engine_utils is not None:
+            for tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
+                df_pre = _engine_utils.ALL_DATA.get(tk)
+                if df_pre is None or len(df_pre) < 25 or "Close" not in df_pre.columns:
+                    continue
+                if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
+                    df_pre = _tt.apply_time_travel_cutoff(df_pre)
+                close_pre = df_pre["Close"].dropna()
+                if len(close_pre) >= 21:
+                    base = float(close_pre.iloc[-21])
+                    if base <= 0:
+                        continue
+                    ret = float(close_pre.iloc[-1] / base - 1.0)
+                    with _NIFTY_LOCK:
+                        _NIFTY_20D_RET = ret
+                    return ret
+    except Exception:
+        pass
     try:
         with _YF_SEM:
             df_n = yf.download(
@@ -3948,7 +3966,7 @@ def render_tomorrow_picks_panel() -> None:
         else 0
     )
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
     st.markdown(
         """
         <style>
@@ -4470,7 +4488,7 @@ def render_tomorrow_picks_panel() -> None:
                     unsafe_allow_html=True,
                 )
 
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("")
         st.button(
             "Close",
             key="tmr_picks_close_btn_v2",
@@ -6512,12 +6530,8 @@ def _render_scan_diagnostics_panel() -> None:
     scan_mode = st.session_state.get("_scan_diag_mode")
     scan_stamp = st.session_state.get("_scan_diag_scan_time", st.session_state.get("scan_time", "—"))
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown(
-        '<div style="font-size:12px;color:#8ab4d8;letter-spacing:1.2px;'
-        'text-transform:uppercase;margin-bottom:10px;">Scan Diagnostics</div>',
-        unsafe_allow_html=True,
-    )
+    st.divider()
+    st.caption("Scan Diagnostics")
     st.caption(
         f"Mode {scan_mode} diagnostics · {scan_stamp}"
         if scan_mode is not None
@@ -6634,7 +6648,11 @@ def _build_ready_scan_tickers(tickers, *, strict: bool = True) -> tuple[list[str
         return tickers_list, summary
 
 
-def run_scan(tickers, mode, workers=20):
+def run_scan(tickers, mode, workers=12):
+    try:
+        workers = min(max(1, int(workers)), 12)
+    except Exception:
+        workers = 12
     results = []
     total   = len(tickers)
     done    = 0
@@ -7453,6 +7471,25 @@ def enhance_results(results: list[dict], mode: int) -> pd.DataFrame:
         for x in sorted(pre_rows, key=lambda x: x["score"], reverse=True)[:50]
     }
 
+    try:
+        _tt_sig_cut = _tt.get_reference_date()
+    except Exception:
+        _tt_sig_cut = None
+
+    _signal_dfs: dict[str, pd.DataFrame | None] = {}
+    for pr in pre_rows:
+        sym = pr["sym"]
+        if sym in _signal_dfs:
+            continue
+        try:
+            df_sig = get_df_for_ticker(sym)
+            if _tt_sig_cut is not None and df_sig is not None:
+                _sig_mask = pd.to_datetime(df_sig.index).date <= _tt_sig_cut
+                df_sig = df_sig.loc[_sig_mask]
+            _signal_dfs[sym] = df_sig if df_sig is not None and not df_sig.empty else None
+        except Exception:
+            _signal_dfs[sym] = None
+
     def _process_enriched(pr: dict) -> dict:
         r         = pr["row"]
         sym       = pr["sym"]
@@ -7478,19 +7515,7 @@ def enhance_results(results: list[dict], mode: int) -> pd.DataFrame:
             trap = ""
 
         try:
-            df_for_signal = get_df_for_ticker(sym)
-            # TT guard: truncate signal df to cutoff so next-day signal
-            # is computed on historical data only
-            try:
-                _tt_sig_cut = _tt.get_reference_date()
-                if _tt_sig_cut is not None and df_for_signal is not None:
-                    _sig_mask = pd.to_datetime(df_for_signal.index).date <= _tt_sig_cut
-                    df_for_signal = df_for_signal.loc[_sig_mask]
-                    if df_for_signal.empty:
-                        df_for_signal = None
-            except Exception:
-                pass
-            nd_signal = compute_next_day_signal(r, df_for_signal)
+            nd_signal = compute_next_day_signal(r, _signal_dfs.get(sym))
         except Exception:
             nd_signal = "❌ Error"
 
@@ -7550,7 +7575,7 @@ def _score_label(v: float) -> str:
 
 def render_top_picks(df: pd.DataFrame, n: int = 5) -> None:
     """Render the Top N pick cards in a horizontal strip."""
-    st.markdown('<div class="section-lbl">🏅 Top Picks</div>', unsafe_allow_html=True)
+    st.caption("🏅 Top Picks")
     cols = st.columns(min(n, len(df)))
     for i, (col, (_, row)) in enumerate(zip(cols, df.head(n).iterrows())):
         sc   = row.get("Score",      0)
@@ -7663,7 +7688,7 @@ with st.sidebar:
         if isinstance(_persistence_health, dict) and _persistence_health.get("connected"):
             st.success("Cloud persistence connected.")
 
-    st.markdown('<div class="section-lbl">Strategy Mode</div>', unsafe_allow_html=True)
+    st.caption("Strategy Mode")
 
     # ── FIX 8 — Mode hint from cached market regime ───────────────────
     try:
@@ -7732,7 +7757,7 @@ with st.sidebar:
 
     workers = 12
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.write("")
     sector_screener_clicked = st.button("🔭 Sector Screener Dashboard", key="sector_screener_dashboard_btn")
     battle_compare_clicked = st.button("⚔️ Compare Stocks", key="battle_compare_btn")
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
@@ -7751,10 +7776,10 @@ with st.sidebar:
     if pred_chart_clicked:
         _activate_sidebar_panel("pred_chart_show_panel")
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
 
     # ── 🕰️ Time Travel Mode ───────────────────────────────────────
-    st.markdown('<div class="section-lbl">🕰️ Time Travel Mode</div>', unsafe_allow_html=True)
+    st.caption("🕰️ Time Travel Mode")
     _tt_toggle = st.toggle(
         "Simulate a past market date",
         value=st.session_state.get("tt_toggle_val", False),
@@ -7777,36 +7802,24 @@ with st.sidebar:
         if _tt_selected is None:
             _tt_selected = _tt_max
         st.session_state["tt_date_val"] = _tt_selected
-        st.markdown(
-            f'<div style="background:#1a0a00;border:1px solid #f0b429;border-radius:8px;'
-            f'padding:8px 12px;font-size:11px;color:#f0b429;margin-top:4px;line-height:1.6;">'
-            f'🕰️ <b>SIMULATING</b><br>'
-            f'{_tt_selected.strftime("%d %b %Y")} (Post-Market Close)<br>'
-            f'<span style="color:#4a6480;">All scans use data up to this date only</span></div>',
-            unsafe_allow_html=True,
+        st.warning(
+            f"SIMULATING {_tt_selected.strftime('%d %b %Y')} (Post-Market Close). "
+            "All scans use data up to this date only."
         )
     else:
         st.session_state["tt_date_val"] = None
         st.session_state["tt_date_picker"] = None
-        st.markdown(
-            '<div style="font-size:11px;color:#4a6480;">Live mode — using current market data</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Live mode - using current market data")
     _aura_tt_date = st.session_state.get("tt_date_val")
     st.session_state["aura_tt_date"] = (
         _aura_tt_date if (_aura_tt_date is not None and _TIME_TRAVEL_OK) else None
     )
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
 
-    st.markdown('<div class="section-lbl">📡 Data Session</div>', unsafe_allow_html=True)
+    st.caption("📡 Data Session")
     if _tt_toggle:
-        st.markdown(
-            '<div style="font-size:11px;color:#f0b429;line-height:1.7;">'
-            'Time Travel is active, so the normal live/close routing is paused until simulation is turned off.'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Time Travel is active, so the normal live/close routing is paused until simulation is turned off.")
     else:
         _session_plan = get_scan_data_plan()
         _session_window = str(_session_plan.get("window", "") or "").upper()
@@ -7872,15 +7885,11 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
 
     # ── Data Management Panel ─────────────────────────────────────
-    st.markdown('<div class="section-lbl">📦 Local Data Cache</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:-4px 0 10px 0;">'
-        'Refresh the offline CSV cache, then run a focused scanner below.</div>',
-        unsafe_allow_html=True,
-    )
+    st.caption("📦 Local Data Cache")
+    st.caption("Refresh the offline CSV cache, then run a focused scanner below.")
     if _DATA_DOWNLOADER_OK:
         if st.button("🔄 Refresh Local Data Cache", key="refresh_data_btn"):
             with st.spinner("Updating data..."):
@@ -7891,11 +7900,7 @@ with st.sidebar:
                     st.success("Data updated")
                 except Exception as _e:
                     st.error(f"Data update failed: {_e}")
-        st.markdown(
-            '<div style="font-size:10px;color:#4a6480;letter-spacing:1.4px;'
-            'text-transform:uppercase;margin:12px 0 8px 0;">Focused Scanners</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("Focused Scanners")
         csv_scan_clicked = st.button("⚡ Breakout Radar (CSV)", key="csv_next_day_btn")
         if csv_scan_clicked:
             _activate_sidebar_panel("csv_next_day_show_panel")
@@ -7903,12 +7908,7 @@ with st.sidebar:
         if live_pulse_clicked:
             st.session_state["live_pulse_autorun"] = True
             _activate_sidebar_panel("live_pulse_show_panel")
-        st.markdown(
-            '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
-            '⚡ Cached CSV scan for pre-move setups<br>'
-            '📡 Live scan for real-time momentum bursts</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("⚡ Cached CSV scan for pre-move setups. 📡 Live scan for real-time momentum bursts.")
         # Show cache status
         try:
             _status = _get_sidebar_data_status(_get_cached_nse_tickers())
@@ -7923,16 +7923,8 @@ with st.sidebar:
             pass
         _render_sidebar_imported_ai_learning_entry_button()
     else:
-        st.markdown(
-            '<div style="font-size:11px;color:#4a6480;">'
-            'data_downloader.py not found — using live yfinance.</div>',
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            '<div style="font-size:10px;color:#4a6480;letter-spacing:1.4px;'
-            'text-transform:uppercase;margin:12px 0 8px 0;">Focused Scanners</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("data_downloader.py not found - using live yfinance.")
+        st.caption("Focused Scanners")
         csv_scan_clicked = st.button("⚡ Breakout Radar (CSV)", key="csv_next_day_btn")
         if csv_scan_clicked:
             _activate_sidebar_panel("csv_next_day_show_panel")
@@ -7940,23 +7932,13 @@ with st.sidebar:
         if live_pulse_clicked:
             st.session_state["live_pulse_autorun"] = True
             _activate_sidebar_panel("live_pulse_show_panel")
-        st.markdown(
-            '<div style="font-size:11px;color:#4a6480;line-height:1.7;margin:6px 0 2px 0;">'
-            '⚡ Uses local CSV data when available<br>'
-            '📡 Uses live market data directly</div>',
-            unsafe_allow_html=True,
-        )
+        st.caption("⚡ Uses local CSV data when available. 📡 Uses live market data directly.")
 
     if not _DATA_DOWNLOADER_OK:
         _render_sidebar_imported_ai_learning_entry_button()
 
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown(
-        '<div style="font-size:11px;color:#4a6480;line-height:1.7;">'
-        'Data: Yahoo Finance (NSE)<br>Indicators: EMA · RSI · Volume<br>'
-        'Universe: Current NSE listed equities<br><br>'
-        '⚠️ Educational use only.<br>Not financial advice.</div>',
-        unsafe_allow_html=True)
+    st.divider()
+    st.caption("Data: Yahoo Finance (NSE). Indicators: EMA, RSI, Volume. Universe: Current NSE listed equities. Educational use only. Not financial advice.")
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -8193,10 +8175,7 @@ with st.sidebar:
 
             _report = _sw.get("report") if isinstance(_sw, dict) else pd.DataFrame()
             if isinstance(_report, pd.DataFrame) and not _report.empty:
-                st.markdown(
-                    '<div style="font-size:11px;color:#8ab4d8;margin:10px 0 6px 0;">TOP SIGNALS (Dynamic Weights)</div>',
-                    unsafe_allow_html=True,
-                )
+                st.caption("TOP SIGNALS (Dynamic Weights)")
                 for _, _sig_row in _report.head(4).iterrows():
                     _sig_name = str(_sig_row.get("Signal", "") or "")
                     _sig_weight = float(_sig_row.get("Dynamic Weight", 0.0) or 0.0)
@@ -8205,14 +8184,9 @@ with st.sidebar:
                         unsafe_allow_html=True,
                     )
 
-            st.markdown(
-                f'<div style="font-size:11px;color:#8ab4d8;margin:10px 0 6px 0;">RECENT ACCURACY (Last 20)</div>'
-                f'<div style="font-size:12px;color:#ccd9e8;line-height:1.8;">'
-                f'Bullish calls: {_recent_bull_acc_txt}<br>'
-                f'Regime: {_regime_txt}<br>'
-                f'Walk-forward stability: {_wf_txt}'
-                f'</div>',
-                unsafe_allow_html=True,
+            st.caption(
+                f"RECENT ACCURACY (Last 20): Bullish calls {_recent_bull_acc_txt}. "
+                f"Regime: {_regime_txt}. Walk-forward stability: {_wf_txt}."
             )
     except Exception:
         pass
@@ -8239,7 +8213,7 @@ if _show_home_scanner:
         else:
             st.metric("✅ Last Scan Found", "—")
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
 
 main_scan_clicked = False
 if _show_home_scanner:
@@ -8261,9 +8235,7 @@ if _tt_banner and _show_home_scanner:
     )
 
 if main_scan_clicked:
-    st.markdown(
-        f'<div class="section-lbl">⏳ Scanning {n:,} NSE Equities — Mode {mode_display["display_num"]}: {mode_display["display_name"]}</div>',
-        unsafe_allow_html=True)
+    st.caption(f"⏳ Scanning {n:,} NSE Equities - Mode {mode_display['display_num']}: {mode_display['display_name']}")
 
     # ── 🕰️ Activate time-travel BEFORE scan if toggle is on ───────────
     _tt_active_date = st.session_state.get("tt_date_val")
@@ -8379,15 +8351,22 @@ if main_scan_clicked:
         preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
             preload_message
         )
+        _preload_tickers = [
+            t for t in all_tickers
+            if force_live_refresh
+            or _engine_utils is None
+            or _engine_utils.ALL_DATA.get(t if t.endswith(".NS") else f"{t}.NS") is None
+        ]
+        _preload_total = len(_preload_tickers)
         _preload_state = {
             "done": 0,
-            "total": len(all_tickers),
+            "total": _preload_total,
             "loaded": 0,
         }
         _preload_render = {
             "done": 0,
             "ts": 0.0,
-            "step": max(12, len(all_tickers) // 120) if all_tickers else 12,
+            "step": max(50, _preload_total // 40) if _preload_total else 50,
         }
 
         def _update_preload(done: int, total: int, loaded: int) -> None:
@@ -8399,7 +8378,7 @@ if main_scan_clicked:
                 done == total
                 or done == 1
                 or (done - _preload_render["done"]) >= _preload_render["step"]
-                or (now - _preload_render["ts"]) >= 0.25
+                or (now - _preload_render["ts"]) >= 0.50
             )
             if not should_render:
                 return
@@ -8418,9 +8397,9 @@ if main_scan_clicked:
             )
 
         preload_stats = preload_all(
-            all_tickers,
+            _preload_tickers,
             period="6mo",
-            workers=workers,
+            workers=min(workers, 12),
             progress_callback=_update_preload,
             force_live_refresh=force_live_refresh,
         )
@@ -8429,7 +8408,7 @@ if main_scan_clicked:
             preload_status,
             preload_eta,
             preload_started,
-            _preload_state["total"] if _preload_state["total"] > 0 else len(all_tickers),
+            _preload_state["total"],
             _preload_state["loaded"],
             "Ready",
         )
@@ -8605,17 +8584,13 @@ if st.session_state.get("show_sector_screener", False):
         )
 
 if st.session_state.get("battle_show_panel", False):
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
     _battle_hdr_col, _battle_close_col = st.columns([6, 1])
     with _battle_hdr_col:
-        st.markdown('<h2>⚔️ Compare Stocks</h2>', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-            'This panel now opens in the main UI. Enter up to 10 stocks and run the full comparison here.</div>',
-            unsafe_allow_html=True,
-        )
+        st.header("⚔️ Compare Stocks")
+        st.caption("This panel now opens in the main UI. Enter up to 10 stocks and run the full comparison here.")
     with _battle_close_col:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("")
         _battle_close_panel = st.button("Close", key="battle_close_panel_btn", width="stretch")
 
     if _battle_close_panel:
@@ -8651,7 +8626,7 @@ if st.session_state.get("battle_show_panel", False):
 render_tomorrow_picks_panel()
 
 if st.session_state.get("show_bias_engine"):
-    st.markdown('<div class="section-lbl">📊 Market Bias Engine (Analytics)</div>', unsafe_allow_html=True)
+    st.caption("📊 Market Bias Engine (Analytics)")
     with st.spinner("Crunching latest Nifty (^NSEI) indicators..."):
         _ui_tt_key = str(st.session_state.get("tt_date_val") or "live")
         _bias_data = compute_market_bias_ui(_ui_tt_key)
@@ -8671,7 +8646,7 @@ if st.session_state.get("show_bias_engine"):
         st.session_state["show_bias_engine"] = False
         st.rerun()
 
-    st.markdown("<hr>", unsafe_allow_html=True)
+    st.divider()
 
 # ── RESULTS ───────────────────────────────────────────────────────────
 if _show_home_scanner and "results" in st.session_state:
@@ -8848,7 +8823,8 @@ if _show_home_scanner and "results" in st.session_state:
                 ri = counts.get("⚠️ Risky (Late Entry)", 0)
                 we = counts.get("❌ Weak Setup", 0)
 
-                st.markdown('<hr><div class="section-lbl">📊 Next-Day Signals Summary</div>', unsafe_allow_html=True)
+                st.divider()
+                st.caption("📊 Next-Day Signals Summary")
                 _nd_summary = (
                     '<div style="background:#0f1823;border:1px solid #1a2840;border-radius:10px;padding:12px 14px;margin-bottom:16px;">'
                     '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'
@@ -8868,9 +8844,9 @@ if _show_home_scanner and "results" in st.session_state:
                 st.markdown(_nd_summary, unsafe_allow_html=True)
 
         # ── TASK 4: Section Headers & Spacing ─────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<h2>🔥 Top Picks</h2>', unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("")
+        st.header("🔥 Top Picks")
+        st.write("")
 
         # ── TASK 1: Top Picks Cards ───────────────────────────────────
         top_n = min(5, len(df))
@@ -8942,9 +8918,10 @@ if _show_home_scanner and "results" in st.session_state:
                 )
                 st.link_button("📈 TradingView", tv_link, width="stretch")
 
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown('<h2>📊 Full Rankings</h2>', unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("")
+        st.write("")
+        st.header("📊 Full Rankings")
+        st.write("")
 
         # ── TASK 2 & 5: Clean Table with TradingView Link ─────────────
         table_df = df.copy()
@@ -8993,7 +8970,7 @@ if _show_home_scanner and "results" in st.session_state:
         )
 
         # ── TASK 3: Expandable Details ────────────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.write("")
         _visible_details_df = table_df.head(_VISIBLE_RESULT_LIMIT).copy()
         st.caption(
             f"Details panel limited to top {_VISIBLE_RESULT_LIMIT} stocks to keep the page shorter."
@@ -9014,7 +8991,7 @@ if _show_home_scanner and "results" in st.session_state:
                     ic3.metric("EMA 50", f"₹{row.get('EMA 50', 0):.2f}")
                     ic4.metric("Vol / Avg", f"{row.get('Vol / Avg', 0):.2f}x")
                     
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.write("")
                     rc1, rc2, rc3 = st.columns(3)
                     rc1.metric("5D Return", f"{row.get('5D Return (%)', 0):+.2f}%")
                     rc2.metric("20D Return", f"{row.get('20D Return (%)', 0):+.2f}%")
@@ -9090,7 +9067,8 @@ if _show_home_scanner and "results" in st.session_state:
             return _copy
 
         # ── CSV download (uses clean export layer) ────────────────────
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.write("")
+        st.write("")
         _clean_export = get_clean_export_df(table_df)
         _csv_buf = io.StringIO()
         _clean_export.to_csv(_csv_buf, index=False)
@@ -9126,8 +9104,9 @@ if _show_home_scanner and "results" in st.session_state:
             _signal_col = "Adjusted Signal" if "Adjusted Signal" in _tomorrow_df.columns else "Next-Day Signal"
             _tomorrow_df["Chart"] = _tomorrow_df["Symbol"].apply(lambda s: tv_chart_url(str(s)))
 
-            st.markdown("<br><br>", unsafe_allow_html=True)
-            st.markdown('<h2>Top 3 Buyable For Tomorrow</h2>', unsafe_allow_html=True)
+            st.write("")
+            st.write("")
+            st.header("Top 3 Buyable For Tomorrow")
             st.caption("Best next-day buy candidates from this mode scan. Save them once to keep them until you delete them.")
 
             _tomorrow_symbols = [
@@ -9290,13 +9269,9 @@ if _BREAKOUT_SECTION_OK:
 else:
     _csv_panel_open = bool(st.session_state.get("csv_next_day_show_panel", False))
     if csv_scan_clicked or _csv_panel_open:
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown('<h2>📂 CSV Next-Day Potential</h2>', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-            'Fast local scan using cached CSV data · Focused on tomorrow-up probability and stricter buy quality</div>',
-            unsafe_allow_html=True
-        )
+        st.divider()
+        st.header("📂 CSV Next-Day Potential")
+        st.caption("Fast local scan using cached CSV data. Focused on tomorrow-up probability and stricter buy quality.")
 
         if not _DATA_DOWNLOADER_OK or not _CSV_NEXT_DAY_ENGINE_OK:
             st.warning("CSV next-day engine is not available. Check `data_downloader.py` and `csv_next_day_engine.py`.")
@@ -9365,12 +9340,9 @@ else:
                         _grade_summary = " | ".join(
                             f"{_grade}: {_grade_counts.get(_grade, 0)}" for _grade in ["A", "B", "C", "D"]
                         )
-                        st.markdown(
-                            '<div style="font-size:12px;color:#4a6480;padding-top:8px;">'
-                            f'Grading System: <b>A</b> strongest setup · <b>B</b> good setup · '
-                            f'<b>C</b> watchlist quality · <b>D</b> weak setup'
-                            f'<br>Grade Distribution: {_grade_summary}</div>',
-                            unsafe_allow_html=True,
+                        st.caption(
+                            "Grading System: A strongest setup, B good setup, C watchlist quality, D weak setup. "
+                            f"Grade Distribution: {_grade_summary}"
                         )
 
                 _csv_display_df = csv_df.copy()
@@ -9501,17 +9473,13 @@ else:
 
     _battle_df = st.session_state.get("battle_results_df", None)
     if isinstance(_battle_df, pd.DataFrame) and not _battle_df.empty:
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown('<h2>⚔️ Multi-Stock Battle Mode</h2>', unsafe_allow_html=True)
-        st.markdown(
-            '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-            'Compare up to 10 stocks head-to-head · Full pipeline per ticker · Ranks by battle probability, quality and risk-adjusted strength</div>',
-            unsafe_allow_html=True,
-        )
+        st.divider()
+        st.header("⚔️ Multi-Stock Battle Mode")
+        st.caption("Compare up to 10 stocks head-to-head. Full pipeline per ticker. Ranks by battle probability, quality and risk-adjusted strength.")
 
         # ── 🥇 Winner Card ────────────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<div class="section-lbl">🥇 Battle Winner</div>', unsafe_allow_html=True)
+        st.write("")
+        st.caption("🥇 Battle Winner")
         _battle_sources = _summarize_compare_sources(st.session_state.get("battle_source_statuses"))
         if _battle_sources:
             st.caption(f"Data sources: {_battle_sources}")
@@ -9575,8 +9543,8 @@ else:
         )
 
         # ── 📊 Comparison Table ───────────────────────────
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown('<div class="section-lbl">📊 Head-to-Head Comparison</div>', unsafe_allow_html=True)
+        st.write("")
+        st.caption("📊 Head-to-Head Comparison")
         _table_rows = []
         for _, _br in _battle_df.iterrows():
             _trap_r = str(_br.get("Trap Risk", "")).strip()
@@ -9639,10 +9607,5 @@ if _STOCK_AURA_OK:
 elif st.session_state.get("aura_show_panel", False):
     st.warning("⚠️ app_stock_aura_section.py not found — place it next to app.py and restart.")
 
-st.markdown("<hr>", unsafe_allow_html=True)
-st.markdown(
-    '<div style="text-align:center;font-family:\'Space Mono\',monospace;'
-    'font-size:11px;color:#2a3f58;padding:8px 0 16px;">'
-    'NSE SENTINEL · Python + Streamlit + yFinance &nbsp;|&nbsp; '
-    'For educational purposes only — not financial advice</div>',
-    unsafe_allow_html=True)
+st.divider()
+st.caption("NSE SENTINEL · Python + Streamlit + yFinance | For educational purposes only - not financial advice")

@@ -23,32 +23,77 @@ from strategy_engines._engine_utils import (
     safe, ema, rsi_vec, SKLEARN_OK, ALL_DATA,
 )
 
+_INDICATOR_CACHE: dict[str, dict[str, pd.Series]] = {}
+_INDICATOR_CACHE_LOCK = threading.Lock()
+
+
+def _row_ticker(row: dict) -> str:
+    try:
+        return str(row.get("Ticker") or row.get("Symbol") or "").strip().upper()
+    except Exception:
+        return ""
+
+
+def _indicator_cache_key(df: pd.DataFrame, ticker: str = "") -> str:
+    try:
+        last_idx = str(df.index[-1])
+        last_close = float(df["Close"].iloc[-1])
+        last_volume = float(df["Volume"].iloc[-1])
+    except Exception:
+        last_idx = ""
+        last_close = 0.0
+        last_volume = 0.0
+    return f"{ticker}|{len(df)}|{last_idx}|{last_close:.8g}|{last_volume:.8g}"
+
+
+def _get_indicators(df: pd.DataFrame, ticker: str = "") -> dict[str, pd.Series]:
+    key = _indicator_cache_key(df, ticker)
+    with _INDICATOR_CACHE_LOCK:
+        cached = _INDICATOR_CACHE.get(key)
+        if cached is not None:
+            return cached
+
+    close = df["Close"].copy()
+    volume = df["Volume"].copy()
+    avg_vol = volume.rolling(20, min_periods=10).mean().shift(1)
+    indicators = {
+        "close": close,
+        "volume": volume,
+        "e20s": ema(close, 20),
+        "e50s": ema(close, 50),
+        "rsi_s": rsi_vec(close),
+        "avg_vol": avg_vol,
+        "vol_ratio": volume / avg_vol.replace(0, np.nan),
+    }
+
+    with _INDICATOR_CACHE_LOCK:
+        if len(_INDICATOR_CACHE) > 500:
+            _INDICATOR_CACHE.clear()
+        _INDICATOR_CACHE[key] = indicators
+    return indicators
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # SHARED HELPERS
 # ═══════════════════════════════════════════════════════════════════════
 
-def _run_backtest(df: pd.DataFrame, mask_fn, min_samples: int = 10) -> float:
+def _run_backtest(df: pd.DataFrame, mask_fn, min_samples: int = 10, ticker: str = "") -> float:
     """
     Common backtest runner.
-    mask_fn(close, volume, e20s, e50s, rsi_s, avg_vol, vol_ratio)
-    → pd.Series[bool]
-
-    BUG FIX: Docstring previously listed 8 parameters including a spurious
-    `row` argument. The actual call (line below) passes only 7 — `row` was
-    never passed and no inline mask_fn lambda declared it. Corrected to match
-    the real signature.
+    mask_fn(close, volume, e20s, e50s, rsi_s, avg_vol, vol_ratio) -> pd.Series[bool]
+    Accepts exactly 7 positional arguments. `row` is NOT passed.
     """
     try:
         if df is None or len(df) < 40:
             return 50.0
-        close     = df["Close"].copy()
-        volume    = df["Volume"].copy()
-        e20s      = ema(close, 20)
-        e50s      = ema(close, 50)
-        rsi_s     = rsi_vec(close)
-        avg_vol   = volume.rolling(20, min_periods=10).mean().shift(1)
-        vol_ratio = volume / avg_vol.replace(0, np.nan)
+        indicators = _get_indicators(df, ticker)
+        close     = indicators["close"]
+        volume    = indicators["volume"]
+        e20s      = indicators["e20s"]
+        e50s      = indicators["e50s"]
+        rsi_s     = indicators["rsi_s"]
+        avg_vol   = indicators["avg_vol"]
+        vol_ratio = indicators["vol_ratio"]
 
         mask = mask_fn(close, volume, e20s, e50s, rsi_s, avg_vol, vol_ratio)
         idx  = np.where(mask.values)[0]
@@ -162,7 +207,7 @@ def backtest_mode1_df(row: dict, df: pd.DataFrame | None) -> float:
             high_10d.notna() &
             (close    >= high_10d * 0.99)
         )
-    return _run_backtest(df, mask_fn, min_samples=15)
+    return _run_backtest(df, mask_fn, min_samples=15, ticker=_row_ticker(row))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -188,7 +233,7 @@ def backtest_mode2_df(row: dict, df: pd.DataFrame | None) -> float:
             high_15d.notna() &
             (close    >= high_15d * 0.97)
         )
-    return _run_backtest(df, mask_fn, min_samples=15)
+    return _run_backtest(df, mask_fn, min_samples=15, ticker=_row_ticker(row))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -211,7 +256,7 @@ def backtest_mode3_df(row: dict, df: pd.DataFrame | None) -> float:
             (vol_ratio <= target_volr * 1.35) &
             (close    >  e20s)
         )
-    return _run_backtest(df, mask_fn, min_samples=12)
+    return _run_backtest(df, mask_fn, min_samples=12, ticker=_row_ticker(row))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -240,7 +285,7 @@ def backtest_mode4_df(row: dict, df: pd.DataFrame | None) -> float:
             high_20d.notna() &
             (close    >= high_20d * 0.98)
         )
-    return _run_backtest(df, mask_fn, min_samples=12)
+    return _run_backtest(df, mask_fn, min_samples=12, ticker=_row_ticker(row))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -266,7 +311,7 @@ def backtest_mode5_df(row: dict, df: pd.DataFrame | None) -> float:
             (close    >= high_5d * 0.99) &
             (vol_ratio <= 3.5)
         )
-    return _run_backtest(df, mask_fn, min_samples=10)
+    return _run_backtest(df, mask_fn, min_samples=10, ticker=_row_ticker(row))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -293,7 +338,7 @@ def backtest_mode6_df(row: dict, df: pd.DataFrame | None) -> float:
             (rsi_s    >= 50) &
             (rsi_s    <= 63)
         )
-    return _run_backtest(df, mask_fn, min_samples=12)
+    return _run_backtest(df, mask_fn, min_samples=12, ticker=_row_ticker(row))
 
 
 # ═══════════════════════════════════════════════════════════════════════
