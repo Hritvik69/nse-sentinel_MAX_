@@ -9,8 +9,7 @@
     "AFSL",
     "RAINBOW",
     "KKCL",
-    "APLLTD",
-    "RAYMONDLSL"
+    "APLLTD"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -30,8 +29,7 @@
     ],
     "breakout": [
       "KKCL",
-      "APLLTD",
-      "RAYMONDLSL"
+      "APLLTD"
     ]
   }
 }
