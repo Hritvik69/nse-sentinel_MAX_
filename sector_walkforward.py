@@ -232,8 +232,11 @@ def run_walk_forward(
         ]
         if raw_stability < 0:
             note_parts.append(
-                "Stability was clipped to 0.0 because the raw stability score was negative before clipping."
+                f"Stability was clipped to 0.0 (raw score: {raw_stability:.1f}). "
+                "Model is unstable across folds."
             )
+        elif raw_stability < 20:
+            note_parts.append(f"Low stability (raw: {raw_stability:.1f}).")
         report.note = " ".join(note_parts)
 
     except Exception as exc:

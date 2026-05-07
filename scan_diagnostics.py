@@ -67,12 +67,11 @@ _reason_count: Counter            = Counter()
 
 def reset() -> None:
     """Clear all state — call this at the START of every scan."""
-    global _attempted, _succeeded, _failed, _reason_count
     with _LOCK:
-        _attempted     = set()
-        _succeeded     = set()
-        _failed        = {}
-        _reason_count  = Counter()
+        _attempted.clear()
+        _succeeded.clear()
+        _failed.clear()
+        _reason_count.clear()
 
 
 def record_attempt(ticker: str) -> None:

@@ -479,15 +479,15 @@ _JS = """
   );
 
   /* ── 10. MutationObserver — catch Streamlit rerenders ── */
+  let _animTimer = null;
   const mo = new MutationObserver(() => {
-    staggerCards();
-    animateCounters();
-    patchSignalBadges();
-    staggerTableRows();
-    wireCardHover();
-    patchGrades();
-    wireScanHeaders();
-    flashNewRows();
+    if (_animTimer) return;
+    _animTimer = setTimeout(() => {
+      _animTimer = null;
+      patchSignalBadges();
+      patchGrades();
+      flashNewRows();
+    }, 150);
   });
 
   function boot() {

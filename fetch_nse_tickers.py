@@ -37,8 +37,16 @@ This is achieved two ways:
 # ── Remove the old @st.cache_data decorator on fetch_nse_tickers ─────
 # ── and replace the entire function with this version             ─────
 
-@st.cache_data(ttl=43200, show_spinner=False)   # 12-hour TTL (was 6h/24h)
-def fetch_nse_tickers() -> list:
+import streamlit as st
+
+_CACHE_AVAILABLE = True
+try:
+    st.cache_data
+except AttributeError:
+    _CACHE_AVAILABLE = False
+
+
+def _fetch_nse_tickers_impl() -> list:
     """
     Load the scan universe from the shared ticker-universe module.
 
@@ -118,3 +126,9 @@ def fetch_nse_tickers() -> list:
         pass
 
     return fallback
+
+
+if _CACHE_AVAILABLE:
+    fetch_nse_tickers = st.cache_data(ttl=43200, show_spinner=False)(_fetch_nse_tickers_impl)
+else:
+    fetch_nse_tickers = _fetch_nse_tickers_impl

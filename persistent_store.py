@@ -266,7 +266,13 @@ def push_file(local_path: Path | str, *, block: bool = False) -> bool:
             return
         local_name = local_path.name
         remote_path = _SYNC_FILES.get(local_name) or _SYNC_ALIASES.get(local_name)
-        if remote_path is None or not local_path.exists():
+        if remote_path is None:
+            import logging
+            logging.debug(f"persistent_store: {local_name!r} not in sync manifest -- skipped")
+            return
+        if not local_path.exists():
+            import logging
+            logging.debug(f"persistent_store: {local_path} does not exist -- skipped")
             return
         try:
             content = local_path.read_bytes()

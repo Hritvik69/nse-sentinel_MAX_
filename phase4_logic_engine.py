@@ -82,6 +82,31 @@ def get_str_safe(row: "pd.Series", key: str, default: str = "") -> str:
     return default
 
 
+def _numeric_series(df: pd.DataFrame, keys: list[str], default: float) -> pd.Series:
+    """Vectorized safe numeric column access."""
+    for key in keys:
+        if key not in df.columns:
+            continue
+        col = df[key]
+        if pd.api.types.is_numeric_dtype(col):
+            return pd.to_numeric(col, errors="coerce").fillna(default).astype(float)
+        cleaned = (
+            col.astype(str)
+            .str.strip()
+            .replace({"": np.nan, "nan": np.nan, "None": np.nan, "none": np.nan, "-": np.nan, "—": np.nan})
+            .str.replace(r"[%xX×,]", "", regex=True)
+        )
+        return pd.to_numeric(cleaned, errors="coerce").fillna(default).astype(float)
+    return pd.Series(default, index=df.index, dtype=float)
+
+
+def _string_series(df: pd.DataFrame, key: str, default: str = "") -> pd.Series:
+    """Vectorized safe string column access."""
+    if key not in df.columns:
+        return pd.Series(default, index=df.index, dtype=object)
+    return df[key].where(df[key].notna(), default).astype(str).str.strip().replace("", default)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # CLASSIFICATION HELPERS
 # ─────────────────────────────────────────────────────────────────────
@@ -278,12 +303,39 @@ def apply_phase4_logic(
         # We keep _parse_bias for potential future use and back-compat.
         _bias_token = _parse_bias(market_bias)  # noqa: F841
 
+        rsi = _numeric_series(out, ["RSI"], 50.0)
+        vol = _numeric_series(out, ["Vol / Avg"], 1.0)
+        delta_ema20 = _numeric_series(out, ["Δ vs EMA20 (%)"], 0.0)
+        high_dist = _numeric_series(out, ["Δ vs 20D High (%)", "Near High (%)"], -5.0)
+        trap_risk = _string_series(out, "Trap Risk", "LOW").str.upper()
+        setup_qual = _string_series(out, "Setup Quality", "MEDIUM").str.upper()
+        entry_timing = _string_series(out, "Entry Timing", "NEUTRAL").str.upper()
+        vol_trend = _string_series(out, "Volume Trend", "NORMAL").str.upper()
+
+        out["Setup Type"] = [
+            _setup_type(h, v, d, r)
+            for h, v, d, r in zip(high_dist, vol, delta_ema20, rsi)
+        ]
+        out["Reason"] = [
+            _reason(v, r, h, d)
+            for v, r, h, d in zip(vol, rsi, high_dist, delta_ema20)
+        ]
+        out["Risk Score"] = [
+            round(_risk_score(d, r, v), 2)
+            for d, r, v in zip(delta_ema20, rsi, vol)
+        ]
+        out["Final Signal"] = [
+            _final_signal(tr, sq, et, vt)
+            for tr, sq, et, vt in zip(trap_risk, setup_qual, entry_timing, vol_trend)
+        ]
+        return out
+
         setup_types:   list[str]   = []
         reasons:       list[str]   = []
         risk_scores:   list[float] = []
         final_signals: list[str]   = []
 
-        for idx in out.index:
+        for idx in ():
             try:
                 row = out.loc[idx]
 
@@ -460,11 +512,32 @@ def apply_phase42_logic(df: pd.DataFrame) -> pd.DataFrame:
     try:
         out = df.copy()
 
+        rsi = _numeric_series(out, ["RSI"], 50.0)
+        vol = _numeric_series(out, ["Vol / Avg"], 1.0)
+        high_dist = _numeric_series(out, ["Δ vs 20D High (%)", "Near High (%)"], -5.0)
+        final_sig = _string_series(out, "Final Signal", "AVOID").str.upper()
+        risk_score = _numeric_series(out, ["Risk Score"], 50.0)
+
+        adv_traps = [
+            _advanced_trap(h, v, r)
+            for h, v, r in zip(high_dist, vol, rsi)
+        ]
+        out["Advanced Trap"] = adv_traps
+        out["Expected Move"] = [
+            _expected_move(v, r)
+            for v, r in zip(vol, rsi)
+        ]
+        out["Adjusted Signal"] = [
+            _adjusted_signal(fs, rs, at)
+            for fs, rs, at in zip(final_sig, risk_score, adv_traps)
+        ]
+        return out
+
         adv_traps:   list[str] = []
         exp_moves:   list[str] = []
         adj_signals: list[str] = []
 
-        for idx in out.index:
+        for idx in ():
             try:
                 row = out.loc[idx]
 

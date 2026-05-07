@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import threading
 
 import numpy as np
 import pandas as pd
@@ -40,6 +41,7 @@ MODEL = None
 SCALER = None
 REGIME_ENCODER: dict[str, int] = {}
 SECTOR_ENCODER: dict[str, int] = {}
+_MODEL_LOCK = threading.RLock()
 
 TRAINING_STATUS: dict = {
     "trained": False,
@@ -208,10 +210,13 @@ def _encode_feature_frame(df: pd.DataFrame, *, fit: bool = False) -> pd.DataFram
     frame["regime"] = frame["regime"].fillna("UNKNOWN").astype(str)
     frame["sector"] = frame["sector"].fillna("UNKNOWN").astype(str)
 
-    if fit or not REGIME_ENCODER:
-        REGIME_ENCODER = _build_encoder(frame["regime"], existing={})
-    if fit or not SECTOR_ENCODER:
-        SECTOR_ENCODER = _build_encoder(frame["sector"], existing={})
+    with _MODEL_LOCK:
+        if fit or not REGIME_ENCODER:
+            REGIME_ENCODER = _build_encoder(frame["regime"], existing={})
+        if fit or not SECTOR_ENCODER:
+            SECTOR_ENCODER = _build_encoder(frame["sector"], existing={})
+        regime_encoder = dict(REGIME_ENCODER)
+        sector_encoder = dict(SECTOR_ENCODER)
 
     encoded = pd.DataFrame(
         {
@@ -219,8 +224,8 @@ def _encode_feature_frame(df: pd.DataFrame, *, fit: bool = False) -> pd.DataFram
             "final_score": frame["final_score"].astype(float),
             "is_bullish": frame["is_bullish"].astype(float),
             "conviction_score": frame["conviction_tier"].map(_conviction_to_numeric).astype(float),
-            "regime_code": _encode_with_map(frame["regime"], REGIME_ENCODER),
-            "sector_code": _encode_with_map(frame["sector"], SECTOR_ENCODER),
+            "regime_code": _encode_with_map(frame["regime"], regime_encoder),
+            "sector_code": _encode_with_map(frame["sector"], sector_encoder),
         }
     )
     return encoded.fillna(0.0)
@@ -409,26 +414,29 @@ def train_learning_model():
         model.fit(X_train_scaled, y_train)
 
         accuracy = float(model.score(X_test_scaled, y_test) * 100.0)
-        MODEL = model
-        SCALER = scaler
+        with _MODEL_LOCK:
+            MODEL = model
+            SCALER = scaler
+            regime_encoder = dict(REGIME_ENCODER)
+            sector_encoder = dict(SECTOR_ENCODER)
         status.update(
             {
                 "trained": True,
                 "accuracy_pct": round(accuracy, 2),
                 "last_trained": datetime.now().isoformat(timespec="minutes"),
                 "message": f"Model trained on {len(X)} samples.",
-                "regime_encoder": dict(REGIME_ENCODER),
-                "sector_encoder": dict(SECTOR_ENCODER),
+                "regime_encoder": regime_encoder,
+                "sector_encoder": sector_encoder,
             }
         )
         TRAINING_STATUS = status
-        _save_model(MODEL, SCALER, REGIME_ENCODER, SECTOR_ENCODER)
+        _save_model(model, scaler, regime_encoder, sector_encoder)
         return {
             "model": model,
             "scaler": scaler,
             "status": status,
-            "regime_encoder": dict(REGIME_ENCODER),
-            "sector_encoder": dict(SECTOR_ENCODER),
+            "regime_encoder": regime_encoder,
+            "sector_encoder": sector_encoder,
         }
     except Exception as exc:
         status["message"] = f"Training failed: {exc}"
@@ -447,15 +455,20 @@ def load_persisted_model() -> bool:
         payload = _load_model()
         if payload is None:
             return False
-        MODEL = payload["model"]
-        SCALER = payload["scaler"]
-        REGIME_ENCODER = payload.get("regime_encoder", {})
-        SECTOR_ENCODER = payload.get("sector_encoder", {})
-        if MODEL is not None and SCALER is not None:
+        model = payload["model"]
+        scaler = payload["scaler"]
+        regime_encoder = dict(payload.get("regime_encoder", {}) or {})
+        sector_encoder = dict(payload.get("sector_encoder", {}) or {})
+        with _MODEL_LOCK:
+            MODEL = model
+            SCALER = scaler
+            REGIME_ENCODER = regime_encoder
+            SECTOR_ENCODER = sector_encoder
+        if model is not None and scaler is not None:
             TRAINING_STATUS["trained"] = True
             TRAINING_STATUS["message"] = "Model restored from persistent storage."
-            TRAINING_STATUS["regime_encoder"] = dict(REGIME_ENCODER)
-            TRAINING_STATUS["sector_encoder"] = dict(SECTOR_ENCODER)
+            TRAINING_STATUS["regime_encoder"] = regime_encoder
+            TRAINING_STATUS["sector_encoder"] = sector_encoder
             return True
         return False
     except Exception:
@@ -472,14 +485,17 @@ def restore_learning_bundle(bundle: dict | None) -> bool:
         status = bundle.get("status")
         if model is None or scaler is None:
             return False
-        MODEL = model
-        SCALER = scaler
-        REGIME_ENCODER = dict(bundle.get("regime_encoder") or {})
-        SECTOR_ENCODER = dict(bundle.get("sector_encoder") or {})
+        regime_encoder = dict(bundle.get("regime_encoder") or {})
+        sector_encoder = dict(bundle.get("sector_encoder") or {})
+        with _MODEL_LOCK:
+            MODEL = model
+            SCALER = scaler
+            REGIME_ENCODER = regime_encoder
+            SECTOR_ENCODER = sector_encoder
         if isinstance(status, dict):
             status = dict(status)
-            status["regime_encoder"] = dict(REGIME_ENCODER)
-            status["sector_encoder"] = dict(SECTOR_ENCODER)
+            status["regime_encoder"] = regime_encoder
+            status["sector_encoder"] = sector_encoder
             TRAINING_STATUS = status
         return True
     except Exception:
@@ -507,7 +523,7 @@ def get_training_status() -> dict:
         }
 
 
-def _row_to_feature_frame(row: dict | pd.Series) -> pd.DataFrame:
+def _extract_feature_dict(row: dict | pd.Series) -> dict:
     prediction_score = _safe_float(
         _first_present(row, ["Prediction Score", "prediction_score", "raw_score"], 50.0),
         50.0,
@@ -533,29 +549,54 @@ def _row_to_feature_frame(row: dict | pd.Series) -> pd.DataFrame:
     elif not isinstance(conviction, str):
         conviction = _confidence_bucket(conviction)
 
-    raw = pd.DataFrame(
-        [
-            {
-                "prediction_score": prediction_score,
-                "final_score": final_score,
-                "is_bullish": _to_binary_flag(pred_bullish),
-                "conviction_tier": conviction,
-                "regime": _first_present(row, ["regime", "Regime"], "UNKNOWN"),
-                "sector": _first_present(row, ["sector", "Sector"], "UNKNOWN"),
-            }
-        ]
-    )
+    return {
+        "prediction_score": prediction_score,
+        "final_score": final_score,
+        "is_bullish": _to_binary_flag(pred_bullish),
+        "conviction_tier": conviction,
+        "regime": _first_present(row, ["regime", "Regime"], "UNKNOWN"),
+        "sector": _first_present(row, ["sector", "Sector"], "UNKNOWN"),
+    }
+
+
+def _row_to_feature_frame(row: dict | pd.Series) -> pd.DataFrame:
+    raw = pd.DataFrame([_extract_feature_dict(row)])
     return _encode_feature_frame(raw, fit=False)
 
 
 def predict_success(row: dict):
-    if MODEL is None or SCALER is None:
+    with _MODEL_LOCK:
+        mdl = MODEL
+        scl = SCALER
+    if mdl is None or scl is None:
         return 50.0
 
     try:
         X = _row_to_feature_frame(row)
-        X_scaled = SCALER.transform(X)
-        prob = MODEL.predict_proba(X_scaled)[0][1]
+        X_scaled = scl.transform(X)
+        prob = mdl.predict_proba(X_scaled)[0][1]
         return round(float(prob) * 100.0, 1)
     except Exception:
         return 50.0
+
+
+def batch_predict_success(df: pd.DataFrame) -> pd.Series:
+    """Batch version of predict_success: encode once, transform once."""
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.Series(dtype=float)
+    default = pd.Series(50.0, index=df.index, dtype=float)
+
+    with _MODEL_LOCK:
+        mdl = MODEL
+        scl = SCALER
+    if mdl is None or scl is None:
+        return default
+
+    try:
+        rows = [_extract_feature_dict(row) for _, row in df.iterrows()]
+        feat_df = pd.DataFrame(rows)
+        feat_enc = _encode_feature_frame(feat_df, fit=False)
+        probs = mdl.predict_proba(scl.transform(feat_enc))[:, 1]
+        return pd.Series([round(float(p) * 100.0, 1) for p in probs], index=df.index, dtype=float)
+    except Exception:
+        return default

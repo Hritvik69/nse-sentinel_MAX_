@@ -45,6 +45,9 @@ _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedel
 _ROOT = Path(__file__).resolve().parent
 _FEATURE_CACHE_ROOT = _ROOT / "data" / "feature_cache"
 _SCANNER_SNAPSHOT_ROOT = _ROOT / "data" / "snapshots"
+_SAVED_TODAY: set[str] = set()
+_SAVED_TODAY_DAY: date | None = None
+_SAVED_TODAY_LOCK = threading.Lock()
 
 
 def _now_ist() -> datetime:
@@ -52,6 +55,19 @@ def _now_ist() -> datetime:
         return datetime.now(_IST_TZ)
     except Exception:
         return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+
+def _should_save_stock_cache_once(symbol: str, cache_day: date) -> bool:
+    global _SAVED_TODAY_DAY
+    cache_key = f"{symbol}:{cache_day.isoformat()}"
+    with _SAVED_TODAY_LOCK:
+        if _SAVED_TODAY_DAY != cache_day:
+            _SAVED_TODAY.clear()
+            _SAVED_TODAY_DAY = cache_day
+        if cache_key in _SAVED_TODAY:
+            return False
+        _SAVED_TODAY.add(cache_key)
+        return True
 
 
 def _get_real_current_window() -> str:
@@ -723,7 +739,7 @@ class FeatureDataManager:
                 source = _get_frame_source(df_all) or "all_data"
                 source_kind = _source_kind_for_frame(source, window)
                 self._write_all_data(normalized, df_all)
-                if append_nse_suffix:
+                if append_nse_suffix and _should_save_stock_cache_once(normalized, cache_day):
                     self._save_stock_cache(
                         normalized,
                         df_all,

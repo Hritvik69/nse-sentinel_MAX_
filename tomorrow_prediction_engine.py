@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
@@ -533,10 +534,19 @@ def summarize_tomorrow_predictions(tickers, all_data, mode):
                 ticker_list.append(text)
 
         predictions = []
-        for ticker in ticker_list:
-            pred = get_tomorrow_prediction(ticker, all_data, mode)
-            if isinstance(pred, dict) and pred.get("ticker"):
-                predictions.append(pred)
+        if ticker_list:
+            with ThreadPoolExecutor(max_workers=min(8, len(ticker_list))) as ex:
+                futures = {
+                    ex.submit(get_tomorrow_prediction, ticker, all_data, mode): ticker
+                    for ticker in ticker_list
+                }
+                for fut in as_completed(futures):
+                    try:
+                        pred = fut.result()
+                        if isinstance(pred, dict) and pred.get("ticker"):
+                            predictions.append(pred)
+                    except Exception:
+                        continue
 
         if not predictions:
             return {

@@ -35,11 +35,22 @@ _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else None
 # ── Central data store (zero-API scan) ───────────────────────────────
 ALL_DATA: dict[str, pd.DataFrame | None] = {}
 _ALL_DATA_LOCK = threading.Lock()
+_ALL_DATA_MAX_ENTRIES = 1500
 _NO_DATA_TICKERS: set[str] = set()
 _NO_DATA_LOCK = threading.Lock()
 _LAST_LIVE_CACHE_DATE: date | None = None
 _LIVE_CACHE_LOCK = threading.Lock()
 _TT_DOWNLOAD_LOOKBACK_DAYS = 420
+
+
+def _evict_all_data_if_needed() -> None:
+    """Evict oldest ALL_DATA entries when the shared cache exceeds its cap."""
+    with _ALL_DATA_LOCK:
+        overflow = len(ALL_DATA) - _ALL_DATA_MAX_ENTRIES
+        if overflow <= 0:
+            return
+        for key in list(ALL_DATA.keys())[:overflow]:
+            ALL_DATA.pop(key, None)
 
 
 def _current_time_travel_cutoff() -> date | None:
@@ -940,6 +951,7 @@ def preload_all(
                 _emit_progress()
 
     if not download_queue:
+        _evict_all_data_if_needed()
         return {
             "total": total,
             "loaded": loaded,
@@ -1024,6 +1036,7 @@ def preload_all(
                         loaded += 1
                 _emit_progress()
 
+    _evict_all_data_if_needed()
     return {
         "total": total,
         "loaded": loaded,
