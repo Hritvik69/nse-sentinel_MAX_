@@ -1,8 +1,7 @@
 {
   "picks": [
     "PSB",
-    "CENTRALBK",
-    "IPCALAB"
+    "CENTRALBK"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -10,9 +9,7 @@
       "PSB",
       "CENTRALBK"
     ],
-    "swing": [
-      "IPCALAB"
-    ],
+    "swing": [],
     "intraday": [],
     "breakout": []
   }
