@@ -77,8 +77,11 @@ def _get_col(df: pd.DataFrame, *names: str, default: float = 50.0) -> pd.Series:
     for name in names:
         actual = df_cols_lower.get(name.lower())
         if actual is not None:
-            return df[actual].apply(lambda v: _safe_float(v, default))
-    return pd.Series([default] * len(df), index=df.index)
+            col = df[actual]
+            if pd.api.types.is_numeric_dtype(col):
+                return pd.to_numeric(col, errors="coerce").fillna(default).clip(lower=-1e9, upper=1e9).astype(float)
+            return col.apply(lambda v: _safe_float(v, default))
+    return pd.Series(default, index=df.index, dtype=float)
 
 
 def _parse_bias(market_bias: dict | None) -> str:

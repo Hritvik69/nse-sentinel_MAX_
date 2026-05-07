@@ -458,6 +458,21 @@ def _write_learning_status_snapshot(
         return
 
 
+def _write_learning_status_snapshot_async(
+    learning_status: dict,
+    signal_status: dict,
+    *,
+    signature: tuple[str, float, float],
+) -> None:
+    def _bg_write_snapshot() -> None:
+        try:
+            _write_learning_status_snapshot(learning_status, signal_status, signature=signature)
+        except Exception:
+            pass
+
+    threading.Thread(target=_bg_write_snapshot, daemon=True).start()
+
+
 def _read_learning_status_snapshot() -> dict:
     try:
         if not _LEARNING_STATUS_SNAPSHOT_PATH.exists():
@@ -704,7 +719,7 @@ def _refresh_feedback_learning_system(force: bool = False) -> dict:
     st.session_state["_signal_weight_status"] = signal_snapshot
     st.session_state["_signal_weight_sig"] = fresh_sig
     status["brain_status"] = _compact_brain_status(brain_status)
-    _write_learning_status_snapshot(status, signal_snapshot, signature=fresh_sig)
+    _write_learning_status_snapshot_async(status, signal_snapshot, signature=fresh_sig)
 
     total_validated = int(status.get("validated_today", 0) or 0) + int(status.get("sector_validated_today", 0) or 0)
     if total_validated > 0:
@@ -743,7 +758,7 @@ def _sync_cached_learning_feedback_summary(feedback_stats: dict | None = None) -
             st.session_state["_learning_status"] = updated_status
             try:
                 _sig = st.session_state.get("_learning_refresh_sig") or ("", 0.0, 0.0)
-                _write_learning_status_snapshot(
+                _write_learning_status_snapshot_async(
                     updated_status,
                     st.session_state.get("_signal_weight_status", {}),
                     signature=_sig,
@@ -6128,8 +6143,20 @@ def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
     TT date string (or "live") so Streamlit re-runs when the date changes.
     """
     try:
-        # 1. Fetch data
-        df = yf.download("^NSEI", period="4mo", interval="1d", progress=False, auto_adjust=True)
+        # 1. Fetch data, preferring the scan's shared cache over a live call.
+        df = None
+        try:
+            if _engine_utils is not None:
+                for _tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
+                    _cached = _engine_utils.ALL_DATA.get(_tk)
+                    if isinstance(_cached, pd.DataFrame) and not _cached.empty:
+                        df = _cached.copy()
+                        break
+        except Exception:
+            df = None
+
+        if df is None or df.empty:
+            df = yf.download("^NSEI", period="4mo", interval="1d", progress=False, auto_adjust=True)
         if df is None or df.empty or len(df) < 50:
             return {
                 "bias": "Sideways / No Edge",
@@ -7653,9 +7680,14 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
 
 
 def _activate_sidebar_panel(active_key: str | None = None) -> None:
+    changed = False
     for key in _SIDEBAR_PANEL_KEYS:
-        st.session_state[key] = (key == active_key)
-    st.rerun()
+        new_val = (key == active_key)
+        if st.session_state.get(key) != new_val:
+            st.session_state[key] = new_val
+            changed = True
+    if changed:
+        st.rerun()
 
 
 def _close_tomorrow_picks_panel() -> None:
@@ -8487,8 +8519,21 @@ if main_scan_clicked:
     st.session_state.pop("last_scan_df", None)
     st.session_state.pop("_last_scan_df_sig", None)
 
-    # FIX 6 — Auto-backfill actual returns for past predictions (background)
-    st.rerun()
+    # FIX 6 - Auto-backfill actual returns in the background.
+    def _bg_backfill_actual_returns() -> None:
+        try:
+            _backfill_post_close_outcomes(force=True)
+            return
+        except Exception:
+            pass
+        try:
+            from grading_engine import backfill_actual_returns
+
+            backfill_actual_returns()
+        except Exception:
+            pass
+
+    threading.Thread(target=_bg_backfill_actual_returns, daemon=True).start()
 
 # ── SECTOR SCREENER DASHBOARD ─────────────────────────────────────
 if sector_screener_clicked:
@@ -8748,8 +8793,8 @@ if _show_home_scanner and "results" in st.session_state:
         # ── Learning prediction (added column only) ───────────────────
         if not _using_cached_scan_df:
             try:
-                from learning_engine import predict_success
-                df["Learned Prob %"] = df.apply(lambda row: predict_success(row), axis=1)
+                from learning_engine import batch_predict_success
+                df["Learned Prob %"] = batch_predict_success(df)
             except Exception:
                 pass
 

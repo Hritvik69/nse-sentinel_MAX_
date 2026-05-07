@@ -61,6 +61,22 @@ def _get(row: "pd.Series", *keys: str, default: float = 0.0) -> float:
     return default
 
 
+def _numeric_series(df: pd.DataFrame, name: str, default: float) -> pd.Series:
+    """Vectorized safe-float extraction for scan columns."""
+    if name not in df.columns:
+        return pd.Series(default, index=df.index, dtype=float)
+    col = df[name]
+    if pd.api.types.is_numeric_dtype(col):
+        return pd.to_numeric(col, errors="coerce").fillna(default).astype(float)
+    cleaned = (
+        col.astype(str)
+        .str.strip()
+        .replace({"": np.nan, "nan": np.nan, "None": np.nan, "none": np.nan, "-": np.nan, "—": np.nan})
+        .str.replace(r"[%xX×,]", "", regex=True)
+    )
+    return pd.to_numeric(cleaned, errors="coerce").fillna(default).astype(float)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # CLASSIFICATION FUNCTIONS
 # ─────────────────────────────────────────────────────────────────────
@@ -213,39 +229,53 @@ def apply_enhanced_logic(df: pd.DataFrame) -> pd.DataFrame:
     try:
         out = df.copy()
 
-        vol_trends:    list[str] = []
-        setup_quals:   list[str] = []
-        entry_timings: list[str] = []
-        trap_risks:    list[str] = []
+        rsi = _numeric_series(out, "RSI", 50.0)
+        vol_avg = _numeric_series(out, "Vol / Avg", 1.0)
+        delta_ema20 = _numeric_series(out, "Δ vs EMA20 (%)", 0.0)
+        ret_5d = _numeric_series(out, "5D Return (%)", 0.0)
 
-        for idx in out.index:
-            row = out.loc[idx]
+        vol_trend = np.select(
+            [vol_avg > 1.5, vol_avg >= 1.2, vol_avg >= 0.9],
+            ["STRONG", "BUILDING", "NORMAL"],
+            default="WEAK",
+        )
 
-            rsi         = _get(row, "RSI",            default=50.0)
-            vol_avg     = _get(row, "Vol / Avg",       default=1.0)
-            delta_ema20 = _get(row, "Δ vs EMA20 (%)", default=0.0)
-            ret_5d      = _get(row, "5D Return (%)",   default=0.0)
+        is_late = (rsi > 70.0) | (delta_ema20 > 6.0)
+        is_early = (rsi >= 50.0) & (rsi <= 60.0) & (delta_ema20 < 4.0)
+        is_good = (rsi >= 55.0) & (rsi <= 65.0)
+        entry_timing = np.select(
+            [is_late, is_early, is_good],
+            ["LATE", "EARLY", "GOOD"],
+            default="NEUTRAL",
+        )
 
-            # ── 1. Volume Trend ────────────────────────────────────────
-            vt = _volume_trend(vol_avg)
-            vol_trends.append(vt)
+        vol_ok = (vol_trend == "STRONG") | (vol_trend == "BUILDING")
+        vol_norm = vol_trend == "NORMAL"
+        rsi_ok = (rsi >= 50.0) & (rsi <= 65.0)
+        ema_ok = delta_ema20 < 5.0
+        overext = (delta_ema20 > 7.0) | (rsi > 70.0)
+        vol_weak = vol_trend == "WEAK"
+        setup_quality = np.select(
+            [vol_ok & rsi_ok & ema_ok, vol_norm & rsi_ok & ema_ok, overext | vol_weak],
+            ["HIGH", "MEDIUM", "LOW"],
+            default="MEDIUM",
+        )
 
-            # ── 2. Entry Timing ────────────────────────────────────────
-            et = _entry_timing(rsi, delta_ema20)
-            entry_timings.append(et)
+        trap_count = (
+            ((rsi > 72.0) & (vol_avg < 1.2)).astype(int)
+            + (delta_ema20 > 7.0).astype(int)
+            + (ret_5d > 9.0).astype(int)
+        )
+        trap_risk = np.select(
+            [trap_count >= 2, trap_count == 1],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
 
-            # ── 3. Setup Quality (uses volume trend computed above) ────
-            sq = _setup_quality(vt, rsi, delta_ema20)
-            setup_quals.append(sq)
-
-            # ── 4. Trap Risk (now uses 2-condition threshold) ──────────
-            tr = _trap_risk(rsi, vol_avg, delta_ema20, ret_5d)
-            trap_risks.append(tr)
-
-        out["Volume Trend"]  = vol_trends
-        out["Setup Quality"] = setup_quals
-        out["Entry Timing"]  = entry_timings
-        out["Trap Risk"]     = trap_risks
+        out["Volume Trend"] = vol_trend
+        out["Setup Quality"] = setup_quality
+        out["Entry Timing"] = entry_timing
+        out["Trap Risk"] = trap_risk
 
         # Preserve existing sort order (Final Score desc if present)
         if "Final Score" in out.columns:
