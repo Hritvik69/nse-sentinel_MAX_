@@ -4,8 +4,7 @@
     "CENTRALBK",
     "CHAMBLFERT",
     "GSFC",
-    "IPCALAB",
-    "AFSL"
+    "IPCALAB"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -18,9 +17,7 @@
       "GSFC",
       "IPCALAB"
     ],
-    "intraday": [
-      "AFSL"
-    ],
+    "intraday": [],
     "breakout": []
   }
 }
