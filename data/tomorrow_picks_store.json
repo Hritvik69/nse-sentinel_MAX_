@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "OBCL",
+    "IMPAL",
+    "YASHO"
+  ],
   "notes": "jniiknjknji",
   "sections": {
-    "relax": [],
+    "relax": [
+      "OBCL",
+      "IMPAL",
+      "YASHO"
+    ],
     "swing": [],
     "intraday": [],
     "breakout": []
