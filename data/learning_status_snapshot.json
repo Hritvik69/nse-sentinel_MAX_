@@ -1,9 +1,9 @@
 {
-  "saved_at": "2026-05-07T08:15:46",
+  "saved_at": "2026-05-07T08:18:19",
   "signature": [
     "2026-05-07",
-    1778141618.434,
-    1778141421.782
+    1778141884.922,
+    1778141878.386
   ],
   "learning_status": {
     "trained": true,
@@ -11,9 +11,9 @@
     "stock_samples": 338,
     "sector_samples": 0,
     "accuracy_pct": 80.0,
-    "last_trained": "2026-05-07T08:13",
+    "last_trained": "2026-05-07T08:15",
     "source": "stock_feedback",
-    "message": "Model trained on 338 samples.",
+    "message": "Model restored from persistent storage.",
     "regime_encoder": {
       "UNKNOWN": 0,
       "HIGH VOLATILITY / CHOPPY": 1
@@ -31,7 +31,7 @@
       "REALTY": 9,
       "TELECOM": 10
     },
-    "validated_today": 338,
+    "validated_today": 0,
     "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 646,
@@ -43,14 +43,14 @@
       "false_bearish_pct": 78.31
     },
     "brain_status": {
-      "started_at": "2026-05-07T08:13:14",
-      "completed_at": "2026-05-07T08:15:45",
+      "started_at": "2026-05-07T08:15:46",
+      "completed_at": "2026-05-07T08:18:18",
       "feedback": {
-        "filled_stock": 338,
+        "filled_stock": 0,
         "filled_sector": 0,
-        "pending_stock": 646,
+        "pending_stock": 308,
         "pending_sector": 1,
-        "message": "\u2705 Closed feedback loop: 338 outcomes filled"
+        "message": "\u2705 Closed feedback loop: 0 outcomes filled"
       },
       "feedback_summary": {
         "total_logged": 646,
@@ -67,9 +67,9 @@
         "stock_samples": 338,
         "sector_samples": 0,
         "accuracy_pct": 80.0,
-        "last_trained": "2026-05-07T08:13",
+        "last_trained": "2026-05-07T08:15",
         "source": "stock_feedback",
-        "message": "Model trained on 338 samples.",
+        "message": "Model restored from persistent storage.",
         "regime_encoder": {
           "UNKNOWN": 0,
           "HIGH VOLATILITY / CHOPPY": 1
@@ -389,7 +389,7 @@
               "EMA50": 73.83,
               "Close": 78.4
             },
-            "computed_at": "2026-05-07T08:13:40"
+            "computed_at": "2026-05-07T08:16:09"
           },
           {
             "ticker": "MALUPAPER",
@@ -456,7 +456,7 @@
               "EMA50": 32.6,
               "Close": 34.5
             },
-            "computed_at": "2026-05-07T08:14:29"
+            "computed_at": "2026-05-07T08:17:00"
           },
           {
             "ticker": "NIRAJISPAT",
@@ -523,7 +523,7 @@
               "EMA50": 229.22,
               "Close": 250.0
             },
-            "computed_at": "2026-05-07T08:15:00"
+            "computed_at": "2026-05-07T08:17:30"
           },
           {
             "ticker": "JISLDVREQS",
@@ -590,7 +590,7 @@
               "EMA50": 23.41,
               "Close": 25.15
             },
-            "computed_at": "2026-05-07T08:14:17"
+            "computed_at": "2026-05-07T08:16:47"
           },
           {
             "ticker": "UDS",
@@ -657,7 +657,7 @@
               "EMA50": 155.22,
               "Close": 162.0
             },
-            "computed_at": "2026-05-07T08:15:29"
+            "computed_at": "2026-05-07T08:18:01"
           },
           {
             "ticker": "WELSPUNLIV",
@@ -724,7 +724,7 @@
               "EMA50": 126.25,
               "Close": 132.4
             },
-            "computed_at": "2026-05-07T08:15:40"
+            "computed_at": "2026-05-07T08:18:13"
           },
           {
             "ticker": "RSWM",
@@ -791,7 +791,7 @@
               "EMA50": 152.2,
               "Close": 170.33
             },
-            "computed_at": "2026-05-07T08:15:14"
+            "computed_at": "2026-05-07T08:17:45"
           },
           {
             "ticker": "RUBYMILLS",
@@ -858,7 +858,7 @@
               "EMA50": 220.84,
               "Close": 245.0
             },
-            "computed_at": "2026-05-07T08:15:14"
+            "computed_at": "2026-05-07T08:17:46"
           },
           {
             "ticker": "ORIENTELEC",
@@ -925,7 +925,7 @@
               "EMA50": 176.48,
               "Close": 192.7
             },
-            "computed_at": "2026-05-07T08:14:45"
+            "computed_at": "2026-05-07T08:17:15"
           },
           {
             "ticker": "CAPILLARY",
@@ -992,7 +992,7 @@
               "EMA50": 547.75,
               "Close": 570.2
             },
-            "computed_at": "2026-05-07T08:13:37"
+            "computed_at": "2026-05-07T08:16:06"
           },
           {
             "ticker": "MOLDTKPAC",
@@ -1059,7 +1059,7 @@
               "EMA50": 553.68,
               "Close": 597.55
             },
-            "computed_at": "2026-05-07T08:14:50"
+            "computed_at": "2026-05-07T08:17:20"
           },
           {
             "ticker": "HFCL",
@@ -1126,7 +1126,7 @@
               "EMA50": 91.84,
               "Close": 144.8
             },
-            "computed_at": "2026-05-07T08:14:13"
+            "computed_at": "2026-05-07T08:16:44"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2272 tickers computed"
