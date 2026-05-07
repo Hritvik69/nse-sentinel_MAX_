@@ -2554,6 +2554,22 @@ def _refresh_imported_ai_last_outcomes() -> str:
     return f"Checked last outcomes by date. Pending rows: {pending}."
 
 
+def _run_imported_ai_self_improve_update(*, include_outcome_refresh: bool = True) -> dict[str, object]:
+    summary = _log_imported_symbols_for_self_learning()
+    learning_message = str(summary.get("message", "") or "Self-learning update finished.").strip()
+    outcome_message = ""
+    if include_outcome_refresh:
+        try:
+            outcome_message = _refresh_imported_ai_last_outcomes()
+        except Exception:
+            outcome_message = ""
+
+    parts = [msg for msg in (learning_message, outcome_message) if msg]
+    summary["message"] = " ".join(parts) if parts else "Self-learning update finished."
+    summary["outcome_message"] = outcome_message
+    return summary
+
+
 def _render_sidebar_imported_ai_learning_button() -> None:
     records = _get_imported_ai_learning_records()
     imported = [
@@ -2596,7 +2612,7 @@ def _render_sidebar_imported_ai_learning_button() -> None:
         disabled=not imported,
         type="secondary",
     ):
-        summary = _log_imported_symbols_for_self_learning()
+        summary = _run_imported_ai_self_improve_update()
         added = int(summary.get("added", 0) or 0)
         already_logged = int(summary.get("already_logged", 0) or 0)
         missing = int(len(list(summary.get("missing_symbols", []) or [])))
@@ -2664,7 +2680,10 @@ def _render_sidebar_imported_ai_learning_entry_button() -> None:
         type="primary",
         disabled=not imported,
     ):
-        st.session_state["_imported_ai_outcome_refresh_msg"] = _refresh_imported_ai_last_outcomes()
+        summary = _run_imported_ai_self_improve_update()
+        st.session_state["_imported_ai_outcome_refresh_msg"] = str(
+            summary.get("message", "") or "Self-learning/outcome refresh finished."
+        )
         _activate_sidebar_panel("imported_ai_learning_show_panel")
 
 
@@ -2937,6 +2956,7 @@ def render_imported_ai_learning_panel() -> None:
             key="imported_ai_learning_self_improve_btn",
             width="stretch",
             type="primary",
+            help="Logs this imported basket into the self-learning feedback log and refreshes available next-session outcomes.",
         )
     with _action2:
         if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", width="stretch"):
@@ -2953,7 +2973,10 @@ def render_imported_ai_learning_panel() -> None:
             type="secondary",
             help="Import the latest available next-session outcome and correctness by prediction date.",
         ):
-            st.session_state["_imported_ai_outcome_refresh_msg"] = _refresh_imported_ai_last_outcomes()
+            summary = _run_imported_ai_self_improve_update()
+            st.session_state["_imported_ai_outcome_refresh_msg"] = str(
+                summary.get("message", "") or "Self-learning/outcome refresh finished."
+            )
             st.rerun()
     with _action4:
         if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
@@ -2978,7 +3001,7 @@ def render_imported_ai_learning_panel() -> None:
             _activate_sidebar_panel(None)
 
     if _self_improve_clicked:
-        summary = _log_imported_symbols_for_self_learning()
+        summary = _run_imported_ai_self_improve_update()
         added = int(summary.get("added", 0) or 0)
         already_logged = int(summary.get("already_logged", 0) or 0)
         missing = int(len(list(summary.get("missing_symbols", []) or [])))
@@ -3041,7 +3064,10 @@ def render_imported_ai_learning_panel() -> None:
         type="primary",
         help="Fetch and fill the Last Outcome and Correct columns using the latest next-session data by imported date.",
     ):
-        st.session_state["_imported_ai_outcome_refresh_msg"] = _refresh_imported_ai_last_outcomes()
+        summary = _run_imported_ai_self_improve_update()
+        st.session_state["_imported_ai_outcome_refresh_msg"] = str(
+            summary.get("message", "") or "Self-learning/outcome refresh finished."
+        )
         st.rerun()
 
 
@@ -3162,6 +3188,10 @@ def _render_ai_prediction_import_action(
     )
     imported = list(summary.get("symbols", []) or [])
     if imported:
+        tracking_summary = _run_imported_ai_self_improve_update()
+        st.session_state["_imported_ai_outcome_refresh_msg"] = str(
+            tracking_summary.get("message", "") or "Imported stocks were added to self-learning."
+        )
         try:
             st.toast(
                 f"Added {len(normalized)} stock(s) to Imported AI Stocks "
