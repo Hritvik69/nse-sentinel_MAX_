@@ -1761,6 +1761,23 @@ def _save_symbols_to_tomorrow_store(
     }
 
 
+def _clear_tomorrow_picks_store(store: dict) -> int:
+    normalized = _normalize_tomorrow_store(store)
+    removed_count = len(normalized.get("picks", []))
+    normalized["sections"] = _tomorrow_section_defaults()
+    normalized["picks"] = []
+    _persist_tomorrow_store(normalized)
+    return removed_count
+
+
+def _set_tomorrow_picks_feedback(kind: str, message: str) -> None:
+    st.session_state["tmr_picks_feedback"] = {
+        "kind": str(kind or "info"),
+        "message": str(message or "").strip(),
+        "at": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+    }
+
+
 def _set_tomorrow_notes_feedback(kind: str, message: str) -> None:
     st.session_state["tmr_notes_feedback"] = {
         "kind": str(kind or "info"),
@@ -2949,7 +2966,7 @@ def render_imported_ai_learning_panel() -> None:
     with _m4:
         st.metric("Validated", f"{int(panel.get('validated_count', 0) or 0):,}")
 
-    _action1, _action2, _action3, _action4, _action5 = st.columns(5)
+    _action1, _action2, _action3, _action4 = st.columns(4)
     with _action1:
         _self_improve_clicked = st.button(
             "Self Improve",
@@ -2966,19 +2983,6 @@ def render_imported_ai_learning_panel() -> None:
             else:
                 st.info("No imported AI stocks are stored yet in the permanent basket.")
     with _action3:
-        if st.button(
-            "Refresh Last Outcome And Correct",
-            key="imported_ai_learning_refresh_last_outcome_btn",
-            width="stretch",
-            type="secondary",
-            help="Import the latest available next-session outcome and correctness by prediction date.",
-        ):
-            summary = _run_imported_ai_self_improve_update()
-            st.session_state["_imported_ai_outcome_refresh_msg"] = str(
-                summary.get("message", "") or "Self-learning/outcome refresh finished."
-            )
-            st.rerun()
-    with _action4:
         if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
             _persist_imported_ai_learning_store([], updated_at="")
             for key in (
@@ -2996,7 +3000,7 @@ def render_imported_ai_learning_panel() -> None:
             ):
                 st.session_state.pop(key, None)
             st.rerun()
-    with _action5:
+    with _action4:
         if st.button("Back To Scanner", key="imported_ai_learning_back_btn", width="stretch"):
             _activate_sidebar_panel(None)
 
@@ -4079,6 +4083,14 @@ def render_tomorrow_picks_panel() -> None:
     active_sections = sum(1 for bucket in _TOMORROW_SECTION_ORDER if sections.get(bucket))
     saved_notes = str(store.get("notes", "") or "")
     notes_words = len(saved_notes.split()) if saved_notes.strip() else 0
+    picks_feedback = st.session_state.get("tmr_picks_feedback", {}) or {}
+    if "tmr_picks_feedback" in st.session_state:
+        del st.session_state["tmr_picks_feedback"]
+    picks_feedback_kind = str(picks_feedback.get("kind", "info") or "info").strip().lower()
+    picks_feedback_msg = str(picks_feedback.get("message", "") or "").strip()
+    picks_feedback_at = str(picks_feedback.get("at", "") or "").strip()
+    if picks_feedback_kind not in {"success", "error", "info"}:
+        picks_feedback_kind = "info"
     notes_feedback = st.session_state.get("tmr_notes_feedback", {}) or {}
     notes_feedback_kind = str(notes_feedback.get("kind", "info") or "info").strip().lower()
     notes_feedback_msg = str(notes_feedback.get("message", "") or "").strip()
@@ -4242,6 +4254,49 @@ def render_tomorrow_picks_panel() -> None:
           margin-top:8px;
           font-size:11px;
           color:#89a8c7;
+        }
+        .tmr-v2-bulk-actions {
+          border:1px solid rgba(255,77,109,0.30);
+          border-radius:16px;
+          padding:14px;
+          margin:0 0 18px 0;
+          background:linear-gradient(180deg, rgba(43,18,28,0.64), rgba(8,13,21,0.98));
+        }
+        .tmr-v2-bulk-title {
+          font-size:13px;
+          font-weight:800;
+          color:#f4f8ff;
+          margin-bottom:4px;
+        }
+        .tmr-v2-bulk-caption {
+          font-size:11px;
+          line-height:1.45;
+          color:#9fb8d0;
+        }
+        .tmr-v2-action-status {
+          border-radius:14px;
+          padding:12px 14px;
+          margin:0 0 14px 0;
+          border:1px solid rgba(59,90,120,0.38);
+          font-size:12px;
+          line-height:1.5;
+          background:linear-gradient(180deg, rgba(10,17,26,0.96), rgba(8,13,20,0.98));
+          color:#dce7f4;
+        }
+        .tmr-v2-action-status strong {
+          color:#f4f8ff;
+        }
+        .tmr-v2-action-status-success {
+          border-color:rgba(0,212,168,0.34);
+          background:linear-gradient(180deg, rgba(8,36,30,0.86), rgba(7,16,23,0.98));
+        }
+        .tmr-v2-action-status-error {
+          border-color:rgba(255,77,109,0.34);
+          background:linear-gradient(180deg, rgba(48,18,25,0.88), rgba(11,14,22,0.98));
+        }
+        .tmr-v2-action-status-info {
+          border-color:rgba(240,180,41,0.30);
+          background:linear-gradient(180deg, rgba(50,39,14,0.82), rgba(10,15,24,0.98));
         }
         .tmr-v2-add-box {
           border:1px solid rgba(70,100,132,0.34);
@@ -4421,6 +4476,48 @@ def render_tomorrow_picks_panel() -> None:
             + '</div>',
             unsafe_allow_html=True,
         )
+
+        if picks_feedback_msg:
+            picks_status_html = (
+                f'<div class="tmr-v2-action-status tmr-v2-action-status-{picks_feedback_kind}">'
+                f'<strong>{html.escape(picks_feedback_msg)}</strong>'
+                f'{f"<br><span>Checked at {html.escape(picks_feedback_at)}</span>" if picks_feedback_at else ""}'
+                '</div>'
+            )
+            st.markdown(picks_status_html, unsafe_allow_html=True)
+
+        bulk_text_col, bulk_button_col = st.columns([2.7, 1], gap="small")
+        with bulk_text_col:
+            st.markdown(
+                (
+                    '<div class="tmr-v2-bulk-actions">'
+                    '<div class="tmr-v2-bulk-title">Bulk Remove</div>'
+                    f'<div class="tmr-v2-bulk-caption">Delete all {saved_count} saved stock'
+                    f'{"s" if saved_count != 1 else ""} from every strip in one click. Notes stay saved.</div>'
+                    '</div>'
+                ),
+                unsafe_allow_html=True,
+            )
+        with bulk_button_col:
+            st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+            clear_all_clicked = st.button(
+                "Delete All Stocks",
+                key="tmr_v2_clear_all_stocks",
+                width="stretch",
+                disabled=saved_count <= 0,
+            )
+
+        if clear_all_clicked:
+            removed_count = _clear_tomorrow_picks_store(store)
+            if removed_count > 0:
+                removed_noun = "stock" if removed_count == 1 else "stocks"
+                _set_tomorrow_picks_feedback(
+                    "success",
+                    f"Deleted {removed_count} saved {removed_noun} from Tomorrow's Picks.",
+                )
+            else:
+                _set_tomorrow_picks_feedback("info", "There were no saved stocks to delete.")
+            st.rerun()
 
         left_col, right_col = st.columns([3.2, 2], gap="large")
 
