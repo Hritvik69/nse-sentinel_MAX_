@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-05-08T08:50:55",
+  "saved_at": "2026-05-08T08:51:01",
   "signature": [
     "2026-05-08",
-    1778230249.641,
+    1778230255.798,
     1778230223.607
   ],
   "learning_status": {
@@ -47,8 +47,8 @@
       "false_bearish_pct": 58.87
     },
     "brain_status": {
-      "started_at": "2026-05-08T08:50:49",
-      "completed_at": "2026-05-08T08:50:55",
+      "started_at": "2026-05-08T08:50:55",
+      "completed_at": "2026-05-08T08:51:01",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -397,7 +397,7 @@
               "EMA50": 126.5,
               "Close": 133.43
             },
-            "computed_at": "2026-05-08T08:50:50"
+            "computed_at": "2026-05-08T08:50:56"
           },
           {
             "ticker": "CAPILLARY",
@@ -464,7 +464,7 @@
               "EMA50": 548.24,
               "Close": 572.1
             },
-            "computed_at": "2026-05-08T08:50:50"
+            "computed_at": "2026-05-08T08:50:56"
           },
           {
             "ticker": "YASHO",
@@ -531,7 +531,7 @@
               "EMA50": 1465.25,
               "Close": 1565.0
             },
-            "computed_at": "2026-05-08T08:50:50"
+            "computed_at": "2026-05-08T08:50:56"
           },
           {
             "ticker": "SAGCEM",
@@ -598,7 +598,7 @@
               "EMA50": 183.62,
               "Close": 190.92
             },
-            "computed_at": "2026-05-08T08:50:50"
+            "computed_at": "2026-05-08T08:50:56"
           },
           {
             "ticker": "SILGO",
@@ -665,7 +665,7 @@
               "EMA50": 75.49,
               "Close": 80.9
             },
-            "computed_at": "2026-05-08T08:50:52"
+            "computed_at": "2026-05-08T08:50:58"
           },
           {
             "ticker": "BALPHARMA",
@@ -732,7 +732,7 @@
               "EMA50": 74.09,
               "Close": 80.45
             },
-            "computed_at": "2026-05-08T08:50:50"
+            "computed_at": "2026-05-08T08:50:56"
           },
           {
             "ticker": "SULA",
@@ -799,7 +799,7 @@
               "EMA50": 172.06,
               "Close": 177.01
             },
-            "computed_at": "2026-05-08T08:50:51"
+            "computed_at": "2026-05-08T08:50:57"
           },
           {
             "ticker": "ACE",
@@ -866,7 +866,7 @@
               "EMA50": 882.79,
               "Close": 945.8
             },
-            "computed_at": "2026-05-08T08:50:50"
+            "computed_at": "2026-05-08T08:50:56"
           },
           {
             "ticker": "INCREDIBLE",
@@ -933,7 +933,7 @@
               "EMA50": 34.68,
               "Close": 36.9
             },
-            "computed_at": "2026-05-08T08:50:53"
+            "computed_at": "2026-05-08T08:50:59"
           },
           {
             "ticker": "PILANIINVS",
@@ -1000,7 +1000,7 @@
               "EMA50": 4687.1,
               "Close": 4829.0
             },
-            "computed_at": "2026-05-08T08:50:52"
+            "computed_at": "2026-05-08T08:50:58"
           },
           {
             "ticker": "METROPOLIS",
@@ -1067,7 +1067,7 @@
               "EMA50": 474.31,
               "Close": 555.45
             },
-            "computed_at": "2026-05-08T08:50:54"
+            "computed_at": "2026-05-08T08:51:00"
           },
           {
             "ticker": "ALICON",
@@ -1134,7 +1134,7 @@
               "EMA50": 703.29,
               "Close": 746.15
             },
-            "computed_at": "2026-05-08T08:50:54"
+            "computed_at": "2026-05-08T08:51:00"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 160 tickers computed"
