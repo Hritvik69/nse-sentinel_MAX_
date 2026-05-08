@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-05-08T08:50:02",
+  "saved_at": "2026-05-08T08:50:03",
   "signature": [
     "2026-05-08",
-    1778230202.391,
+    1778230202.954,
     1778229971.697
   ],
   "learning_status": {
@@ -43,12 +43,12 @@
       "false_bearish_pct": 78.31
     },
     "brain_status": {
-      "started_at": "2026-05-08T08:50:01",
-      "completed_at": "2026-05-08T08:50:02",
+      "started_at": "2026-05-08T08:50:02",
+      "completed_at": "2026-05-08T08:50:03",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
-        "pending_stock": 1212,
+        "pending_stock": 1203,
         "pending_sector": 6,
         "message": "\u2705 Closed feedback loop: 0 outcomes filled"
       },
