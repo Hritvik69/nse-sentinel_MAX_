@@ -1,19 +1,19 @@
 {
-  "saved_at": "2026-05-09T02:40:47",
+  "saved_at": "2026-05-09T02:41:19",
   "signature": [
     "2026-05-08",
-    1778294444.11,
+    1778294476.766,
     1778294407.936
   ],
   "learning_status": {
     "trained": true,
-    "samples": 1547,
-    "stock_samples": 1547,
+    "samples": 1550,
+    "stock_samples": 1550,
     "sector_samples": 0,
-    "accuracy_pct": 55.56,
-    "last_trained": "2026-05-09T02:40",
+    "accuracy_pct": 55.67,
+    "last_trained": "2026-05-09T02:41",
     "source": "stock_feedback",
-    "message": "Model trained on 1547 samples.",
+    "message": "Model trained on 1550 samples.",
     "regime_encoder": {
       "UNKNOWN": 0,
       "HIGH VOLATILITY / CHOPPY": 1
@@ -39,41 +39,41 @@
     "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 1550,
-      "rows_with_outcome": 1547,
-      "accuracy_pct": 47.58,
+      "rows_with_outcome": 1550,
+      "accuracy_pct": 47.48,
       "bullish_precision_pct": 56.33,
-      "bearish_precision_pct": 45.93,
+      "bearish_precision_pct": 45.82,
       "false_bullish_pct": 43.67,
-      "false_bearish_pct": 54.07
+      "false_bearish_pct": 54.18
     },
     "brain_status": {
-      "started_at": "2026-05-09T02:40:40",
-      "completed_at": "2026-05-09T02:40:47",
+      "started_at": "2026-05-09T02:41:13",
+      "completed_at": "2026-05-09T02:41:19",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
-        "pending_stock": 3,
+        "pending_stock": 0,
         "pending_sector": 6,
         "message": "\u2705 Closed feedback loop: 0 outcomes filled"
       },
       "feedback_summary": {
         "total_logged": 1550,
-        "rows_with_outcome": 1547,
-        "accuracy_pct": 47.58,
+        "rows_with_outcome": 1550,
+        "accuracy_pct": 47.48,
         "bullish_precision_pct": 56.33,
-        "bearish_precision_pct": 45.93,
+        "bearish_precision_pct": 45.82,
         "false_bullish_pct": 43.67,
-        "false_bearish_pct": 54.07
+        "false_bearish_pct": 54.18
       },
       "meta_model": {
         "trained": true,
-        "samples": 1547,
-        "stock_samples": 1547,
+        "samples": 1550,
+        "stock_samples": 1550,
         "sector_samples": 0,
-        "accuracy_pct": 55.56,
-        "last_trained": "2026-05-09T02:40",
+        "accuracy_pct": 55.67,
+        "last_trained": "2026-05-09T02:41",
         "source": "stock_feedback",
-        "message": "Model trained on 1547 samples.",
+        "message": "Model trained on 1550 samples.",
         "regime_encoder": {
           "UNKNOWN": 0,
           "HIGH VOLATILITY / CHOPPY": 1
@@ -126,13 +126,13 @@
             "mode": 3,
             "trained": true,
             "samples": 46,
-            "accuracy_pct": 52.52,
+            "accuracy_pct": 52.34,
             "suppressed": false,
             "suppression_factor": 1.0,
             "message": "trained",
-            "validated": 914,
+            "validated": 917,
             "recent_accuracy_pct": 80.0,
-            "ensemble_weight": 0.5252
+            "ensemble_weight": 0.5234000000000001
           },
           "4": {
             "mode": 4,
@@ -173,13 +173,13 @@
         },
         "best_mode": {
           "mode": 3,
-          "accuracy_pct": 52.52
+          "accuracy_pct": 52.34
         },
         "worst_mode": {
           "mode": 5,
           "accuracy_pct": 36.26
         },
-        "message": "Mode3=52.5% | Mode5=36.3% | Mode6=44.7%"
+        "message": "Mode3=52.3% | Mode5=36.3% | Mode6=44.7%"
       },
       "sector_model": {
         "by_sector": {},
@@ -330,14 +330,14 @@
         "message": "\ud83c\udfaf Calibration error: 0.0% | Factor applied: 1.00x"
       },
       "predictions": {
-        "count": 152,
+        "count": 153,
         "df": [
           {
             "ticker": "MASTERTR",
             "direction": "Bearish",
-            "confidence": 46.84,
-            "raw_score": 41.12,
-            "score": 41.12,
+            "confidence": 46.41,
+            "raw_score": 40.76,
+            "score": 40.76,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -351,9 +351,9 @@
             },
             "key_signal": "price_vs_ema",
             "sector": "UNKNOWN",
-            "mode_score": 5.62,
-            "ml_probability": 39.41,
-            "meta_model_output": 58.1,
+            "mode_score": 5.6,
+            "ml_probability": 39.44,
+            "meta_model_output": 56.4,
             "mtf_alignment": 71.7,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -397,14 +397,14 @@
               "EMA50": 80.37,
               "Close": 90.18
             },
-            "computed_at": "2026-05-09T02:40:42"
+            "computed_at": "2026-05-09T02:41:15"
           },
           {
             "ticker": "INDIGOPNTS",
             "direction": "Sideways",
-            "confidence": 46.55,
-            "raw_score": 44.82,
-            "score": 44.82,
+            "confidence": 46.18,
+            "raw_score": 44.45,
+            "score": 44.45,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -419,8 +419,8 @@
             "key_signal": "price_vs_ema",
             "sector": "UNKNOWN",
             "mode_score": 15.64,
-            "ml_probability": 39.41,
-            "meta_model_output": 49.0,
+            "ml_probability": 39.44,
+            "meta_model_output": 47.0,
             "mtf_alignment": 83.8,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -464,14 +464,14 @@
               "EMA50": 878.94,
               "Close": 974.15
             },
-            "computed_at": "2026-05-09T02:40:41"
+            "computed_at": "2026-05-09T02:41:14"
           },
           {
             "ticker": "QUICKHEAL",
-            "direction": "Sideways",
-            "confidence": 45.92,
-            "raw_score": 44.37,
-            "score": 44.37,
+            "direction": "Bearish",
+            "confidence": 45.55,
+            "raw_score": 43.99,
+            "score": 43.99,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -486,8 +486,8 @@
             "key_signal": "price_vs_ema",
             "sector": "UNKNOWN",
             "mode_score": 15.64,
-            "ml_probability": 39.41,
-            "meta_model_output": 49.0,
+            "ml_probability": 39.44,
+            "meta_model_output": 47.0,
             "mtf_alignment": 79.6,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -531,14 +531,14 @@
               "EMA50": 171.0,
               "Close": 214.51
             },
-            "computed_at": "2026-05-09T02:40:42"
+            "computed_at": "2026-05-09T02:41:14"
           },
           {
             "ticker": "PLATIND",
             "direction": "Sideways",
-            "confidence": 45.03,
-            "raw_score": 47.11,
-            "score": 47.11,
+            "confidence": 44.6,
+            "raw_score": 46.73,
+            "score": 46.73,
             "action": "\ud83d\udd35 Wait",
             "hold_days": "-",
             "risk": "MEDIUM",
@@ -552,9 +552,9 @@
             },
             "key_signal": "bullish_pct",
             "sector": "UNKNOWN",
-            "mode_score": 24.43,
-            "ml_probability": 39.41,
-            "meta_model_output": 40.9,
+            "mode_score": 24.42,
+            "ml_probability": 39.44,
+            "meta_model_output": 38.9,
             "mtf_alignment": 97.9,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -586,7 +586,7 @@
               "participation": 0.089385
             },
             "atr": 9.88,
-            "label_tag": "Strong Momentum",
+            "label_tag": "Moderate Upside",
             "indicators": {
               "RSI": 72.6,
               "Vol / Avg": 1.45,
@@ -598,14 +598,14 @@
               "EMA50": 226.0,
               "Close": 260.04
             },
-            "computed_at": "2026-05-09T02:40:41"
+            "computed_at": "2026-05-09T02:41:14"
           },
           {
             "ticker": "PROTEAN",
             "direction": "Bearish",
-            "confidence": 44.35,
-            "raw_score": 40.17,
-            "score": 40.17,
+            "confidence": 44.11,
+            "raw_score": 39.77,
+            "score": 39.77,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -619,9 +619,9 @@
             },
             "key_signal": "price_vs_ema",
             "sector": "UNKNOWN",
-            "mode_score": 8.53,
-            "ml_probability": 40.47,
-            "meta_model_output": 56.3,
+            "mode_score": 8.52,
+            "ml_probability": 40.49,
+            "meta_model_output": 54.5,
             "mtf_alignment": 66.1,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -665,81 +665,14 @@
               "EMA50": 557.84,
               "Close": 587.65
             },
-            "computed_at": "2026-05-09T02:40:44"
-          },
-          {
-            "ticker": "SJS",
-            "direction": "Sideways",
-            "confidence": 44.04,
-            "raw_score": 46.75,
-            "score": 46.75,
-            "action": "\ud83d\udd34 Avoid",
-            "hold_days": "-",
-            "risk": "HIGH",
-            "regime": "RANGE_BOUND",
-            "regime_snapshot": {
-              "regime": "Range Bound",
-              "description": "Mean reversion regime. Breakouts need extra confirmation.",
-              "color": "#8ab4d8",
-              "emoji": "\u25c6",
-              "ema_aligned": true
-            },
-            "key_signal": "sector_strength",
-            "sector": "UNKNOWN",
-            "mode_score": 22.92,
-            "ml_probability": 39.41,
-            "meta_model_output": 42.3,
-            "mtf_alignment": 100.0,
-            "regime_fit": 55.0,
-            "sector_accuracy": 55.0,
-            "signals": {
-              "ema_slope": 100.0,
-              "price_vs_ema": 100.0,
-              "candle_direction": 100.0,
-              "body_strength": 36.23,
-              "volume_confirm": 50.47,
-              "volatility": 35.83,
-              "momentum": 85.36,
-              "sector_strength": 100.0,
-              "bullish_pct": 100.0,
-              "money_flow": 63.71,
-              "participation": 80.19
-            },
-            "weights": {
-              "ema_slope": 0.061453,
-              "price_vs_ema": 0.107263,
-              "candle_direction": 0.078212,
-              "body_strength": 0.06257,
-              "consecutive": 0.046927,
-              "volume_confirm": 0.100559,
-              "volatility": 0.058101,
-              "momentum": 0.02905,
-              "sector_strength": 0.134078,
-              "bullish_pct": 0.134078,
-              "money_flow": 0.098324,
-              "participation": 0.089385
-            },
-            "atr": 78.28,
-            "label_tag": "Moderate Upside",
-            "indicators": {
-              "RSI": 73.37,
-              "Vol / Avg": 1.46,
-              "5D Return (%)": 11.26,
-              "20D Return (%)": 16.77,
-              "\u0394 vs EMA20 (%)": 12.38,
-              "\u0394 vs 20D High (%)": 0.0,
-              "EMA20": 1790.87,
-              "EMA50": 1733.34,
-              "Close": 2012.5
-            },
-            "computed_at": "2026-05-09T02:40:45"
+            "computed_at": "2026-05-09T02:41:17"
           },
           {
             "ticker": "RUSTOMJEE",
             "direction": "Bearish",
-            "confidence": 44.03,
-            "raw_score": 41.7,
-            "score": 41.7,
+            "confidence": 43.79,
+            "raw_score": 41.31,
+            "score": 41.31,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -753,9 +686,9 @@
             },
             "key_signal": "price_vs_ema",
             "sector": "UNKNOWN",
-            "mode_score": 9.73,
-            "ml_probability": 40.92,
-            "meta_model_output": 55.6,
+            "mode_score": 9.72,
+            "ml_probability": 40.95,
+            "meta_model_output": 53.8,
             "mtf_alignment": 74.9,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -799,14 +732,14 @@
               "EMA50": 412.6,
               "Close": 434.1
             },
-            "computed_at": "2026-05-09T02:40:41"
+            "computed_at": "2026-05-09T02:41:14"
           },
           {
             "ticker": "BIRLANU",
             "direction": "Bearish",
-            "confidence": 44.03,
-            "raw_score": 40.51,
-            "score": 40.51,
+            "confidence": 43.79,
+            "raw_score": 40.12,
+            "score": 40.12,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -820,9 +753,9 @@
             },
             "key_signal": "price_vs_ema",
             "sector": "UNKNOWN",
-            "mode_score": 9.66,
-            "ml_probability": 39.73,
-            "meta_model_output": 54.7,
+            "mode_score": 9.65,
+            "ml_probability": 39.76,
+            "meta_model_output": 52.9,
             "mtf_alignment": 69.4,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -866,14 +799,81 @@
               "EMA50": 1454.04,
               "Close": 1592.4
             },
-            "computed_at": "2026-05-09T02:40:43"
+            "computed_at": "2026-05-09T02:41:15"
+          },
+          {
+            "ticker": "SJS",
+            "direction": "Sideways",
+            "confidence": 43.6,
+            "raw_score": 46.35,
+            "score": 46.35,
+            "action": "\ud83d\udd34 Avoid",
+            "hold_days": "-",
+            "risk": "HIGH",
+            "regime": "RANGE_BOUND",
+            "regime_snapshot": {
+              "regime": "Range Bound",
+              "description": "Mean reversion regime. Breakouts need extra confirmation.",
+              "color": "#8ab4d8",
+              "emoji": "\u25c6",
+              "ema_aligned": true
+            },
+            "key_signal": "sector_strength",
+            "sector": "UNKNOWN",
+            "mode_score": 22.91,
+            "ml_probability": 39.44,
+            "meta_model_output": 40.2,
+            "mtf_alignment": 100.0,
+            "regime_fit": 55.0,
+            "sector_accuracy": 55.0,
+            "signals": {
+              "ema_slope": 100.0,
+              "price_vs_ema": 100.0,
+              "candle_direction": 100.0,
+              "body_strength": 36.23,
+              "volume_confirm": 50.47,
+              "volatility": 35.83,
+              "momentum": 85.36,
+              "sector_strength": 100.0,
+              "bullish_pct": 100.0,
+              "money_flow": 63.71,
+              "participation": 80.19
+            },
+            "weights": {
+              "ema_slope": 0.061453,
+              "price_vs_ema": 0.107263,
+              "candle_direction": 0.078212,
+              "body_strength": 0.06257,
+              "consecutive": 0.046927,
+              "volume_confirm": 0.100559,
+              "volatility": 0.058101,
+              "momentum": 0.02905,
+              "sector_strength": 0.134078,
+              "bullish_pct": 0.134078,
+              "money_flow": 0.098324,
+              "participation": 0.089385
+            },
+            "atr": 78.28,
+            "label_tag": "Moderate Upside",
+            "indicators": {
+              "RSI": 73.37,
+              "Vol / Avg": 1.46,
+              "5D Return (%)": 11.26,
+              "20D Return (%)": 16.77,
+              "\u0394 vs EMA20 (%)": 12.38,
+              "\u0394 vs 20D High (%)": 0.0,
+              "EMA20": 1790.87,
+              "EMA50": 1733.34,
+              "Close": 2012.5
+            },
+            "computed_at": "2026-05-09T02:41:18"
           },
           {
             "ticker": "NUVOCO",
             "direction": "Bearish",
-            "confidence": 43.37,
-            "raw_score": 41.16,
-            "score": 41.16,
+            "confidence": 42.89,
+            "raw_score": 40.78,
+            "score": 40.78,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -887,9 +887,9 @@
             },
             "key_signal": "volume_confirm",
             "sector": "UNKNOWN",
-            "mode_score": 9.83,
-            "ml_probability": 40.19,
-            "meta_model_output": 54.9,
+            "mode_score": 9.81,
+            "ml_probability": 40.21,
+            "meta_model_output": 53.1,
             "mtf_alignment": 69.6,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -933,14 +933,14 @@
               "EMA50": 308.73,
               "Close": 329.75
             },
-            "computed_at": "2026-05-09T02:40:44"
+            "computed_at": "2026-05-09T02:41:17"
           },
           {
             "ticker": "RITCO",
-            "direction": "Sideways",
-            "confidence": 43.09,
-            "raw_score": 44.01,
-            "score": 44.01,
+            "direction": "Bearish",
+            "confidence": 42.63,
+            "raw_score": 43.6,
+            "score": 43.6,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "HIGH",
@@ -955,8 +955,8 @@
             "key_signal": "bullish_pct",
             "sector": "UNKNOWN",
             "mode_score": 17.07,
-            "ml_probability": 39.41,
-            "meta_model_output": 47.6,
+            "ml_probability": 39.44,
+            "meta_model_output": 45.6,
             "mtf_alignment": 88.5,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -1000,14 +1000,14 @@
               "EMA50": 214.86,
               "Close": 248.09
             },
-            "computed_at": "2026-05-09T02:40:45"
+            "computed_at": "2026-05-09T02:41:18"
           },
           {
             "ticker": "BEML",
             "direction": "Sideways",
-            "confidence": 42.63,
-            "raw_score": 47.5,
-            "score": 47.5,
+            "confidence": 42.38,
+            "raw_score": 47.36,
+            "score": 47.36,
             "action": "\ud83d\udd35 Wait",
             "hold_days": "-",
             "risk": "MEDIUM",
@@ -1021,9 +1021,9 @@
             },
             "key_signal": "sector_strength",
             "sector": "PSU",
-            "mode_score": 25.35,
-            "ml_probability": 40.02,
-            "meta_model_output": 46.8,
+            "mode_score": 25.34,
+            "ml_probability": 40.04,
+            "meta_model_output": 46.3,
             "mtf_alignment": 100.0,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -1067,14 +1067,14 @@
               "EMA50": 1727.68,
               "Close": 1950.9
             },
-            "computed_at": "2026-05-09T02:40:46"
+            "computed_at": "2026-05-09T02:41:19"
           },
           {
             "ticker": "RAINBOW",
             "direction": "Bullish",
-            "confidence": 42.57,
-            "raw_score": 57.11,
-            "score": 57.11,
+            "confidence": 42.37,
+            "raw_score": 56.92,
+            "score": 56.92,
             "action": "\ud83d\udd34 Avoid",
             "hold_days": "-",
             "risk": "LOW",
@@ -1089,8 +1089,8 @@
             "key_signal": "bullish_pct",
             "sector": "UNKNOWN",
             "mode_score": 86.42,
-            "ml_probability": 43.95,
-            "meta_model_output": 8.3,
+            "ml_probability": 43.96,
+            "meta_model_output": 7.4,
             "mtf_alignment": 84.3,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
@@ -1134,10 +1134,10 @@
               "EMA50": 1234.01,
               "Close": 1304.5
             },
-            "computed_at": "2026-05-09T02:40:47"
+            "computed_at": "2026-05-09T02:41:19"
           }
         ],
-        "message": "\ud83d\udd2e Tomorrow predictions: 152 tickers computed"
+        "message": "\ud83d\udd2e Tomorrow predictions: 153 tickers computed"
       },
       "error": ""
     }
