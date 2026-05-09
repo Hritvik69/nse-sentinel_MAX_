@@ -409,7 +409,7 @@ logged_at,symbol,sector,mode,import_source,import_category,prediction_score,fina
 2026-05-07T08:13:13,ALEMBICLTD,,3,,,53.0300,59.8600,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,63.4900,1.7500,5.2500,LOW,0,-0.5035,True,correct
 2026-05-07T08:13:13,ORIENTELEC,CONSUMER_DURABLES,3,,,52.8200,67.0400,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,63.2500,3.4400,6.5900,LOW,0,0.7340,False,incorrect
 2026-05-07T08:13:13,AUTOBEES,,3,,,52.6000,50.8400,AVOID,Medium,Sideways / no edge,High Volatility / Choppy,63.6700,2.4600,4.6100,LOW,0,-0.0748,True,correct
-2026-05-07T08:13:13,SASTASUNDR,,3,,,52.4900,50.3400,AVOID,High,Sideways / no edge,High Volatility / Choppy,59.0500,2.6800,3.5900,LOW,0,,,
+2026-05-07T08:13:13,SASTASUNDR,,3,,,52.4900,50.3400,AVOID,High,Sideways / no edge,High Volatility / Choppy,59.0500,2.6800,3.5900,LOW,0,3.6558,False,incorrect
 2026-05-07T08:13:13,JAMNAAUTO,,3,,,52.4100,50.6800,AVOID,Medium,Sideways / no edge,High Volatility / Choppy,58.8700,2.2400,4.6000,LOW,0,0.6559,False,incorrect
 2026-05-07T08:13:13,TICL,,3,,,52.3400,52.3600,AVOID,High,Sideways / no edge,High Volatility / Choppy,53.2900,1.2000,2.8600,LOW,0,-0.2147,True,correct
 2026-05-07T08:13:13,RSWM,,3,,,52.2900,65.5800,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,64.7700,2.6400,6.3300,LOW,0,-1.9765,True,correct
@@ -717,7 +717,7 @@ logged_at,symbol,sector,mode,import_source,import_category,prediction_score,fina
 2026-05-07T13:59:34,SKMEGGPROD,,3,,,51.0600,56.7200,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,60.8000,2.9700,5.7600,LOW,0,1.0098,False,incorrect
 2026-05-07T13:59:34,QUADFUTURE,,3,,,50.7800,55.9800,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,62.4300,2.4400,5.4900,LOW,0,-0.9943,True,correct
 2026-05-07T13:59:34,JAMNAAUTO,,3,,,50.6400,49.2400,AVOID,Medium,Sideways / no edge,High Volatility / Choppy,58.8700,2.2400,4.6000,LOW,0,0.6559,False,incorrect
-2026-05-07T13:59:34,SASTASUNDR,,3,,,50.6100,48.8000,AVOID,High,Sideways / no edge,High Volatility / Choppy,59.0500,2.6800,3.5900,LOW,0,,,
+2026-05-07T13:59:34,SASTASUNDR,,3,,,50.6100,48.8000,AVOID,High,Sideways / no edge,High Volatility / Choppy,59.0500,2.6800,3.5900,LOW,0,3.6558,False,incorrect
 2026-05-07T13:59:34,KICL,,3,,,50.5900,56.9000,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,65.2400,1.9800,5.8500,LOW,0,-1.0287,True,correct
 2026-05-07T13:59:34,SILGO,,3,,,50.1900,54.4800,AVOID,Medium,Sideways / no edge,High Volatility / Choppy,64.4000,1.7100,5.3300,LOW,0,1.5566,False,incorrect
 2026-05-07T13:59:34,JISLDVREQS,,3,,,49.9300,61.6200,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,62.0900,7.7700,6.2100,LOW,0,-2.7633,True,correct
@@ -1029,7 +1029,7 @@ logged_at,symbol,sector,mode,import_source,import_category,prediction_score,fina
 2026-05-07T14:03:16,SKMEGGPROD,,3,,,51.0600,56.7200,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,60.8000,2.9700,5.7600,LOW,0,1.0098,False,incorrect
 2026-05-07T14:03:16,QUADFUTURE,,3,,,50.7800,55.9800,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,62.4300,2.4400,5.4900,LOW,0,-0.9943,True,correct
 2026-05-07T14:03:16,JAMNAAUTO,,3,,,50.6400,49.2400,AVOID,Medium,Sideways / no edge,High Volatility / Choppy,58.8700,2.2400,4.6000,LOW,0,0.6559,False,incorrect
-2026-05-07T14:03:16,SASTASUNDR,,3,,,50.6100,48.8000,AVOID,High,Sideways / no edge,High Volatility / Choppy,59.0500,2.6800,3.5900,LOW,0,,,
+2026-05-07T14:03:16,SASTASUNDR,,3,,,50.6100,48.8000,AVOID,High,Sideways / no edge,High Volatility / Choppy,59.0500,2.6800,3.5900,LOW,0,3.6558,False,incorrect
 2026-05-07T14:03:16,KICL,,3,,,50.5900,56.9000,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,65.2400,1.9800,5.8500,LOW,0,-1.0287,True,correct
 2026-05-07T14:03:16,SILGO,,3,,,50.1900,54.4800,AVOID,Medium,Sideways / no edge,High Volatility / Choppy,64.4000,1.7100,5.3300,LOW,0,1.5566,False,incorrect
 2026-05-07T14:03:16,JISLDVREQS,,3,,,49.9300,61.6200,WATCH,Medium,Sideways / no edge,High Volatility / Choppy,62.0900,7.7700,6.2100,LOW,0,-2.7633,True,correct
