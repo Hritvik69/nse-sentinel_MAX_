@@ -8583,6 +8583,7 @@ with st.sidebar:
         pass
 
 if _show_pred_chart_panel:
+    render_tomorrow_picks_ticker_strip()
     render_prediction_chart_section(ticker_list=all_tickers)
     st.stop()
 
