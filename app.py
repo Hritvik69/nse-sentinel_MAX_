@@ -8737,7 +8737,9 @@ with st.sidebar:
                     _valid_df = _valid_df.sort_values("logged_at", ascending=False).head(20)
                     _bull_df = _valid_df[_valid_df["pred_bullish"].astype(str).str.strip().isin(["1", "1.0", "True", "true"])]
                     if not _bull_df.empty:
-                        _recent_bull_acc_txt = f"{(_bull_df['correct'].eq('True').mean() * 100.0):.0f}% correct"
+                        _recent_bull_acc_txt = "{:.0f}% correct".format(
+                            _bull_df["correct"].eq("True").mean() * 100.0  # pyright: ignore[reportUndefinedVariable]
+                        )
         except Exception:
             pass
 
