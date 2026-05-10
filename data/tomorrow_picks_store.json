@@ -8,7 +8,10 @@
     "SKFINDIA",
     "DBSTOCKBRO",
     "3PLAND",
-    "DOLATALGO"
+    "DOLATALGO",
+    "TBZ",
+    "SUPRAJIT",
+    "APLLTD"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -27,6 +30,10 @@
       "3PLAND",
       "DOLATALGO"
     ],
-    "breakout": []
+    "breakout": [
+      "TBZ",
+      "SUPRAJIT",
+      "APLLTD"
+    ]
   }
 }
