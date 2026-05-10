@@ -1,30 +1,39 @@
 {
   "picks": [
-    "IMPAL",
-    "YASHO",
-    "OBCL",
-    "GOKEX",
-    "UDS",
-    "SAGCEM",
-    "JISLDVREQS",
-    "SALONA"
+    "CAMPUS",
+    "CHAMBLFERT",
+    "GILLETTE",
+    "VENUSREM",
+    "TIMKEN",
+    "SKFINDIA",
+    "DBSTOCKBRO",
+    "3PLAND",
+    "DOLATALGO",
+    "TBZ",
+    "SUPRAJIT",
+    "APLLTD"
   ],
   "notes": "jniiknjknji",
   "sections": {
     "relax": [
-      "IMPAL",
-      "YASHO"
+      "CAMPUS",
+      "CHAMBLFERT",
+      "GILLETTE"
     ],
-    "swing": [],
+    "swing": [
+      "VENUSREM",
+      "TIMKEN",
+      "SKFINDIA"
+    ],
     "intraday": [
-      "OBCL",
-      "GOKEX",
-      "UDS"
+      "DBSTOCKBRO",
+      "3PLAND",
+      "DOLATALGO"
     ],
     "breakout": [
-      "SAGCEM",
-      "JISLDVREQS",
-      "SALONA"
+      "TBZ",
+      "SUPRAJIT",
+      "APLLTD"
     ]
   }
 }
