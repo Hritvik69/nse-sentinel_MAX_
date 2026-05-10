@@ -1721,23 +1721,30 @@ def build_raw_rows_for_tickers(
                 if missing:
                     preload_all(missing, period="6mo", workers=max(1, int(workers)))
             try:
-                from time_travel_engine import (
-                    is_active as _tt_brfr_active,
-                    get_reference_date as _tt_brfr_date,
-                    truncate_df as _tt_brfr_trunc,
-                )
-                if _tt_brfr_active():
-                    _cutoff = _tt_brfr_date()
-                    if _cutoff is not None:
-                        for _t in missing:
-                            _df_raw = ALL_DATA.get(_t)
-                            if _df_raw is not None and not _df_raw.empty:
-                                ALL_DATA[_t] = _tt_brfr_trunc(_df_raw, _cutoff)
+                from time_travel_engine import cache_frame as _tt_cache_frame, get_reference_date as _tt_date
+
+                _cutoff = _tt_date()
+                if _cutoff is not None:
+                    for _t in missing:
+                        _df_raw = ALL_DATA.get(_t)
+                        if _df_raw is not None and not _df_raw.empty:
+                            _tt_cache_frame(_t, _df_raw, _cutoff)
             except Exception:
                 pass
 
         max_workers = max(1, min(int(workers), len(symbols)))
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            try:
+                import time_travel_engine as _tt_ctx
+                if _tt_ctx.is_active():
+                    row_iter = (
+                        ex.submit(_tt_ctx.context_callable(_build_stock_row_cached, f"{sym}.NS", mode))
+                        for sym in symbols
+                    )
+                    rows = [future.result() for future in row_iter]
+                    return [row for row in rows if row is not None]
+            except Exception:
+                pass
             rows = [
                 row
                 for row in ex.map(lambda sym: _build_stock_row_cached(f"{sym}.NS", mode), symbols)

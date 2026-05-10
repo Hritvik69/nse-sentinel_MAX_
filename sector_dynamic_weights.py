@@ -24,18 +24,23 @@ Public API
 from __future__ import annotations
 
 import csv
+import logging
 import math
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from atomic_io import atomic_write_csv_df, locked_path
+
+_LOG = logging.getLogger(__name__)
 
 try:
     from persistent_store import push_file as _push_file
 except Exception:
     def _push_file(*a, **kw):  # type: ignore[misc]
-        pass
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -77,6 +82,7 @@ _PERF_FIELDS = [
 
 # In-memory cache
 _perf_cache: dict[str, dict] = {}
+_PERF_LOCK = threading.RLock()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -93,9 +99,10 @@ def _ensure_dir() -> None:
 def _load_perf() -> dict[str, dict]:
     """Load signal performance from CSV into a dict keyed by signal name."""
     try:
-        if not _PERF_PATH.exists():
-            return {}
-        df = pd.read_csv(_PERF_PATH, dtype=str)
+        with locked_path(_PERF_PATH):
+            if not _PERF_PATH.exists():
+                return {}
+            df = pd.read_csv(_PERF_PATH, dtype=str)
         out: dict[str, dict] = {}
         for _, row in df.iterrows():
             sig = str(row.get("signal_name", "")).strip()
@@ -114,23 +121,25 @@ def _load_perf() -> dict[str, dict]:
 
 def _save_perf(perf: dict[str, dict]) -> None:
     try:
-        _ensure_dir()
-        rows = []
-        ts = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
-        for sig, data in perf.items():
-            rows.append({
-                "signal_name":    sig,
-                "observations":   data.get("observations", 0),
-                "wins":           data.get("wins", 0),
-                "win_rate":       round(data.get("win_rate", 0.5), 4),
-                "last_updated":   ts,
-                "dynamic_weight": round(data.get("dynamic_weight", _STATIC_WEIGHTS.get(sig, 0.08)), 6),
-            })
-        df = pd.DataFrame(rows, columns=_PERF_FIELDS)
-        df.to_csv(_PERF_PATH, index=False)
-        _push_file(_PERF_PATH)
+        with _PERF_LOCK:
+            _ensure_dir()
+            rows = []
+            ts = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+            for sig, data in perf.items():
+                rows.append({
+                    "signal_name":    sig,
+                    "observations":   data.get("observations", 0),
+                    "wins":           data.get("wins", 0),
+                    "win_rate":       round(data.get("win_rate", 0.5), 4),
+                    "last_updated":   ts,
+                    "dynamic_weight": round(data.get("dynamic_weight", _STATIC_WEIGHTS.get(sig, 0.08)), 6),
+                })
+            df = pd.DataFrame(rows, columns=_PERF_FIELDS)
+            atomic_write_csv_df(_PERF_PATH, df, index=False)
+        if not _push_file(_PERF_PATH):
+            _LOG.error("sector_dynamic_weights: queueing performance sync failed")
     except Exception:
-        pass
+        _LOG.exception("sector_dynamic_weights: saving performance failed")
 
 
 # ══════════════════════════════════════════════════════════════════════

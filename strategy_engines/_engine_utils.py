@@ -10,11 +10,13 @@ from __future__ import annotations
 import threading
 import time
 import importlib.util
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, time as dtime, timedelta
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from atomic_io import atomic_write_csv_df
 from strategy_engines.constants import MODE7_ID, MODE_ID_COLUMN
 from strategy_engines.mode_helpers import resolve_mode_id
 try:
@@ -38,11 +40,13 @@ _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else None
 ALL_DATA: dict[str, pd.DataFrame | None] = {}
 _ALL_DATA_LOCK = threading.Lock()
 _ALL_DATA_MAX_ENTRIES = 1500
-_NO_DATA_TICKERS: set[str] = set()
+_NO_DATA_TICKERS: dict[str, dict[str, object]] = {}
 _NO_DATA_LOCK = threading.Lock()
+_NO_DATA_TTL_SEC = 15 * 60
 _LAST_LIVE_CACHE_DATE: date | None = None
 _LIVE_CACHE_LOCK = threading.Lock()
 _TT_DOWNLOAD_LOOKBACK_DAYS = 420
+_LOG = logging.getLogger(__name__)
 
 
 def _evict_all_data_if_needed() -> None:
@@ -61,14 +65,6 @@ def _current_time_travel_cutoff() -> date | None:
         cutoff = _tt.get_reference_date()
         if cutoff is not None:
             return pd.to_datetime(cutoff).date()
-    except Exception:
-        pass
-    try:
-        import streamlit as st
-        for key in ("tt_date_val", "aura_tt_date", "tt_date_picker"):
-            cutoff = st.session_state.get(key)
-            if cutoff is not None:
-                return pd.to_datetime(cutoff).date()
     except Exception:
         pass
     return None
@@ -91,7 +87,12 @@ def _yf_history_kwargs(period: str, *, timeout: int, threads: bool) -> dict:
     return kwargs
 
 
-def _apply_time_travel_cutoff_if_needed(df: pd.DataFrame | None) -> pd.DataFrame | None:
+def _apply_time_travel_cutoff_if_needed(
+    df: pd.DataFrame | None,
+    ticker_ns: str = "",
+    *,
+    min_rows: int = 10,
+) -> pd.DataFrame | None:
     """Apply the selected Time Travel cutoff to frames entering ALL_DATA."""
     if df is None or df.empty:
         return df
@@ -100,15 +101,52 @@ def _apply_time_travel_cutoff_if_needed(df: pd.DataFrame | None) -> pd.DataFrame
         return df
     try:
         import time_travel_engine as _tt
+        if ticker_ns and hasattr(_tt, "cache_frame"):
+            return _tt.cache_frame(ticker_ns, df, cutoff, min_rows=min_rows)
         if hasattr(_tt, "truncate_df"):
-            return _tt.truncate_df(df, cutoff)
+            return _tt.truncate_df(df, cutoff, min_rows=min_rows)
     except Exception:
         pass
     try:
         idx_dates = pd.to_datetime(df.index, errors="coerce").date
-        return df.loc[idx_dates <= cutoff].copy()
+        out = df.loc[idx_dates <= cutoff].copy()
+        out.attrs.update(dict(getattr(df, "attrs", {}) or {}))
+        out.attrs["_nse_tt_cutoff"] = cutoff.isoformat()
+        out.attrs["_nse_market_date"] = cutoff.isoformat()
+        return out if len(out) >= max(1, int(min_rows)) else None
     except Exception:
         return df
+
+
+def _remember_frame(ticker_ns: str, df: pd.DataFrame | None) -> None:
+    if df is None:
+        return
+    cutoff = _current_time_travel_cutoff()
+    if cutoff is not None:
+        try:
+            import time_travel_engine as _tt
+
+            _tt.cache_frame(ticker_ns, df, cutoff)
+        except Exception:
+            pass
+        return
+    with _ALL_DATA_LOCK:
+        ALL_DATA[ticker_ns] = df
+
+
+def _remember_frame_locked(ticker_ns: str, df: pd.DataFrame | None) -> None:
+    if df is None:
+        return
+    cutoff = _current_time_travel_cutoff()
+    if cutoff is not None:
+        try:
+            import time_travel_engine as _tt
+
+            _tt.cache_frame(ticker_ns, df, cutoff)
+        except Exception:
+            pass
+        return
+    ALL_DATA[ticker_ns] = df
 
 
 # ── optional sklearn ──────────────────────────────────────────────────
@@ -231,7 +269,7 @@ def _normalize_ohlcv_frame(df: pd.DataFrame | None) -> pd.DataFrame | None:
         if isinstance(out.columns, pd.MultiIndex):
             out.columns = out.columns.get_level_values(0)
         out = out.dropna(subset=["Close", "Volume"])
-        return out if len(out) >= 30 else None
+        return out if len(out) >= 5 else None
     except Exception:
         return None
 
@@ -383,6 +421,21 @@ def _is_live_sourced_frame(df: pd.DataFrame | None) -> bool:
         return False
 
 
+def _mark_stale_fallback_frame(df: pd.DataFrame | None, reason: str = "stale") -> pd.DataFrame | None:
+    if df is None:
+        return None
+    try:
+        out = df.copy()
+        source = str(out.attrs.get("_nse_data_source", "") or "unknown")
+        if "stale_fallback" not in source:
+            out.attrs["_nse_data_source"] = f"{source}_stale_fallback"
+        out.attrs["_nse_stale_fallback"] = True
+        out.attrs["_nse_stale_reason"] = str(reason or "stale")
+        return out
+    except Exception:
+        return df
+
+
 def is_fresh_enough(df: pd.DataFrame | None, strict: bool = False) -> bool:
     if df is None or df.empty:
         return False
@@ -412,39 +465,64 @@ def is_fresh_enough(df: pd.DataFrame | None, strict: bool = False) -> bool:
 def _persist_frame_to_csv(ticker_ns: str, df: pd.DataFrame | None) -> None:
     if df is None or df.empty:
         return
+    if _current_time_travel_cutoff() is not None:
+        return
 
     try:
         from data_downloader import DATA_DIR
 
         safe = ticker_ns.replace(":", "_").replace("/", "_")
         path = DATA_DIR / f"{safe}.csv"
-        df.sort_index().to_csv(path)
+        atomic_write_csv_df(path, df.sort_index())
     except Exception:
-        pass
+        _LOG.exception("Failed to persist %s CSV cache", ticker_ns)
 
 
 def _has_recent_no_data(ticker_ns: str) -> bool:
     with _NO_DATA_LOCK:
-        return ticker_ns in _coerce_no_data_tickers()
+        entries = _coerce_no_data_tickers()
+        item = entries.get(ticker_ns)
+        if not isinstance(item, dict):
+            return False
+        try:
+            marked_at = float(item.get("marked_at", 0.0) or 0.0)
+        except Exception:
+            marked_at = 0.0
+        if marked_at <= 0 or (time.time() - marked_at) > _NO_DATA_TTL_SEC:
+            entries.pop(ticker_ns, None)
+            return False
+        return True
 
 
-def _coerce_no_data_tickers() -> set[str]:
-    """Normalize stale cache state from previous reloads back into a set."""
+def _coerce_no_data_tickers() -> dict[str, dict[str, object]]:
+    """Normalize stale cache state from previous reloads back into TTL entries."""
     global _NO_DATA_TICKERS
 
-    if isinstance(_NO_DATA_TICKERS, set):
-        return _NO_DATA_TICKERS
     if isinstance(_NO_DATA_TICKERS, dict):
-        _NO_DATA_TICKERS = set(_NO_DATA_TICKERS)
+        now = time.time()
+        normalized: dict[str, dict[str, object]] = {}
+        for key, value in list(_NO_DATA_TICKERS.items()):
+            if isinstance(value, dict):
+                marked_at = float(value.get("marked_at", now) or now)
+                reason = str(value.get("reason", "no_data") or "no_data")
+            else:
+                marked_at = now
+                reason = "no_data"
+            if (now - marked_at) <= _NO_DATA_TTL_SEC:
+                normalized[str(key)] = {"marked_at": marked_at, "reason": reason}
+        _NO_DATA_TICKERS = normalized
         return _NO_DATA_TICKERS
     if _NO_DATA_TICKERS is None:
-        _NO_DATA_TICKERS = set()
+        _NO_DATA_TICKERS = {}
         return _NO_DATA_TICKERS
 
     try:
-        _NO_DATA_TICKERS = set(_NO_DATA_TICKERS)
+        _NO_DATA_TICKERS = {
+            str(item): {"marked_at": time.time(), "reason": "legacy_no_data"}
+            for item in set(_NO_DATA_TICKERS)
+        }
     except TypeError:
-        _NO_DATA_TICKERS = set()
+        _NO_DATA_TICKERS = {}
     return _NO_DATA_TICKERS
 
 
@@ -474,14 +552,26 @@ def _reset_live_caches_if_market_day_changed() -> None:
         _LAST_LIVE_CACHE_DATE = expected
 
 
-def _mark_no_data(ticker_ns: str) -> None:
+def _mark_no_data(ticker_ns: str, reason: str = "no_data") -> None:
     with _NO_DATA_LOCK:
-        _coerce_no_data_tickers().add(ticker_ns)
+        _coerce_no_data_tickers()[ticker_ns] = {
+            "marked_at": time.time(),
+            "reason": str(reason or "no_data")[:80],
+        }
 
 
 def _clear_no_data(ticker_ns: str) -> None:
     with _NO_DATA_LOCK:
-        _coerce_no_data_tickers().discard(ticker_ns)
+        _coerce_no_data_tickers().pop(ticker_ns, None)
+
+
+def clear_no_data_cache(ticker_ns: str | None = None) -> None:
+    with _NO_DATA_LOCK:
+        entries = _coerce_no_data_tickers()
+        if ticker_ns:
+            entries.pop(ticker_ns, None)
+        else:
+            entries.clear()
 
 
 def download_history(
@@ -492,6 +582,8 @@ def download_history(
     suppress_no_data_mark: bool = False,
 ) -> pd.DataFrame | None:
     """Download daily OHLCV; returns None on failure or if < 30 rows."""
+    if ignore_no_data_cache:
+        _clear_no_data(ticker_ns)
     if _current_time_travel_cutoff() is None and not ignore_no_data_cache and _has_recent_no_data(ticker_ns):
         return None
 
@@ -517,7 +609,7 @@ def download_history(
             source="live_single",
             window=_get_current_window(),
         )
-        prepared = _apply_time_travel_cutoff_if_needed(prepared)
+        prepared = _apply_time_travel_cutoff_if_needed(prepared, ticker_ns)
         _clear_no_data(ticker_ns)
         return prepared
     except Exception:
@@ -639,6 +731,20 @@ def get_shared_market_frame(
         allow_csv_cache = append_nse_suffix and cache_key.endswith(".NS")
 
     force_live_refresh = _should_force_live_refresh()
+    if _current_time_travel_cutoff() is not None:
+        try:
+            import time_travel_engine as _tt
+
+            cached_tt = _tt.get_cached_for_ticker(cache_key)
+            prepared_tt = _normalize_shared_market_frame(
+                cached_tt,
+                min_rows=min_rows,
+                require_volume=require_volume,
+            )
+            if prepared_tt is not None:
+                return prepared_tt
+        except Exception:
+            pass
     with _ALL_DATA_LOCK:
         cached = ALL_DATA.get(cache_key)
 
@@ -650,7 +756,7 @@ def get_shared_market_frame(
             require_volume=require_volume,
         )
         if prepared_cached is not None:
-            prepared_cached = _apply_time_travel_cutoff_if_needed(prepared_cached)
+            prepared_cached = _apply_time_travel_cutoff_if_needed(prepared_cached, cache_key, min_rows=min_rows)
             prepared_cached = _normalize_shared_market_frame(
                 prepared_cached,
                 min_rows=min_rows,
@@ -662,7 +768,7 @@ def get_shared_market_frame(
                     return prepared_cached
             elif not _is_stale_live_frame(prepared_cached):
                 return prepared_cached
-            stale_fallback = prepared_cached
+            stale_fallback = _mark_stale_fallback_frame(prepared_cached, "cached_not_fresh")
 
     if allow_csv_cache and not force_live_refresh:
         try:
@@ -680,7 +786,7 @@ def get_shared_market_frame(
                     source="csv_cache",
                     window=_get_current_window(),
                 )
-                prepared_csv = _apply_time_travel_cutoff_if_needed(prepared_csv)
+                prepared_csv = _apply_time_travel_cutoff_if_needed(prepared_csv, cache_key, min_rows=min_rows)
                 prepared_csv = _normalize_shared_market_frame(
                     prepared_csv,
                     min_rows=min_rows,
@@ -689,11 +795,10 @@ def get_shared_market_frame(
                 if prepared_csv is not None:
                     if _is_stale_live_frame(prepared_csv):
                         if stale_fallback is None:
-                            stale_fallback = prepared_csv
+                            stale_fallback = _mark_stale_fallback_frame(prepared_csv, "csv_not_fresh")
                     else:
                         _clear_no_data(cache_key)
-                        with _ALL_DATA_LOCK:
-                            ALL_DATA[cache_key] = prepared_csv
+                        _remember_frame(cache_key, prepared_csv)
                         return prepared_csv
         except Exception:
             pass
@@ -724,7 +829,7 @@ def get_shared_market_frame(
                 source="live_single",
                 window=_get_current_window(),
             )
-            prepared_live = _apply_time_travel_cutoff_if_needed(prepared_live)
+            prepared_live = _apply_time_travel_cutoff_if_needed(prepared_live, cache_key, min_rows=min_rows)
             prepared_live = _normalize_shared_market_frame(
                 prepared_live,
                 min_rows=min_rows,
@@ -733,8 +838,7 @@ def get_shared_market_frame(
 
     if prepared_live is not None:
         _clear_no_data(cache_key)
-        with _ALL_DATA_LOCK:
-            ALL_DATA[cache_key] = prepared_live
+        _remember_frame(cache_key, prepared_live)
         if allow_csv_cache:
             _persist_frame_to_csv(cache_key, prepared_live)
         return prepared_live
@@ -742,8 +846,7 @@ def get_shared_market_frame(
     if not force_live_refresh:
         _mark_no_data(cache_key)
         if stale_fallback is not None:
-            with _ALL_DATA_LOCK:
-                ALL_DATA[cache_key] = stale_fallback
+            _remember_frame(cache_key, stale_fallback)
     return None if force_live_refresh else stale_fallback
 
 
@@ -758,7 +861,7 @@ def _fetch_one(ticker_ns: str, period: str) -> tuple[str, pd.DataFrame | None]:
                 source="csv_cache",
                 window=_get_current_window(),
             )
-            df = _apply_time_travel_cutoff_if_needed(df)
+            df = _apply_time_travel_cutoff_if_needed(df, ticker_ns)
             _clear_no_data(ticker_ns)
             return ticker_ns, df
     except Exception:
@@ -797,7 +900,7 @@ def _download_batch(
                 source="live_batch",
                 window=_get_current_window(),
             )
-            prepared = _apply_time_travel_cutoff_if_needed(prepared)
+            prepared = _apply_time_travel_cutoff_if_needed(prepared, tickers_ns[0])
             out[tickers_ns[0]] = prepared
         else:
             out[tickers_ns[0]] = None
@@ -823,7 +926,7 @@ def _download_batch(
                 source="live_batch",
                 window=_get_current_window(),
             )
-            prepared = _apply_time_travel_cutoff_if_needed(prepared)
+            prepared = _apply_time_travel_cutoff_if_needed(prepared, ticker_ns)
             out[ticker_ns] = prepared
         else:
             out[ticker_ns] = None
@@ -868,12 +971,18 @@ def preload_all(
         known_no_data = set(_coerce_no_data_tickers())
     if _current_time_travel_cutoff() is not None:
         known_no_data = set()
+    elif force_live_refresh:
+        with _NO_DATA_LOCK:
+            entries = _coerce_no_data_tickers()
+            for ticker_ns in tickers_ns:
+                entries.pop(ticker_ns, None)
+        known_no_data = set()
 
     remaining: list[str] = []
     stale_fallbacks: dict[str, pd.DataFrame] = {}
     for ticker_ns in tickers_ns:
         cached = existing.get(ticker_ns)
-        cached = _apply_time_travel_cutoff_if_needed(cached)
+        cached = _apply_time_travel_cutoff_if_needed(cached, ticker_ns)
         if cached is not None and isinstance(cached, pd.DataFrame) and not cached.empty:
             if force_live_refresh:
                 if _is_live_sourced_frame(cached) and not _is_stale_live_frame(cached):
@@ -883,7 +992,7 @@ def preload_all(
                 else:
                     remaining.append(ticker_ns)
             elif _is_stale_live_frame(cached):
-                stale_fallbacks[ticker_ns] = cached
+                stale_fallbacks[ticker_ns] = _mark_stale_fallback_frame(cached, "cached_not_fresh")
                 remaining.append(ticker_ns)
             else:
                 done += 1
@@ -913,24 +1022,22 @@ def preload_all(
                 source="csv_cache",
                 window=_get_current_window(),
             )
-            csv_df = _apply_time_travel_cutoff_if_needed(csv_df)
+            csv_df = _apply_time_travel_cutoff_if_needed(csv_df, ticker_ns)
             if force_live_refresh:
                 download_queue.append(ticker_ns)
             elif _is_stale_live_frame(csv_df):
-                stale_fallbacks.setdefault(ticker_ns, csv_df)
+                stale_fallbacks.setdefault(ticker_ns, _mark_stale_fallback_frame(csv_df, "csv_not_fresh"))
                 if allow_live_fallback:
                     download_queue.append(ticker_ns)
                 else:
-                    with _ALL_DATA_LOCK:
-                        ALL_DATA[ticker_ns] = csv_df
+                    _remember_frame(ticker_ns, csv_df)
                     _clear_no_data(ticker_ns)
                     done += 1
                     loaded += 1
                     fallback_used += 1
                     _emit_progress()
             else:
-                with _ALL_DATA_LOCK:
-                    ALL_DATA[ticker_ns] = csv_df
+                _remember_frame(ticker_ns, csv_df)
                 _clear_no_data(ticker_ns)
                 done += 1
                 loaded += 1
@@ -942,8 +1049,7 @@ def preload_all(
             else:
                 fallback = stale_fallbacks.get(ticker_ns)
                 if fallback is not None:
-                    with _ALL_DATA_LOCK:
-                        ALL_DATA[ticker_ns] = fallback
+                    _remember_frame(ticker_ns, fallback)
                     _clear_no_data(ticker_ns)
                     loaded += 1
                     fallback_used += 1
@@ -989,8 +1095,18 @@ def preload_all(
                 )
         return frames
 
+    def _submit_scan_task(executor, batch: list[str]):
+        if _current_time_travel_cutoff() is not None:
+            try:
+                import time_travel_engine as _tt
+
+                return _tt.submit_with_context(executor, _fetch_batch, batch)
+            except Exception:
+                pass
+        return executor.submit(_fetch_batch, batch)
+
     with ThreadPoolExecutor(max_workers=batch_workers) as ex:
-        futs = {ex.submit(_fetch_batch, batch): batch for batch in batches}
+        futs = {_submit_scan_task(ex, batch): batch for batch in batches}
         for fut in as_completed(futs):
             batch = futs[fut]
             try:
@@ -1000,10 +1116,10 @@ def preload_all(
 
             with _ALL_DATA_LOCK:
                 for ticker_ns in batch:
-                    frame = _apply_time_travel_cutoff_if_needed(batch_frames.get(ticker_ns))
+                    frame = _apply_time_travel_cutoff_if_needed(batch_frames.get(ticker_ns), ticker_ns)
                     batch_frames[ticker_ns] = frame
                     if frame is not None:
-                        ALL_DATA[ticker_ns] = frame
+                        _remember_frame_locked(ticker_ns, frame)
                         continue
 
                     if force_live_refresh:
@@ -1015,7 +1131,7 @@ def preload_all(
 
                     existing_frame = ALL_DATA.get(ticker_ns)
                     if existing_frame is None or _is_stale_live_frame(existing_frame):
-                        ALL_DATA[ticker_ns] = fallback
+                        _remember_frame_locked(ticker_ns, fallback)
             for ticker_ns in batch:
                 frame = batch_frames.get(ticker_ns)
                 if frame is None:
@@ -1174,9 +1290,18 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
     force_live_refresh = _should_force_live_refresh()
     allow_live_fallback = _should_allow_live_fallback(force_live_refresh)
+    if _current_time_travel_cutoff() is not None:
+        try:
+            import time_travel_engine as _tt
+
+            cached_tt = _tt.get_cached_for_ticker(ticker_ns)
+            if isinstance(cached_tt, pd.DataFrame) and not cached_tt.empty:
+                return cached_tt
+        except Exception:
+            pass
     with _ALL_DATA_LOCK:
         df = ALL_DATA.get(ticker_ns)
-    df = _apply_time_travel_cutoff_if_needed(df)
+    df = _apply_time_travel_cutoff_if_needed(df, ticker_ns)
     stale_fallback = None
     if df is not None:
         if force_live_refresh:
@@ -1184,7 +1309,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
                 return df
         elif not _is_stale_live_frame(df):
             return df
-        stale_fallback = df
+        stale_fallback = _mark_stale_fallback_frame(df, "cached_not_fresh")
 
     if _current_time_travel_cutoff() is None and not force_live_refresh and _has_recent_no_data(ticker_ns):
         return stale_fallback
@@ -1199,22 +1324,20 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
                     source="csv_cache",
                     window=_get_current_window(),
                 )
-                csv_df = _apply_time_travel_cutoff_if_needed(csv_df)
+                csv_df = _apply_time_travel_cutoff_if_needed(csv_df, ticker_ns)
                 if _is_stale_live_frame(csv_df):
                     if stale_fallback is None:
-                        stale_fallback = csv_df
+                        stale_fallback = _mark_stale_fallback_frame(csv_df, "csv_not_fresh")
                 else:
                     _clear_no_data(ticker_ns)
-                    with _ALL_DATA_LOCK:
-                        ALL_DATA[ticker_ns] = csv_df
+                    _remember_frame(ticker_ns, csv_df)
                     return csv_df
     except Exception:
         pass
 
     if not allow_live_fallback:
         if stale_fallback is not None and not force_live_refresh:
-            with _ALL_DATA_LOCK:
-                ALL_DATA[ticker_ns] = stale_fallback
+            _remember_frame(ticker_ns, stale_fallback)
         return None if force_live_refresh else stale_fallback
 
     fetched = download_history(
@@ -1223,15 +1346,13 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
         ignore_no_data_cache=force_live_refresh,
         suppress_no_data_mark=force_live_refresh,
     )
-    fetched = _apply_time_travel_cutoff_if_needed(fetched)
+    fetched = _apply_time_travel_cutoff_if_needed(fetched, ticker_ns)
     if fetched is not None:
-        with _ALL_DATA_LOCK:
-            ALL_DATA[ticker_ns] = fetched
+        _remember_frame(ticker_ns, fetched)
         _persist_frame_to_csv(ticker_ns, fetched)
         return fetched
     if stale_fallback is not None and not force_live_refresh:
-        with _ALL_DATA_LOCK:
-            ALL_DATA[ticker_ns] = stale_fallback
+        _remember_frame(ticker_ns, stale_fallback)
     return None if force_live_refresh else stale_fallback
 
 

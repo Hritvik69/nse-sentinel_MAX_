@@ -30,6 +30,8 @@ import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from atomic_io import atomic_write_text
+
 _LOCK  = threading.Lock()
 _cache: dict[bool, list[str]] = {}
 _LAST_DIAGNOSTICS: dict[str, str] = {}
@@ -490,8 +492,7 @@ def _build(live: bool) -> list[str]:
         try:
             bare_content = "\n".join(t.replace(".NS", "") for t in result)
             try:
-                with open(_TMP_TICKER_FILE, "w", encoding="utf-8") as _fh:
-                    _fh.write(bare_content)
+                atomic_write_text(_TMP_TICKER_FILE, bare_content, encoding="utf-8")
             except Exception as exc:
                 _record_diagnostic("tmp_cache_write", exc)
         except Exception as exc:

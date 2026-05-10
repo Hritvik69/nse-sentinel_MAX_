@@ -292,8 +292,18 @@ def run_scan(tickers: list[str], mode: int, workers: int = 20) -> tuple[list[dic
 
     t0 = time.time()
 
+    def _submit_analyse(executor, ticker):
+        try:
+            import time_travel_engine as _tt
+
+            if _tt.is_active():
+                return _tt.submit_with_context(executor, analyse, ticker, mode)
+        except Exception:
+            pass
+        return executor.submit(analyse, ticker, mode)
+
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(analyse, t, mode): t for t in tickers}
+        futures = {_submit_analyse(ex, t): t for t in tickers}
         for fut in as_completed(futures):
             done += 1
             r = fut.result()

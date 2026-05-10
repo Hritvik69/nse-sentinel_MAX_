@@ -10,30 +10,50 @@ from __future__ import annotations
 
 import hashlib
 import logging as _log
+import os
 import pickle
 from pathlib import Path
+
+from atomic_io import atomic_write_bytes, locked_path
 
 _DATA_DIR = Path(__file__).resolve().parent / "data"
 _MODEL_PATH = _DATA_DIR / "learning_model.pkl"
 
 
-def _check_model_integrity(data: bytes) -> bool:
+def _expected_model_sha256() -> str | None:
     """
-    Return False only when Streamlit secrets pin a model hash and it mismatches.
+    Return a trusted externally configured SHA-256, never one from data/.
 
-    Configure model_sha256.learning_model in Streamlit secrets after a trusted
-    training run to prevent loading a tampered GitHub-synced pickle.
+    Supported:
+      - NSE_SENTINEL_MODEL_SHA256 environment variable
+      - Streamlit secrets: [model_sha256] learning_model = "..."
     """
+    env_value = os.environ.get("NSE_SENTINEL_MODEL_SHA256", "").strip()
+    if env_value:
+        return env_value.lower()
     try:
         import streamlit as st
 
         expected = (st.secrets.get("model_sha256") or {}).get("learning_model")
-        if not expected:
-            return True
-        actual = hashlib.sha256(data).hexdigest().lower()
-        return actual == str(expected).strip().lower()
+        if expected:
+            return str(expected).strip().lower()
     except Exception:
-        return True
+        pass
+    return None
+
+
+def _check_model_integrity(data: bytes) -> bool:
+    expected = _expected_model_sha256()
+    if not expected:
+        _log.warning(
+            "model_persistence: trusted SHA-256 is not configured; skipping persisted pickle load"
+        )
+        return False
+    actual = hashlib.sha256(data).hexdigest().lower()
+    if actual != expected:
+        _log.error("model_persistence: SHA-256 integrity check failed; model not loaded")
+        return False
+    return True
 
 
 def save_model(
@@ -50,15 +70,18 @@ def save_model(
             "regime_encoder": regime_encoder or {},
             "sector_encoder": sector_encoder or {},
         }
-        _MODEL_PATH.write_bytes(pickle.dumps(payload, protocol=4))
+        data = pickle.dumps(payload, protocol=4)
+        atomic_write_bytes(_MODEL_PATH, data)
         try:
             from persistent_store import push_file as _push_file
 
-            _push_file(_MODEL_PATH)
+            if not _push_file(_MODEL_PATH):
+                _log.error("model_persistence: queueing model for persistent sync failed")
         except Exception:
-            pass
+            _log.exception("model_persistence: persistent sync failed")
         return True
     except Exception:
+        _log.exception("model_persistence: model save failed")
         return False
 
 
@@ -66,9 +89,9 @@ def load_model() -> dict | None:
     try:
         if not _MODEL_PATH.exists():
             return None
-        data = _MODEL_PATH.read_bytes()
+        with locked_path(_MODEL_PATH):
+            data = _MODEL_PATH.read_bytes()
         if not _check_model_integrity(data):
-            _log.error("model_persistence: SHA-256 integrity check failed; model not loaded")
             return None
         payload = pickle.loads(data)
         if not isinstance(payload, dict) or "model" not in payload:

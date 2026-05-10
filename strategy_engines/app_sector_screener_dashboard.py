@@ -1130,9 +1130,19 @@ def render_sector_screener_dashboard(
                 return cache[cache_key]
             _max_workers = max(1, min(6, len(_base_sectors)))
             _sector_results_map: dict[str, dict[str, Any]] = {}
+            def _submit_sector(executor, sector_name):
+                try:
+                    import time_travel_engine as _tt_ctx
+
+                    if _tt_ctx.is_active():
+                        return _tt_ctx.submit_with_context(executor, _build_sector_result, sector_name, mb)
+                except Exception:
+                    pass
+                return executor.submit(_build_sector_result, sector_name, mb)
+
             with ThreadPoolExecutor(max_workers=_max_workers) as ex:
                 _futures = {
-                    ex.submit(_build_sector_result, sec, mb): sec
+                    _submit_sector(ex, sec): sec
                     for sec in _base_sectors
                 }
                 for _future in as_completed(_futures):
@@ -1808,10 +1818,19 @@ def render_sector_screener_dashboard(
                 text="Running sector scans on refreshed live data..." if _force_live_all else "Running sector scans on shared data...",
             )
             _max_workers = max(1, min(6, len(_base_sectors)))
+            def _submit_sector_all(executor, sector_name):
+                try:
+                    import time_travel_engine as _tt_ctx
+
+                    if _tt_ctx.is_active():
+                        return _tt_ctx.submit_with_context(executor, _build_sector_result, sector_name, _market_bias)
+                except Exception:
+                    pass
+                return executor.submit(_build_sector_result, sector_name, _market_bias)
 
             with ThreadPoolExecutor(max_workers=_max_workers) as ex:
                 _futures = {
-                    ex.submit(_build_sector_result, _sec, _market_bias): _sec
+                    _submit_sector_all(ex, _sec): _sec
                     for _sec in _base_sectors
                 }
                 for _done, _future in enumerate(as_completed(_futures), start=1):

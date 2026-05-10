@@ -19,14 +19,20 @@ If secrets are missing, the module silently falls back to local-only mode.
 from __future__ import annotations
 
 import base64
+from io import BytesIO, StringIO
 import json
+import logging
 import queue as _queue
 import threading
 import time as _time
 from pathlib import Path
 
+import pandas as pd
+from atomic_io import atomic_write_bytes
+
 _HERE = Path(__file__).resolve().parent
 _DATA_DIR = _HERE / "data"
+_LOG = logging.getLogger(__name__)
 
 
 def _has_real_secret(value: object) -> bool:
@@ -160,7 +166,7 @@ def _gh_get_raw(secrets: dict, path: str) -> bytes | None:
         return None
 
 
-def _gh_put(secrets: dict, path: str, content_bytes: bytes, sha: str | None = None) -> bool:
+def _gh_put_status(secrets: dict, path: str, content_bytes: bytes, sha: str | None = None) -> dict:
     """PUT /repos/{owner}/{repo}/contents/{path}."""
     try:
         import requests
@@ -186,12 +192,63 @@ def _gh_put(secrets: dict, path: str, content_bytes: bytes, sha: str | None = No
                 _time.sleep(delay)
             resp = requests.put(url, headers=headers, data=json.dumps(payload), timeout=20)
             if resp.status_code in (200, 201):
-                return True
+                return {"ok": True, "status": resp.status_code}
             if resp.status_code not in (429, 503):
-                return False
-        return False
+                return {"ok": False, "status": resp.status_code}
+        return {"ok": False, "status": 503}
+    except Exception as exc:
+        return {"ok": False, "status": 0, "error": str(exc)[:160]}
+
+
+def _gh_put(secrets: dict, path: str, content_bytes: bytes, sha: str | None = None) -> bool:
+    return bool(_gh_put_status(secrets, path, content_bytes, sha).get("ok"))
+
+
+def _merge_csv_bytes(remote_bytes: bytes, local_bytes: bytes) -> bytes | None:
+    try:
+        remote = pd.read_csv(BytesIO(remote_bytes), dtype=str)
+        local = pd.read_csv(BytesIO(local_bytes), dtype=str)
+        merged = pd.concat([remote, local], ignore_index=True, sort=False)
+        merged = merged.drop_duplicates(keep="last")
+        buf = StringIO()
+        merged.to_csv(buf, index=False)
+        return buf.getvalue().encode("utf-8")
     except Exception:
-        return False
+        return None
+
+
+def _merge_json_bytes(remote_bytes: bytes, local_bytes: bytes) -> bytes | None:
+    try:
+        remote = json.loads(remote_bytes.decode("utf-8"))
+        local = json.loads(local_bytes.decode("utf-8"))
+        if isinstance(remote, list) and isinstance(local, list):
+            seen: set[str] = set()
+            merged = []
+            for item in remote + local:
+                key = json.dumps(item, sort_keys=True, ensure_ascii=True)
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(item)
+            return json.dumps(merged, ensure_ascii=True, indent=2).encode("utf-8")
+        if isinstance(remote, dict) and isinstance(local, dict):
+            merged = dict(remote)
+            merged.update(local)
+            return json.dumps(merged, ensure_ascii=True, indent=2).encode("utf-8")
+    except Exception:
+        return None
+    return None
+
+
+def _merge_remote_local(remote_path: str, remote_bytes: bytes | None, local_bytes: bytes) -> bytes | None:
+    if not remote_bytes:
+        return None
+    suffix = Path(remote_path).suffix.lower()
+    if suffix == ".csv":
+        return _merge_csv_bytes(remote_bytes, local_bytes)
+    if suffix == ".json":
+        return _merge_json_bytes(remote_bytes, local_bytes)
+    return None
 
 
 # Local filename (inside data/) -> remote GitHub path.
@@ -228,29 +285,43 @@ def _ensure_data_dir() -> None:
         pass
 
 
-def _do_push_blocking(local_path: Path) -> None:
-    """Push one file synchronously; errors are swallowed by design."""
+def _do_push_blocking(local_path: Path) -> bool:
+    """Push one file synchronously."""
     try:
         secrets = _get_secrets()
         if secrets is None:
-            return
+            return True
         local_name = local_path.name
         remote_path = _SYNC_FILES.get(local_name) or _SYNC_ALIASES.get(local_name)
         if remote_path is None:
-            import logging
-            logging.debug(f"persistent_store: {local_name!r} not in sync manifest -- skipped")
-            return
+            _LOG.debug("persistent_store: %r not in sync manifest -- skipped", local_name)
+            return True
         if not local_path.exists():
-            import logging
-            logging.debug(f"persistent_store: {local_path} does not exist -- skipped")
-            return
+            _LOG.debug("persistent_store: %s does not exist -- skipped", local_path)
+            return True
         content = local_path.read_bytes()
         with _PUSH_LOCK:
             existing = _gh_get(secrets, remote_path)
             sha = existing["sha"] if isinstance(existing, dict) else None
-            _gh_put(secrets, remote_path, content, sha)
-    except Exception:
-        pass
+            result = _gh_put_status(secrets, remote_path, content, sha)
+            if result.get("ok"):
+                return True
+            if int(result.get("status") or 0) == 409:
+                latest = _gh_get(secrets, remote_path)
+                latest_sha = latest["sha"] if isinstance(latest, dict) else None
+                remote_raw = _gh_get_raw(secrets, remote_path)
+                merged = _merge_remote_local(remote_path, remote_raw, content)
+                if merged is None:
+                    _LOG.error("persistent_store: GitHub conflict for %s could not be merged", remote_path)
+                    return False
+                retry = _gh_put_status(secrets, remote_path, merged, latest_sha)
+                if retry.get("ok"):
+                    return True
+            _LOG.error("persistent_store: GitHub push failed for %s status=%s", remote_path, result.get("status"))
+            return False
+    except Exception as exc:
+        _LOG.error("persistent_store: push failed for %s: %s", local_path.name, str(exc)[:160])
+        return False
 
 
 def _run_push_worker() -> None:
@@ -305,9 +376,10 @@ def pull_all() -> int:
                 raw = _gh_get_raw(secrets, remote_path)
                 if raw is None:
                     continue
-            (_DATA_DIR / local_name).write_bytes(raw)
+            atomic_write_bytes(_DATA_DIR / local_name, raw)
             pulled += 1
-        except Exception:
+        except Exception as exc:
+            _LOG.error("persistent_store: pull failed for %s: %s", remote_path, str(exc)[:160])
             continue
     return pulled
 
@@ -322,14 +394,14 @@ def push_file(local_path: Path | str, *, block: bool = False) -> bool:
     local_path = Path(local_path)
 
     if block:
-        _do_push_blocking(local_path)
-        return True
+        return _do_push_blocking(local_path)
 
     _ensure_push_worker()
     try:
         _PUSH_QUEUE.put_nowait(local_path)
     except _queue.Full:
-        pass
+        _LOG.error("persistent_store: push queue full for %s", local_path.name)
+        return False
     return True
 
 
@@ -339,6 +411,6 @@ def push_all(*, block: bool = False) -> int:
     for local_name in _SYNC_FILES:
         path = _DATA_DIR / local_name
         if path.exists():
-            push_file(path, block=block)
-            pushed += 1
+            if push_file(path, block=block):
+                pushed += 1
     return pushed

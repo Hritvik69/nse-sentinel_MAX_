@@ -40,6 +40,7 @@ _FILE_LOCK = threading.Lock()
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from atomic_io import atomic_write_csv_df
 
 try:
     from zoneinfo import ZoneInfo
@@ -232,7 +233,7 @@ def _download_one(
         df = df[[c for c in req_cols if c in df.columns]]
 
         with _FILE_LOCK:
-            df.to_csv(_csv_path(ticker_ns))
+            atomic_write_csv_df(_csv_path(ticker_ns), df)
 
         return df, "updated"
 

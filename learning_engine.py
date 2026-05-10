@@ -49,6 +49,8 @@ TRAINING_STATUS: dict = {
     "stock_samples": 0,
     "sector_samples": 0,
     "accuracy_pct": None,
+    "validation_accuracy_pct": None,
+    "training_accuracy_pct": None,
     "last_trained": "",
     "source": "none",
     "message": "Model not trained yet.",
@@ -350,6 +352,8 @@ def train_learning_model():
         "stock_samples": 0,
         "sector_samples": 0,
         "accuracy_pct": None,
+        "validation_accuracy_pct": None,
+        "training_accuracy_pct": None,
         "last_trained": "",
         "source": "none",
         "message": "Model not trained yet.",
@@ -413,7 +417,8 @@ def train_learning_model():
         model = LogisticRegression(max_iter=300, class_weight="balanced", solver="lbfgs")
         model.fit(X_train_scaled, y_train)
 
-        accuracy = float(model.score(X_test_scaled, y_test) * 100.0)
+        score_pct = float(model.score(X_test_scaled, y_test) * 100.0)
+        training_pct = float(model.score(X_train_scaled, y_train) * 100.0)
         with _MODEL_LOCK:
             MODEL = model
             SCALER = scaler
@@ -422,9 +427,15 @@ def train_learning_model():
         status.update(
             {
                 "trained": True,
-                "accuracy_pct": round(accuracy, 2),
+                "accuracy_pct": round(score_pct, 2) if can_split else None,
+                "validation_accuracy_pct": round(score_pct, 2) if can_split else None,
+                "training_accuracy_pct": round(training_pct, 2),
                 "last_trained": datetime.now().isoformat(timespec="minutes"),
-                "message": f"Model trained on {len(X)} samples.",
+                "message": (
+                    f"Model trained on {len(X)} samples."
+                    if can_split
+                    else f"Model trained on {len(X)} samples; validation held until enough holdout data is available."
+                ),
                 "regime_encoder": regime_encoder,
                 "sector_encoder": sector_encoder,
             }
@@ -515,6 +526,8 @@ def get_training_status() -> dict:
             "stock_samples": 0,
             "sector_samples": 0,
             "accuracy_pct": None,
+            "validation_accuracy_pct": None,
+            "training_accuracy_pct": None,
             "last_trained": "",
             "source": "none",
             "message": "Training status unavailable.",

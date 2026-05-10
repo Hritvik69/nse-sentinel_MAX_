@@ -44,6 +44,8 @@ def _default_learning_status() -> dict:
         "stock_samples": 0,
         "sector_samples": 0,
         "accuracy_pct": None,
+        "validation_accuracy_pct": None,
+        "training_accuracy_pct": None,
         "last_trained": "",
         "source": "none",
         "message": "Learning engine unavailable.",
@@ -67,9 +69,8 @@ def _learning_engine_module_is_usable(module) -> bool:
 
 def _load_learning_engine_module():
     """
-    Load the project learning engine without leaving a half-imported module
-    behind in sys.modules. Streamlit Cloud can otherwise surface that as
-    "cannot import name ..." on reruns.
+    Load the project learning engine without mutating sys.modules during
+    normal Streamlit execution.
     """
     existing = _sys.modules.get("learning_engine")
     if _learning_engine_module_is_usable(existing):
@@ -77,15 +78,11 @@ def _load_learning_engine_module():
 
     for module_name in ("learning_engine", "trade_decision_engine"):
         try:
-            if module_name == "learning_engine" and module_name in _sys.modules:
-                _sys.modules.pop("learning_engine", None)
             module = _importlib.import_module(module_name)
             if module_name != "learning_engine":
-                _sys.modules["learning_engine"] = module
+                return module
             return module
         except Exception:
-            if module_name == "learning_engine":
-                _sys.modules.pop("learning_engine", None)
             continue
     return None
 
@@ -109,28 +106,25 @@ def _module_has_required_attrs(module, required_attrs: tuple[str, ...]) -> bool:
 
 def _load_optional_module(module_name: str, required_attrs: tuple[str, ...] = ()):
     """
-    Import an optional local module without letting a half-imported entry stay
-    behind in sys.modules. Streamlit Cloud can otherwise surface KeyError or
-    similar startup failures on reruns.
+    Import an optional local module without popping sys.modules during normal
+    app execution.
     """
     existing = _sys.modules.get(module_name)
     if _module_has_required_attrs(existing, required_attrs):
         return existing
 
     try:
-        _sys.modules.pop(module_name, None)
         module = _importlib.import_module(module_name)
         if required_attrs and not _module_has_required_attrs(module, required_attrs):
-            _sys.modules.pop(module_name, None)
             return None
         return module
     except Exception:
-        _sys.modules.pop(module_name, None)
         return None
 
 import io
 import html
 import json
+import logging
 import re
 import threading
 import time
@@ -145,43 +139,51 @@ import pandas as pd
 import requests
 import streamlit as st
 import yfinance as yf
+from atomic_io import atomic_write_json
+
+_LOG = logging.getLogger(__name__)
 
 try:
     from persistent_store import push_file as _push_persistent_file
 except Exception:
     def _push_persistent_file(*a, **kw):  # type: ignore[misc]
-        pass
+        return False
+
+
+def _queue_persistent_file(path: Path) -> bool:
+    try:
+        ok = bool(_push_persistent_file(path))
+        if not ok:
+            _LOG.error("app: queueing persistent sync failed for %s", Path(path).name)
+        return ok
+    except Exception:
+        _LOG.exception("app: persistent sync failed for %s", Path(path).name)
+        return False
 
 # Persistent store: pull remote data before any local data readers run.
 if not st.session_state.get("_persistence_pulled", False):
     st.session_state["_persistence_pulled"] = True
+    try:
+        from persistent_store import health_check as _persistence_health_check, pull_all
 
-    def _bg_pull_persistence() -> None:
+        _pulled = pull_all()
+        _persistence_health = _persistence_health_check()
         try:
-            from persistent_store import health_check as _persistence_health_check, pull_all
+            from learning_engine import load_persisted_model
 
-            _pulled = pull_all()
-            _persistence_health = _persistence_health_check()
-            try:
-                from learning_engine import load_persisted_model
-
-                load_persisted_model()
-            except Exception:
-                pass
-            try:
-                st.session_state["_persistence_health"] = _persistence_health
-                if _pulled > 0:
-                    st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
-                elif not _persistence_health.get("connected"):
-                    st.session_state["_persistence_warning"] = (
-                        "Cloud persistence is NOT active. Add the [github_store] secrets below or Streamlit reboot will wipe saved picks."
-                    )
-            except Exception:
-                pass
+            load_persisted_model()
         except Exception:
             pass
-
-    threading.Thread(target=_bg_pull_persistence, daemon=True).start()
+        st.session_state["_persistence_health"] = _persistence_health
+        if _pulled > 0:
+            st.session_state["_persistence_msg"] = f"Restored {_pulled} data file(s) from cloud storage."
+        elif not _persistence_health.get("connected"):
+            st.session_state["_persistence_warning"] = (
+                "Cloud persistence is NOT active. Add the [github_store] secrets below or Streamlit reboot will wipe saved picks."
+            )
+    except Exception:
+        _LOG.exception("Cloud persistence startup pull failed")
+        st.session_state["_persistence_warning"] = "Cloud persistence startup pull failed; continuing with local data."
 
 _learning_engine = None
 _run_learning_cycle = None
@@ -449,11 +451,8 @@ def _write_learning_status_snapshot(
             "learning_status": _json_safe_snapshot(learning_status),
             "signal_weight_status": _serialize_signal_weight_status(signal_status),
         }
-        _LEARNING_STATUS_SNAPSHOT_PATH.write_text(
-            json.dumps(payload, ensure_ascii=True, indent=2),
-            encoding="utf-8",
-        )
-        _push_persistent_file(_LEARNING_STATUS_SNAPSHOT_PATH)
+        atomic_write_json(_LEARNING_STATUS_SNAPSHOT_PATH, payload, indent=2)
+        _queue_persistent_file(_LEARNING_STATUS_SNAPSHOT_PATH)
     except Exception:
         return
 
@@ -770,6 +769,20 @@ def _sync_cached_learning_feedback_summary(feedback_stats: dict | None = None) -
     return stats
 
 
+def _feedback_event_signature(feedback_stats: dict | None = None) -> tuple:
+    stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
+    return (
+        str(get_expected_data_date()),
+        int(stats.get("total_logged", 0) or 0),
+        int(stats.get("rows_with_outcome", 0) or 0),
+        str(stats.get("accuracy_pct", "")),
+        str(stats.get("bullish_precision_pct", "")),
+        str(stats.get("bearish_precision_pct", "")),
+        round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+        round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+    )
+
+
 def _should_run_full_learning_refresh(feedback_stats: dict | None = None) -> bool:
     stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
     cached_status = st.session_state.get("_learning_status")
@@ -807,7 +820,11 @@ def _should_run_full_learning_refresh(feedback_stats: dict | None = None) -> boo
 
 def _refresh_learning_after_prediction_log(feedback_stats: dict | None = None) -> bool:
     stats = _sync_cached_learning_feedback_summary(feedback_stats)
+    feedback_sig = _feedback_event_signature(stats)
     if not _should_run_full_learning_refresh(stats):
+        st.session_state["_last_feedback_learning_event_sig"] = feedback_sig
+        return False
+    if st.session_state.get("_last_feedback_learning_event_sig") == feedback_sig:
         return False
     try:
         _refresh_feedback_learning_system(force=True)
@@ -817,6 +834,7 @@ def _refresh_learning_after_prediction_log(feedback_stats: dict | None = None) -
         _refresh_signal_weight_status(force_update=True)
     except Exception:
         pass
+    st.session_state["_last_feedback_learning_event_sig"] = feedback_sig
     return True
 
 _POST_CLOSE_OUTCOME_INTERVAL_SEC = 15 * 60
@@ -1132,7 +1150,7 @@ def _fallback_get_shared_market_frame(
             df["Volume"] = df["Volume"].fillna(0.0)
         return df.sort_index() if len(df) >= max(1, int(min_rows)) else None
     except Exception:
-        _scan_diag.record_failure(ticker_ns, "EXCEPTION")
+        _scan_diag.record_failure(ticker, "EXCEPTION")
         return None
 
 
@@ -1602,11 +1620,8 @@ def _load_local_tomorrow_store() -> dict:
 def _save_local_tomorrow_store(store: dict) -> bool:
     try:
         _TOMORROW_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _TOMORROW_STORE_PATH.write_text(
-            json.dumps(store, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        _push_persistent_file(_TOMORROW_STORE_PATH)
+        atomic_write_json(_TOMORROW_STORE_PATH, store, indent=2)
+        _queue_persistent_file(_TOMORROW_STORE_PATH)
         return True
     except Exception:
         return False
@@ -2128,11 +2143,8 @@ def _save_local_imported_ai_learning_store(payload: dict[str, object]) -> bool:
     try:
         normalized = _normalize_imported_ai_learning_payload(payload)
         _IMPORTED_AI_STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _IMPORTED_AI_STORE_PATH.write_text(
-            json.dumps(normalized, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        _push_persistent_file(_IMPORTED_AI_STORE_PATH)
+        atomic_write_json(_IMPORTED_AI_STORE_PATH, normalized, indent=2)
+        _queue_persistent_file(_IMPORTED_AI_STORE_PATH)
         return True
     except Exception:
         return False
@@ -3609,14 +3621,11 @@ def _aura_fetch(symbol: str) -> "pd.DataFrame | None":
         if df is None or len(df) < 10:
             return None
         truncated = _cut(df)
-        # BUG FIX: Cache the truncated (not the full) frame so that any
-        # subsequent get_df_for_ticker call for this ticker during TT also
-        # gets the historically-correct data, not future-contaminated data.
         if truncated is not None and cutoff is not None:
             try:
-                from strategy_engines._engine_utils import ALL_DATA, _ALL_DATA_LOCK
-                with _ALL_DATA_LOCK:
-                    ALL_DATA[ticker_ns] = truncated
+                import time_travel_engine as _tt_cache
+
+                _tt_cache.cache_frame(ticker_ns, df, cutoff, min_rows=10)
             except Exception:
                 pass
         return truncated
@@ -6002,10 +6011,7 @@ def _save_local_ticker_master(tickers: list[str]) -> bool:
             "count": len(normalized),
             "tickers": normalized,
         }
-        _TICKER_MASTER_STORE_PATH.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        atomic_write_json(_TICKER_MASTER_STORE_PATH, payload, indent=2)
         return True
     except Exception:
         return False
@@ -6723,8 +6729,8 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
         # ── 🕰️ TIME TRAVEL: truncate to cutoff date (guaranteed no leakage) ──
         # This runs REGARDLESS of whether the ticker was in ALL_DATA or came
         # from a live yfinance fallback — the explicit slice here is the true
-        # data-leakage guard. The monkey-patch in time_travel_engine only covers
-        # ALL_DATA hits; this covers everything else.
+        # data-leakage guard. It covers cached frames and any live fallback
+        # frame without mutating the shared live ALL_DATA cache.
         try:
             _tt_cut = _tt.get_reference_date()
             if _tt_cut is not None:
@@ -7162,7 +7168,7 @@ def _build_ready_scan_tickers(tickers, *, strict: bool = True) -> tuple[list[str
             if not isinstance(df, pd.DataFrame) or df.empty:
                 summary["skipped_no_data"] += 1
                 continue
-            if len(df) < 30:
+            if len(df) < 5:
                 summary["skipped_short"] += 1
                 continue
             if strict:
@@ -7213,8 +7219,16 @@ def run_scan(tickers, mode, workers=12):
         unsafe_allow_html=True,
     )
 
+    def _submit_analyse(executor, ticker):
+        try:
+            if _TIME_TRAVEL_OK and getattr(_tt, "is_active", lambda: False)():
+                return _tt.submit_with_context(executor, analyse, ticker, mode)
+        except Exception:
+            pass
+        return executor.submit(analyse, ticker, mode)
+
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(analyse, t, mode): t for t in tickers}
+        futures = {_submit_analyse(ex, t): t for t in tickers}
         for fut in as_completed(futures):
             done += 1
             r = fut.result()
@@ -9068,14 +9082,10 @@ if main_scan_clicked:
     st.session_state.pop("last_scan_df", None)
     st.session_state.pop("_last_scan_df_sig", None)
 
-    # FIX 6 - Auto-backfill actual returns in the background.
-    def _bg_backfill_actual_returns() -> None:
-        try:
-            _run_post_close_outcome_refresh(force=True)
-        except Exception:
-            pass
-
-    threading.Thread(target=_bg_backfill_actual_returns, daemon=True).start()
+    try:
+        _run_post_close_outcome_refresh(force=True)
+    except Exception:
+        pass
 
 # ── SECTOR SCREENER DASHBOARD ─────────────────────────────────────
 if sector_screener_clicked:
@@ -9096,13 +9106,6 @@ if st.session_state.get("show_sector_screener", False):
         # ── Auto-retry: try importing again in case file was added after startup ──
         _retry_ok = False
         try:
-            import importlib, sys
-            for _mod in [
-                "app_sector_screener_dashboard",
-                "strategy_engines.app_sector_screener_dashboard",
-            ]:
-                if _mod in sys.modules:
-                    del sys.modules[_mod]
             try:
                 from strategy_engines.app_sector_screener_dashboard import render_sector_screener_dashboard as _rsd  # type: ignore[import]
             except Exception:

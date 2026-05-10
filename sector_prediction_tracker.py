@@ -36,13 +36,22 @@ signal_bullish_pct float
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
-from datetime import datetime, timezone
+import logging
+import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+from atomic_io import atomic_write_csv_df, locked_path
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None  # type: ignore[assignment]
 
 try:
     from persistent_store import push_file as _push_file
@@ -54,9 +63,15 @@ except Exception:
 _HERE     = Path(__file__).resolve().parent
 _DATA_DIR = _HERE / "data"
 _LOG_PATH = _DATA_DIR / "sector_predictions.csv"
+_IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedelta(hours=5, minutes=30))
+_LOG_LOCK = threading.RLock()
+_LOG = logging.getLogger(__name__)
+_TARGET_POLICY_VERSION = "sector_next_session_v2_threshold_0_5"
 
 _FIELDNAMES = [
-    "predicted_at", "sector", "direction", "confidence", "raw_score",
+    "predicted_at", "market_date", "prediction_id",
+    "sector", "direction", "prediction_direction", "target_policy_version",
+    "confidence", "raw_score",
     "entry_price", "exit_price", "return_pct", "correct",
     "leader_ticker",
     "regime", "regime_confidence", "mtf_score", "mtf_note",
@@ -75,6 +90,52 @@ _calibration_cache: dict[str, dict[str, float]] = {}   # sector → dir → fact
 _cache_built_at: str = ""
 _LOG_CACHE_SIG: tuple[int, int] | None = None
 _LOG_CACHE_DF: pd.DataFrame | None = None
+
+
+def _now_ist() -> datetime:
+    try:
+        return datetime.now(_IST_TZ)
+    except Exception:
+        return datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+
+def _coerce_market_date(value: object, fallback: object = None) -> str:
+    for candidate in (value, fallback):
+        try:
+            if candidate is None or str(candidate).strip() == "":
+                continue
+            parsed = pd.to_datetime(candidate, errors="coerce")
+            if pd.isnull(parsed):
+                continue
+            if getattr(parsed, "tzinfo", None) is not None:
+                parsed = parsed.tz_convert(_IST_TZ).tz_localize(None)
+            return parsed.date().isoformat()
+        except Exception:
+            continue
+    return _now_ist().date().isoformat()
+
+
+def _stable_prediction_id(sector: object, market_date: object, source: object, direction: object) -> str:
+    raw = "|".join(
+        [
+            str(sector or "").strip().upper(),
+            "sector",
+            str(market_date or "").strip(),
+            str(source or "").strip().lower(),
+            str(direction or "").strip().lower(),
+        ]
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def _dedupe_key(row: pd.Series | dict) -> tuple[str, str, str, str]:
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    return (
+        str(getter("sector", "") or "").strip().upper(),
+        str(getter("market_date", "") or "").strip(),
+        str(getter("ohlc_source", getter("leader_ticker", "")) or "").strip().lower(),
+        str(getter("prediction_direction", getter("direction", "")) or "").strip().lower(),
+    )
 
 
 def _ensure_dir() -> None:
@@ -116,6 +177,30 @@ def _coerce_schema(df: pd.DataFrame) -> pd.DataFrame:
     for col in _FIELDNAMES:
         if col not in out.columns:
             out[col] = ""
+    out["market_date"] = [
+        _coerce_market_date(market, predicted)
+        for market, predicted in zip(out.get("market_date", ""), out.get("predicted_at", ""))
+    ]
+    out["prediction_direction"] = np.where(
+        out["prediction_direction"].astype(str).str.strip().eq(""),
+        out["direction"],
+        out["prediction_direction"],
+    )
+    out["target_policy_version"] = np.where(
+        out["target_policy_version"].astype(str).str.strip().eq(""),
+        _TARGET_POLICY_VERSION,
+        out["target_policy_version"],
+    )
+    out["prediction_id"] = [
+        pid if str(pid or "").strip() else _stable_prediction_id(sector, market, source, direction)
+        for pid, sector, market, source, direction in zip(
+            out.get("prediction_id", ""),
+            out.get("sector", ""),
+            out.get("market_date", ""),
+            out.get("ohlc_source", ""),
+            out.get("prediction_direction", ""),
+        )
+    ]
     return out[_FIELDNAMES]
 
 
@@ -128,10 +213,9 @@ def _ensure_schema() -> None:
         if not _LOG_PATH.exists():
             _invalidate_log_cache()
             return
-        df = pd.read_csv(_LOG_PATH, dtype=str)
+        with locked_path(_LOG_PATH):
+            df = pd.read_csv(_LOG_PATH, dtype=str)
         upgraded = _coerce_schema(df)
-        if list(upgraded.columns) != list(df.columns) or len(upgraded.columns) != len(df.columns):
-            upgraded.to_csv(_LOG_PATH, index=False)
         _set_cached_log(upgraded)
     except Exception:
         pass
@@ -255,15 +339,23 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
     """
     try:
         _ensure_dir()
-        _invalidate_log_cache()
-        _ensure_schema()
-        file_exists = _LOG_PATH.exists() and _LOG_PATH.stat().st_size > 0
         sig = prediction.signals
+        market_date = _coerce_market_date(getattr(prediction, "market_date", ""), prediction.predicted_at)
+        direction = str(prediction.direction or "").strip()
 
         row = {
             "predicted_at":      prediction.predicted_at,
+            "market_date":       market_date,
+            "prediction_id":     _stable_prediction_id(
+                prediction.sector,
+                market_date,
+                getattr(prediction, "ohlc_source", "") or getattr(prediction, "leader_ticker", ""),
+                direction,
+            ),
             "sector":            prediction.sector,
-            "direction":         prediction.direction,
+            "direction":         direction,
+            "prediction_direction": direction,
+            "target_policy_version": _TARGET_POLICY_VERSION,
             "confidence":        f"{prediction.confidence:.2f}",
             "raw_score":         f"{prediction.raw_score:.2f}",
             "entry_price":       f"{prediction.entry_price:.4f}",
@@ -301,18 +393,27 @@ def log_prediction(prediction) -> bool:  # prediction: SectorPrediction
             "signal_sector_str": f"{sig.sector_strength:.2f}",
         }
 
-        with open(_LOG_PATH, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=_FIELDNAMES, extrasaction="ignore")
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(row)
-        _push_file(_LOG_PATH)
+        with _LOG_LOCK:
+            if _LOG_PATH.exists():
+                with locked_path(_LOG_PATH):
+                    existing = _coerce_schema(pd.read_csv(_LOG_PATH, dtype=str))
+            else:
+                existing = pd.DataFrame(columns=_FIELDNAMES)
+            if _dedupe_key(row) in {_dedupe_key(existing_row) for _, existing_row in existing.iterrows()}:
+                _set_cached_log(existing)
+                return True
+            combined = _coerce_schema(pd.concat([existing, pd.DataFrame([row])], ignore_index=True))
+            atomic_write_csv_df(_LOG_PATH, combined, index=False)
+            _set_cached_log(combined)
+        if not _push_file(_LOG_PATH):
+            _LOG.error("sector_prediction_tracker: queueing sector log sync failed")
         try:
             read_log()
         except Exception:
             pass
         return True
     except Exception:
+        _LOG.exception("sector_prediction_tracker: log_prediction failed")
         return False
 
 
@@ -328,91 +429,100 @@ def backfill_outcomes(all_data: dict[str, "pd.DataFrame | None"]) -> int:
     Returns number of rows filled.
     """
     try:
-        _ensure_schema()
-        if not _LOG_PATH.exists():
-            _invalidate_log_cache()
-            return 0
-        df = read_log()
-        if df.empty:
-            return 0
+        with _LOG_LOCK:
+            _ensure_schema()
+            if not _LOG_PATH.exists():
+                _invalidate_log_cache()
+                return 0
+            df = read_log()
+            if df.empty:
+                return 0
 
-        needs = df["exit_price"].apply(lambda x: str(x).strip() == "")
-        if not needs.any():
-            return 0
+            needs = df["exit_price"].apply(lambda x: str(x).strip() == "")
+            if not needs.any():
+                return 0
 
-        filled = 0
-        for idx in df.index[needs]:
-            try:
-                source = str(df.at[idx, "ohlc_source"]).strip()
-                ohlc_symbol = str(df.at[idx, "ohlc_symbol"]).strip()
-                ticker = ohlc_symbol or str(df.at[idx, "leader_ticker"]).strip()
+            filled = 0
+            for idx in df.index[needs]:
+                try:
+                    source = str(df.at[idx, "ohlc_source"]).strip()
+                    ohlc_symbol = str(df.at[idx, "ohlc_symbol"]).strip()
+                    ticker = ohlc_symbol or str(df.at[idx, "leader_ticker"]).strip()
 
-                if source == "weighted_sector_basket":
-                    try:
-                        members = json.loads(str(df.at[idx, "stocks_used_json"]).strip() or "[]")
-                    except Exception:
-                        members = []
-                    if not isinstance(members, list):
-                        members = []
-                    hist = _rebuild_logged_weighted_basket([str(item) for item in members], all_data)
-                else:
-                    if not ticker:
+                    if source == "weighted_sector_basket":
+                        try:
+                            members = json.loads(str(df.at[idx, "stocks_used_json"]).strip() or "[]")
+                        except Exception:
+                            members = []
+                        if not isinstance(members, list):
+                            members = []
+                        hist = _rebuild_logged_weighted_basket([str(item) for item in members], all_data)
+                    else:
+                        if not ticker:
+                            continue
+                        lookup_keys = [ticker]
+                        if not ticker.startswith("^") and not ticker.endswith(".NS"):
+                            lookup_keys.append(f"{ticker}.NS")
+                        hist = next(
+                            (_normalize_hist(all_data.get(key)) for key in lookup_keys if all_data.get(key) is not None),
+                            None,
+                        )
+                    if hist is None or "Close" not in hist.columns or len(hist) < 2:
                         continue
-                    lookup_keys = [ticker]
-                    if not ticker.startswith("^") and not ticker.endswith(".NS"):
-                        lookup_keys.append(f"{ticker}.NS")
-                    hist = next(
-                        (_normalize_hist(all_data.get(key)) for key in lookup_keys if all_data.get(key) is not None),
-                        None,
+
+                    pred_date_text = _coerce_market_date(
+                        df.at[idx, "market_date"] if "market_date" in df.columns else "",
+                        df.at[idx, "predicted_at"],
                     )
-                if hist is None or "Close" not in hist.columns or len(hist) < 2:
+                    pred_dt = pd.to_datetime(pred_date_text, errors="coerce")
+                    if pd.isnull(pred_dt):
+                        continue
+                    pred_date = pred_dt.date()
+
+                    dates = pd.to_datetime(hist.index).date
+                    arr   = np.array(dates)
+                    locs  = np.where(arr <= pred_date)[0]
+                    if len(locs) == 0:
+                        continue
+                    day_i = int(locs[-1])
+                    if day_i + 1 >= len(hist):
+                        continue
+
+                    entry = pd.to_numeric(df.at[idx, "entry_price"], errors="coerce")
+                    entry = float(entry) if pd.notna(entry) else float(hist["Close"].iloc[day_i])
+                    exit_ = float(hist["Close"].iloc[day_i + 1])
+                    if entry <= 0:
+                        continue
+
+                    ret = round((exit_ / entry - 1.0) * 100, 4)
+                    direction = str(df.at[idx, "prediction_direction"] or df.at[idx, "direction"]).strip()
+
+                    if direction == "Bullish":
+                        correct = ret > 0.5
+                    elif direction == "Bearish":
+                        correct = ret < -0.5
+                    else:
+                        correct = abs(ret) <= 0.5
+
+                    df.at[idx, "exit_price"] = f"{exit_:.4f}"
+                    df.at[idx, "return_pct"] = f"{ret:.4f}"
+                    df.at[idx, "correct"]    = str(correct)
+                    if "target_policy_version" in df.columns:
+                        df.at[idx, "target_policy_version"] = _TARGET_POLICY_VERSION
+                    filled += 1
+                except Exception:
                     continue
 
-                pred_str = str(df.at[idx, "predicted_at"]).strip()
-                pred_dt  = pd.to_datetime(pred_str, errors="coerce", utc=True)
-                if pd.isnull(pred_dt):
-                    continue
-                pred_date = pred_dt.date()
-
-                dates = pd.to_datetime(hist.index).date
-                arr   = np.array(dates)
-                locs  = np.where(arr <= pred_date)[0]
-                if len(locs) == 0:
-                    continue
-                day_i = int(locs[-1])
-                if day_i + 1 >= len(hist):
-                    continue
-
-                entry = pd.to_numeric(df.at[idx, "entry_price"], errors="coerce")
-                entry = float(entry) if pd.notna(entry) else float(hist["Close"].iloc[day_i])
-                exit_ = float(hist["Close"].iloc[day_i + 1])
-                if entry <= 0:
-                    continue
-
-                ret = round((exit_ / entry - 1.0) * 100, 4)
-                direction = str(df.at[idx, "direction"]).strip()
-
-                if direction == "Bullish":
-                    correct = ret > 0.5
-                elif direction == "Bearish":
-                    correct = ret < -0.5
-                else:  # Sideways
-                    correct = abs(ret) <= 0.5
-
-                df.at[idx, "exit_price"] = f"{exit_:.4f}"
-                df.at[idx, "return_pct"] = f"{ret:.4f}"
-                df.at[idx, "correct"]    = str(correct)
-                filled += 1
-            except Exception:
-                continue
-
-        if filled > 0:
-            df.to_csv(_LOG_PATH, index=False)
-            _push_file(_LOG_PATH)
-            _set_cached_log(df)
-            _rebuild_calibration_cache(df)
-        return filled
+            if filled > 0:
+                df = _coerce_schema(df)
+                atomic_write_csv_df(_LOG_PATH, df, index=False)
+                if not _push_file(_LOG_PATH):
+                    _LOG.error("sector_prediction_tracker: queueing backfill sync failed")
+                _set_cached_log(df)
+                _rebuild_calibration_cache(df)
+            return filled
     except Exception:
+        _LOG.exception("sector_prediction_tracker: backfill_outcomes failed")
         return 0
 
 
@@ -482,7 +592,8 @@ def read_log(sector: str | None = None) -> pd.DataFrame:
         if current_sig is not None and _LOG_CACHE_SIG == current_sig and isinstance(_LOG_CACHE_DF, pd.DataFrame):
             df = _LOG_CACHE_DF.copy()
         else:
-            df = _set_cached_log(pd.read_csv(_LOG_PATH, dtype=str))
+            with locked_path(_LOG_PATH):
+                df = _set_cached_log(pd.read_csv(_LOG_PATH, dtype=str))
         if sector:
             df = df[df["sector"] == sector].copy()
         return df

@@ -17,6 +17,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from atomic_io import atomic_write_text
+
 HERE = Path(__file__).resolve().parent
 
 # ── Make sure nse_ticker_universe is importable ───────────────────────
@@ -42,7 +44,7 @@ print(f"\n✅ Fetched {len(tickers):,} tickers")
 # ── Write to nse_tickers.txt ──────────────────────────────────────────
 output_path = HERE / "nse_tickers.txt"
 bare_symbols = [t.replace(".NS", "") for t in sorted(tickers)]
-output_path.write_text("\n".join(bare_symbols), encoding="utf-8")
+atomic_write_text(output_path, "\n".join(bare_symbols), encoding="utf-8")
 
 print(f"✅ Written {len(bare_symbols):,} symbols to {output_path}")
 print()

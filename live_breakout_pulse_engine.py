@@ -609,6 +609,15 @@ def run_live_breakout_pulse(
     lock    = threading.Lock()
     data_stats: dict[str, object] = {}
     use_shared_data = bool(_SHARED_DATA_OK)
+    window = ""
+    try:
+        from data_session_manager import get_current_window as _get_window
+
+        window = str(_get_window() or "").upper()
+    except Exception:
+        window = ""
+    if cutoff_date is None and window == "LIVE":
+        use_shared_data = False
 
     if use_shared_data:
         try:
@@ -640,8 +649,18 @@ def run_live_breakout_pulse(
                 batch_results.append(row)
         return batch_results, len(batch)
 
+    def _submit_batch(executor, batch: list[str]):
+        if cutoff_date is not None and _TT_OK:
+            try:
+                import time_travel_engine as _tt_ctx
+
+                return _tt_ctx.submit_with_context(executor, _worker, batch)
+            except Exception:
+                pass
+        return executor.submit(_worker, batch)
+
     with ThreadPoolExecutor(max_workers=_BATCH_WORKERS) as ex:
-        futs = {ex.submit(_worker, batch): batch for batch in batches}
+        futs = {_submit_batch(ex, batch): batch for batch in batches}
         for fut in as_completed(futs):
             try:
                 batch_rows, batch_done = fut.result()
@@ -659,7 +678,11 @@ def run_live_breakout_pulse(
     if not results:
         empty = pd.DataFrame()
         empty.attrs["universe_scanned"] = total
-        empty.attrs["data_source"] = "shared_session" if use_shared_data else "direct_yfinance"
+        if use_shared_data:
+            plan = data_stats.get("plan", {}) if isinstance(data_stats.get("plan", {}), dict) else {}
+            empty.attrs["data_source"] = f"shared_session:{plan.get('source_label', 'session policy')}"
+        else:
+            empty.attrs["data_source"] = "direct_yfinance_live" if window == "LIVE" else "direct_yfinance"
         empty.attrs["data_stats"] = data_stats
         if cutoff_date is not None:
             empty.attrs["time_travel_date"] = pd.to_datetime(cutoff_date).date().isoformat()
@@ -668,7 +691,11 @@ def run_live_breakout_pulse(
     df = pd.DataFrame(results)
     df = df.sort_values("Final Score", ascending=False).reset_index(drop=True)
     df.attrs["universe_scanned"] = total
-    df.attrs["data_source"] = "shared_session" if use_shared_data else "direct_yfinance"
+    if use_shared_data:
+        plan = data_stats.get("plan", {}) if isinstance(data_stats.get("plan", {}), dict) else {}
+        df.attrs["data_source"] = f"shared_session:{plan.get('source_label', 'session policy')}"
+    else:
+        df.attrs["data_source"] = "direct_yfinance_live" if window == "LIVE" else "direct_yfinance"
     df.attrs["data_stats"] = data_stats
     if cutoff_date is not None:
         df.attrs["time_travel_date"] = pd.to_datetime(cutoff_date).date().isoformat()

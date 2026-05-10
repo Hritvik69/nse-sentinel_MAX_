@@ -205,6 +205,15 @@ def _cache_sector_frame(all_data: dict, key: str, df: pd.DataFrame | None) -> No
     if df is None or df.empty:
         return
     try:
+        import time_travel_engine as _tt
+
+        cutoff = _tt.get_reference_date()
+        if cutoff is not None:
+            _tt.cache_frame(key, df, cutoff, min_rows=5)
+            return
+    except Exception:
+        pass
+    try:
         all_data[key] = df
     except Exception:
         pass

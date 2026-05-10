@@ -1,369 +1,269 @@
-"""
-time_travel_engine.py
-──────────────────────
-🕰️ TIME-TRAVEL MODE — System-wide Historical Simulation for NSE Sentinel.
-
-How it works
-────────────
-When activated with a cutoff date D, this engine:
-
-  1. Patches `get_df_for_ticker` so EVERY call (from analyse(), Stock Aura,
-     Battle, Sector Screener) returns data truncated to ≤ D.
-  2. Snapshots existing ALL_DATA entries (used by zero-API backtests) with
-     the same truncated data.
-  3. Stores originals so `restore()` puts everything back exactly.
-
-Data guarantee
-──────────────
-  • ALL indicators (EMA, RSI, Vol/Avg) are computed AFTER the cutoff filter,
-    so no future data ever leaks into any calculation.
-  • yfinance fallback downloads (for tickers not yet in ALL_DATA) are also
-    truncated immediately on receipt.
-  • The staleness check in analyse() uses reference datetime (4pm on cutoff
-    date) instead of datetime.now() so historical DFs are never rejected.
-
-Zero impact on live mode
-─────────────────────────
-  • When inactive, all functions are no-ops and return normal values.
-  • is_active() guard protects every code path.
-  • Never raises — fully wrapped in try/except throughout.
-
-Public API
-──────────
-    activate(cutoff_date)           → int   (tickers snapshotted)
-    restore()                       → None
-    is_active()                     → bool
-    get_reference_datetime()        → datetime  (4pm on cutoff, or now())
-    get_reference_date()            → date | None
-    truncate_df(df, cutoff_date)    → pd.DataFrame | None
-    apply_time_travel_cutoff(df)    → pd.DataFrame | None  (convenience)
-"""
-
 from __future__ import annotations
 
+import contextvars
+import functools
 import threading
 from datetime import date, datetime, time as dtime
-from typing import Callable
+from typing import Callable, TypeVar
 
-import numpy as np
 import pandas as pd
 
-# ── Internal imports ──────────────────────────────────────────────────
 try:
-    from strategy_engines._engine_utils import (
-        ALL_DATA,
-        _ALL_DATA_LOCK,
-        get_df_for_ticker as _original_get_df,
-        download_history as _original_download,
-    )
-    import strategy_engines._engine_utils as _eu
-    _EU_OK = True
-except ImportError:
-    _EU_OK = False
-    ALL_DATA = {}
-    _ALL_DATA_LOCK = threading.Lock()
-    _original_get_df = lambda t: None  # noqa: E731
-    _original_download = lambda t, **kw: None  # noqa: E731
-    _eu = None
+    from strategy_engines._engine_utils import ALL_DATA, _ALL_DATA_LOCK
+except Exception:
+    ALL_DATA = {}  # type: ignore[assignment]
+    _ALL_DATA_LOCK = threading.RLock()  # type: ignore[assignment]
+
+T = TypeVar("T")
+
+_TT_DATE: contextvars.ContextVar[date | None] = contextvars.ContextVar(
+    "nse_sentinel_time_travel_date",
+    default=None,
+)
+_TOKEN_LOCAL = threading.local()
+_CACHE_LOCK = threading.RLock()
+_TRUNCATED_CACHE: dict[tuple[str, str, tuple[int, str]], pd.DataFrame] = {}
+_MAX_TRUNCATED_CACHE = 2000
 
 
-# ══════════════════════════════════════════════════════════════════════
-# MODULE-LEVEL STATE (thread-safe)
-# ══════════════════════════════════════════════════════════════════════
+def _coerce_date(value: object) -> date | None:
+    try:
+        if value is None:
+            return None
+        return pd.to_datetime(value).date()
+    except Exception:
+        return None
 
-_STATE_LOCK         = threading.Lock()
-_active             = False
-_reference_date:    date | None = None
-_all_data_backup:   dict        = {}   # ticker → original df
+
+def _frame_signature(df: pd.DataFrame | None) -> tuple[int, str]:
+    try:
+        if df is None or df.empty:
+            return (0, "")
+        last = pd.to_datetime(df.index[-1], errors="coerce")
+        last_text = "" if pd.isna(last) else pd.Timestamp(last).isoformat()
+        return (int(len(df)), last_text)
+    except Exception:
+        return (0, "")
 
 
-# ══════════════════════════════════════════════════════════════════════
-# BACKTEST CACHE CLEARING
-# ══════════════════════════════════════════════════════════════════════
+def _cache_key(ticker: str, cutoff: date, df: pd.DataFrame | None) -> tuple[str, str, tuple[int, str]]:
+    ticker_key = str(ticker or "").strip().upper()
+    return (ticker_key, cutoff.isoformat(), _frame_signature(df))
+
+
+def _evict_cache_if_needed() -> None:
+    overflow = len(_TRUNCATED_CACHE) - _MAX_TRUNCATED_CACHE
+    if overflow <= 0:
+        return
+    for key in list(_TRUNCATED_CACHE.keys())[:overflow]:
+        _TRUNCATED_CACHE.pop(key, None)
+
 
 def _clear_all_bt_caches() -> None:
-    """
-    Clear every mode engine's _BT_CACHE dict AND the dashboard stock-row
-    cache in multi_index_market_bias_engine.
- 
-    Each mode engine (mode1_engine … mode6_engine) and app.py maintain a
-    module-level _BT_CACHE that maps ticker → backtest probability. These
-    caches are never invalidated across Time Travel activations, so a
-    live-mode result gets silently reused for a TT scan of the same ticker.
- 
-    Additionally, multi_index_market_bias_engine maintains
-    _DASHBOARD_STOCK_ROW_CACHE keyed by (mode, ticker_ns, df_signature).
-    When ALL_DATA is truncated the df_signature changes, so the cache key
-    changes automatically — but clearing it explicitly is safer and prevents
-    stale rows from persisting across TT date changes within the same session.
- 
-    Never raises — fully wrapped in try/except.
-    """
     import sys
- 
-    _CACHE_MODULE_PATTERNS = (
-        "mode1_engine", "mode2_engine", "mode3_engine",
-        "mode4_engine", "mode5_engine", "mode6_engine",
-        "strategy_engines.mode1_engine", "strategy_engines.mode2_engine",
-        "strategy_engines.mode3_engine", "strategy_engines.mode4_engine",
-        "strategy_engines.mode5_engine", "strategy_engines.mode6_engine",
+
+    module_bases = {
+        "mode1_engine",
+        "mode2_engine",
+        "mode3_engine",
+        "mode4_engine",
+        "mode5_engine",
+        "mode6_engine",
+        "mode7_engine",
         "app",
-    )
- 
-    # ── Clear mode-engine _BT_CACHE dicts (existing logic, unchanged) ──
+    }
     try:
         for mod_name, mod in list(sys.modules.items()):
             if mod is None:
                 continue
             base = mod_name.split(".")[-1]
-            if base not in _CACHE_MODULE_PATTERNS and mod_name not in _CACHE_MODULE_PATTERNS:
+            if base not in module_bases:
                 continue
-            try:
-                cache = getattr(mod, "_BT_CACHE", None)
-                if isinstance(cache, dict):
-                    cache.clear()
-            except Exception:
-                continue
+            cache = getattr(mod, "_BT_CACHE", None)
+            if isinstance(cache, dict):
+                cache.clear()
     except Exception:
         pass
- 
-    # ── NEW: Clear _DASHBOARD_STOCK_ROW_CACHE in multi_index engine ────
-    # This cache stores pre-computed stock rows keyed by df_signature.
-    # Must be cleared on every TT activate/restore so sector screener rows
-    # are always recomputed against the correct (truncated) ALL_DATA snapshot.
-    _MIBE_NAMES = (
+
+    for mod_name in (
         "multi_index_market_bias_engine",
         "strategy_engines.multi_index_market_bias_engine",
-    )
-    try:
-        for mod_name in _MIBE_NAMES:
+    ):
+        try:
             mod = sys.modules.get(mod_name)
             if mod is None:
                 continue
-            cache = getattr(mod, "_DASHBOARD_STOCK_ROW_CACHE", None)
-            if isinstance(cache, dict):
-                cache.clear()
-            # Also clear the regular sector screener row cache if present
-            cache2 = getattr(mod, "_SECTOR_ROW_CACHE", None)
-            if isinstance(cache2, dict):
-                cache2.clear()
-    except Exception:
-        pass
+            for attr in ("_DASHBOARD_STOCK_ROW_CACHE", "_SECTOR_ROW_CACHE"):
+                cache = getattr(mod, attr, None)
+                if isinstance(cache, dict):
+                    cache.clear()
+        except Exception:
+            continue
 
 
-# ══════════════════════════════════════════════════════════════════════
-# CORE UTILITY
-# ══════════════════════════════════════════════════════════════════════
-
-def truncate_df(df: pd.DataFrame | None, cutoff: date) -> pd.DataFrame | None:
-    """
-    Return df filtered to rows where index.date <= cutoff.
-    Returns None if result has fewer than 10 rows (not enough for indicators).
-    Never raises.
-    """
+def truncate_df(df: pd.DataFrame | None, cutoff: date, min_rows: int = 10) -> pd.DataFrame | None:
     if df is None or df.empty:
         return None
+    cutoff_date = _coerce_date(cutoff)
+    if cutoff_date is None:
+        return df.copy()
     try:
-        idx_dates = pd.to_datetime(df.index).date
-        mask = idx_dates <= cutoff
-        trimmed = df.loc[mask]
-        return trimmed if len(trimmed) >= 10 else None
-    except Exception:
-        return df   # fail-safe: return original rather than None
-
-
-# ══════════════════════════════════════════════════════════════════════
-# PATCHED get_df_for_ticker
-# ══════════════════════════════════════════════════════════════════════
-
-def _time_travel_get_df(ticker: str) -> pd.DataFrame | None:
-    """
-    Drop-in replacement for get_df_for_ticker() when time-travel is active.
-    Fetches data normally then truncates to _reference_date before returning.
-    """
-    try:
-        ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-
-        # 1️⃣ Try ALL_DATA (already snapshotted — truncated values are there)
-        with _ALL_DATA_LOCK:
-            cached = ALL_DATA.get(ticker_ns)
-        if cached is not None:
-            return cached   # already truncated by apply_snapshot()
-
-        # 2️⃣ Live download fallback — truncate immediately
-        df_live = _original_download(ticker_ns, period="6mo")
-        if df_live is None:
+        out = df.copy()
+        idx_dates = pd.to_datetime(out.index, errors="coerce").date
+        out = out.loc[idx_dates <= cutoff_date].copy()
+        if len(out) < max(1, int(min_rows)):
             return None
-        with _STATE_LOCK:
-            cutoff = _reference_date
-        if cutoff is None:
-            return df_live
-        trimmed = truncate_df(df_live, cutoff)
-        # ── FIX 7: Validate no future leakage ─────────────────────────
-        if trimmed is not None and len(trimmed) > 0:
-            last = pd.to_datetime(trimmed.index[-1]).date()
-            if last > cutoff:   # should never happen — log if it does
-                import warnings
-                warnings.warn(
-                    f"[TimeTravelEngine] LEAKAGE DETECTED: {ticker_ns} "
-                    f"last_date={last} > cutoff={cutoff}. Forcing re-trim.",
-                    RuntimeWarning, stacklevel=2,
-                )
-                trimmed = truncate_df(df_live, cutoff)
-        return trimmed
-
+        out.attrs.update(dict(getattr(df, "attrs", {}) or {}))
+        out.attrs["_nse_tt_cutoff"] = cutoff_date.isoformat()
+        source = str(out.attrs.get("_nse_data_source", "") or "")
+        if source and not source.endswith("_time_travel"):
+            out.attrs["_nse_data_source"] = f"{source}_time_travel"
+        elif not source:
+            out.attrs["_nse_data_source"] = "time_travel"
+        out.attrs["_nse_market_date"] = cutoff_date.isoformat()
+        return out
     except Exception:
+        return df.copy()
+
+
+def get_cached_frame(
+    ticker: str,
+    df: pd.DataFrame | None,
+    cutoff: date | None = None,
+) -> pd.DataFrame | None:
+    cutoff_date = _coerce_date(cutoff) or get_reference_date()
+    if cutoff_date is None or df is None:
         return None
+    key = _cache_key(ticker, cutoff_date, df)
+    with _CACHE_LOCK:
+        cached = _TRUNCATED_CACHE.get(key)
+        return cached.copy() if isinstance(cached, pd.DataFrame) else None
 
 
-# ══════════════════════════════════════════════════════════════════════
-# PUBLIC API
-# ══════════════════════════════════════════════════════════════════════
+def get_cached_for_ticker(ticker: str, cutoff: date | None = None) -> pd.DataFrame | None:
+    cutoff_date = _coerce_date(cutoff) or get_reference_date()
+    if cutoff_date is None:
+        return None
+    ticker_key = str(ticker or "").strip().upper()
+    cutoff_text = cutoff_date.isoformat()
+    with _CACHE_LOCK:
+        for key in reversed(list(_TRUNCATED_CACHE.keys())):
+            if key[0] == ticker_key and key[1] == cutoff_text:
+                cached = _TRUNCATED_CACHE.get(key)
+                return cached.copy() if isinstance(cached, pd.DataFrame) else None
+    return None
+
+
+def cache_frame(
+    ticker: str,
+    df: pd.DataFrame | None,
+    cutoff: date | None = None,
+    *,
+    min_rows: int = 10,
+) -> pd.DataFrame | None:
+    cutoff_date = _coerce_date(cutoff) or get_reference_date()
+    if cutoff_date is None or df is None:
+        return df
+    cached = get_cached_frame(ticker, df, cutoff_date)
+    if cached is not None:
+        return cached
+    trimmed = truncate_df(df, cutoff_date, min_rows=min_rows)
+    if trimmed is None:
+        return None
+    key = _cache_key(ticker, cutoff_date, df)
+    with _CACHE_LOCK:
+        _TRUNCATED_CACHE[key] = trimmed.copy()
+        _evict_cache_if_needed()
+    return trimmed
+
+
+def clear_cache(cutoff: date | None = None) -> None:
+    cutoff_date = _coerce_date(cutoff)
+    with _CACHE_LOCK:
+        if cutoff_date is None:
+            _TRUNCATED_CACHE.clear()
+            return
+        cutoff_text = cutoff_date.isoformat()
+        for key in list(_TRUNCATED_CACHE.keys()):
+            if key[1] == cutoff_text:
+                _TRUNCATED_CACHE.pop(key, None)
+
 
 def activate(cutoff: date) -> int:
-    """
-    Enable time-travel mode for cutoff date.
-    Truncates ALL existing ALL_DATA entries and patches get_df_for_ticker.
-    Returns number of ticker DataFrames successfully truncated.
-    Thread-safe. Never raises.
-    """
-    global _active, _reference_date, _all_data_backup
-
-    try:
-        with _STATE_LOCK:
-            _reference_date = cutoff
-            _active = True
-
-        count = 0
-
-        # ── Snapshot + truncate ALL_DATA ──────────────────────────────
-        if _EU_OK:
-            with _ALL_DATA_LOCK:
-                _all_data_backup.clear()
-                for ticker, df in list(ALL_DATA.items()):
-                    # BUG FIX: Store a copy, not a reference — in-place mutations
-                    # elsewhere would otherwise silently corrupt the backup.
-                    _all_data_backup[ticker] = df.copy() if df is not None else None
-                    if df is None or df.empty:
-                        continue
-                    trimmed = truncate_df(df, cutoff)
-                    ALL_DATA[ticker] = trimmed
-                    if trimmed is not None:
-                        count += 1
-
-            # ── Monkey-patch get_df_for_ticker ────────────────────────
-            # Patch both the module attribute AND the __init__ re-export so
-            # that code using `from strategy_engines import get_df_for_ticker`
-            # (e.g. battle_mode_engine) also receives the time-travel version.
-            try:
-                _eu.get_df_for_ticker = _time_travel_get_df
-            except Exception:
-                pass
-            try:
-                import strategy_engines as _se_pkg
-                _se_pkg.get_df_for_ticker = _time_travel_get_df
-            except Exception:
-                pass
-
-        # BUG FIX: Clear all mode-engine _BT_CACHE dicts so stale live-mode
-        # backtest results don't get reused for this TT scan session.
-        _clear_all_bt_caches()
-
-        return count
-
-    except Exception:
+    cutoff_date = _coerce_date(cutoff)
+    if cutoff_date is None:
         return 0
+
+    token = _TT_DATE.set(cutoff_date)
+    stack = getattr(_TOKEN_LOCAL, "tokens", None)
+    if stack is None:
+        stack = []
+        _TOKEN_LOCAL.tokens = stack
+    stack.append(token)
+
+    warmed = 0
+    try:
+        with _ALL_DATA_LOCK:
+            items = list(ALL_DATA.items())
+        for ticker, df in items:
+            if cache_frame(ticker, df, cutoff_date) is not None:
+                warmed += 1
+    except Exception:
+        warmed = 0
+
+    _clear_all_bt_caches()
+    return warmed
 
 
 def restore() -> None:
-    """
-    Restore ALL_DATA to its original state and unpatch get_df_for_ticker.
-    Safe to call even if activate() was never called.
-    Never raises.
-    """
-    global _active, _reference_date, _all_data_backup
-
+    stack = getattr(_TOKEN_LOCAL, "tokens", None)
     try:
-        # ── Restore ALL_DATA ──────────────────────────────────────────
-        if _EU_OK and _all_data_backup:
-            with _ALL_DATA_LOCK:
-                for ticker, df in _all_data_backup.items():
-                    ALL_DATA[ticker] = df
-                _all_data_backup.clear()
-
-            # ── Restore original get_df_for_ticker (both bindings) ────
-            try:
-                _eu.get_df_for_ticker = _original_get_df
-            except Exception:
-                pass
-            try:
-                import strategy_engines as _se_pkg
-                _se_pkg.get_df_for_ticker = _original_get_df
-            except Exception:
-                pass
-
-        with _STATE_LOCK:
-            _active = False
-            _reference_date = None
-
-        # BUG FIX: Clear all mode-engine _BT_CACHE dicts so TT-specific backtest
-        # results don't bleed into subsequent live-mode scans.
-        _clear_all_bt_caches()
-
+        if stack:
+            token = stack.pop()
+            _TT_DATE.reset(token)
+        else:
+            _TT_DATE.set(None)
     except Exception:
-        # Absolute fail-safe — mark inactive even if restore partially failed
-        _active = False
-        _reference_date = None
+        _TT_DATE.set(None)
+    _clear_all_bt_caches()
 
 
 def is_active() -> bool:
-    """Return True when time-travel mode is currently activated."""
-    with _STATE_LOCK:
-        return _active
+    return get_reference_date() is not None
 
 
 def get_reference_date() -> date | None:
-    """Return the active cutoff date when time-travel is enabled."""
-    with _STATE_LOCK:
-        return _reference_date
+    return _coerce_date(_TT_DATE.get())
 
 
 def get_reference_datetime() -> datetime:
-    """
-    Return the reference datetime for staleness checks.
-    Time-travel ON  → 4:00 PM on the cutoff date (post-market-close).
-    Time-travel OFF → datetime.now() (unchanged live behaviour).
-    """
-    d = get_reference_date()
-    if d is None:
+    ref = get_reference_date()
+    if ref is None:
         return datetime.now()
-    return datetime.combine(d, dtime(16, 0, 0))   # 4pm IST = post-market
+    return datetime.combine(ref, dtime(16, 0, 0))
 
 
-def apply_time_travel_cutoff(df: pd.DataFrame | None) -> pd.DataFrame | None:
-    """
-    Convenience wrapper: truncate df to the active cutoff date if
-    time-travel is active, otherwise return df unchanged.
-
-    Use this everywhere a yfinance download is used outside of ALL_DATA
-    (e.g. index data in market_bias_engine, multi_index_market_bias_engine).
-
-    Never raises. Returns None if df is None or becomes empty after trim.
-    """
+def apply_time_travel_cutoff(df: pd.DataFrame | None, min_rows: int = 10) -> pd.DataFrame | None:
     cutoff = get_reference_date()
     if cutoff is None or df is None or df.empty:
         return df
-    return truncate_df(df, cutoff)
+    return truncate_df(df, cutoff, min_rows=min_rows)
+
+
+def context_callable(fn: Callable[..., T], /, *args, **kwargs) -> Callable[[], T]:
+    ctx = contextvars.copy_context()
+    return functools.partial(ctx.run, fn, *args, **kwargs)
+
+
+def submit_with_context(executor, fn: Callable[..., T], /, *args, **kwargs):
+    return executor.submit(context_callable(fn, *args, **kwargs))
 
 
 def format_banner() -> str:
-    """
-    Return a human-readable banner string for display in the UI.
-    Returns empty string if time-travel is not active.
-    """
-    d = get_reference_date()
-    if d is None:
+    ref = get_reference_date()
+    if ref is None:
         return ""
-    day_str = d.strftime("%d-%b-%Y")
-    weekday = d.strftime("%A")
-    return f"🕰️ TIME TRAVEL · Simulating Market Date: {day_str} ({weekday}) Post-Market Close"
+    return (
+        f"TIME TRAVEL - Simulating Market Date: "
+        f"{ref.strftime('%d-%b-%Y')} ({ref.strftime('%A')}) Post-Market Close"
+    )

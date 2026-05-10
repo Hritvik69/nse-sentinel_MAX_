@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import logging
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,12 +11,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import streamlit as st
+from atomic_io import atomic_write_csv_df
+
+_LOG = logging.getLogger(__name__)
 
 try:
     from persistent_store import push_file as _push_file
 except Exception:
     def _push_file(*a, **kw):  # type: ignore[misc]
-        pass
+        return False
 
 try:
     import learning_engine as _learning_engine
@@ -161,9 +165,11 @@ def _master_signature(all_data: dict[str, Any]) -> str:
 def _save_master_predictions(df: pd.DataFrame) -> None:
     try:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
-        df.to_csv(_MASTER_PREDICTIONS_PATH, index=False)
-        _push_file(_MASTER_PREDICTIONS_PATH)
+        atomic_write_csv_df(_MASTER_PREDICTIONS_PATH, df, index=False)
+        if not _push_file(_MASTER_PREDICTIONS_PATH):
+            _LOG.error("nse_learning_brain: queueing master predictions sync failed")
     except Exception:
+        _LOG.exception("nse_learning_brain: saving master predictions failed")
         return
 
 

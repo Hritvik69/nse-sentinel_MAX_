@@ -8,11 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
-try:
-    import streamlit as st
-except Exception:
-    st = None  # type: ignore[assignment]
+from atomic_io import atomic_write_json
 
 try:
     import yfinance as yf
@@ -109,19 +105,6 @@ def _coerce_date_value(value: object) -> date | None:
         return None
 
 
-def _get_session_time_travel_date() -> date | None:
-    if st is None:
-        return None
-    try:
-        for key in ("tt_date_val", "aura_tt_date", "tt_date_picker"):
-            parsed = _coerce_date_value(st.session_state.get(key))
-            if parsed is not None:
-                return parsed
-    except Exception:
-        return None
-    return None
-
-
 def _get_time_travel_date() -> date | None:
     if _tt is not None:
         try:
@@ -130,12 +113,7 @@ def _get_time_travel_date() -> date | None:
                 return parsed
         except Exception:
             pass
-        try:
-            if bool(getattr(_tt, "is_active", lambda: False)()):
-                return _get_session_time_travel_date()
-        except Exception:
-            pass
-    return _get_session_time_travel_date()
+    return None
 
 
 def get_current_window() -> str:
@@ -388,7 +366,7 @@ class FeatureDataManager:
             "window": get_current_window(),
             "saved_at": _now_ist().isoformat(),
         }
-        self._meta_path(cache_day).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        atomic_write_json(self._meta_path(cache_day), meta, indent=2)
 
     def _coerce_frame(self, df: pd.DataFrame | None, min_rows: int = 5) -> pd.DataFrame | None:
         try:
@@ -564,6 +542,15 @@ class FeatureDataManager:
 
     def _write_all_data(self, symbol: str, df: pd.DataFrame) -> None:
         try:
+            tt_cutoff = self._time_travel_cutoff()
+            if tt_cutoff is not None:
+                try:
+                    import time_travel_engine as _tt_cache
+
+                    _tt_cache.cache_frame(symbol, df, tt_cutoff, min_rows=5)
+                except Exception:
+                    pass
+                return
             with _ALL_DATA_LOCK:
                 ALL_DATA[symbol] = df
                 plain = symbol.replace(".NS", "")
@@ -623,7 +610,7 @@ class FeatureDataManager:
             source=source,
             market_date=_frame_market_date(df) or cache_day,
         )
-        self._stock_path(cache_day, symbol).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_json(self._stock_path(cache_day, symbol), payload, indent=2)
         self._evict_old_stock_cache(cache_day)
 
     def _load_stock_cache(
@@ -962,7 +949,7 @@ class FeatureDataManager:
             source="feature_cache_sector",
             market_date=_frame_market_date(df) or cache_day,
         )
-        self._sector_path(cache_day, sector_name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_json(self._sector_path(cache_day, sector_name), payload, indent=2)
         self._make_status(
             key=f"sector:{self._normalize_sector(sector_name)}",
             source_kind=_source_kind_for_frame("feature_cache_sector", get_current_window()),
@@ -1052,7 +1039,7 @@ class FeatureDataManager:
         out.setdefault("saved_at", _now_ist().isoformat())
         out.setdefault("market_date", cache_day.isoformat())
         out.setdefault("window", get_current_window())
-        self._prediction_path(cache_day, sector_name).write_text(json.dumps(out, indent=2), encoding="utf-8")
+        atomic_write_json(self._prediction_path(cache_day, sector_name), out, indent=2)
 
     def load_compare_cache(self, symbols: list[str]) -> dict[str, Any] | None:
         cache_day = self._cache_day()
@@ -1071,7 +1058,7 @@ class FeatureDataManager:
         out.setdefault("saved_at", _now_ist().isoformat())
         out.setdefault("market_date", cache_day.isoformat())
         out.setdefault("window", get_current_window())
-        self._compare_path(cache_day, symbols).write_text(json.dumps(out, indent=2), encoding="utf-8")
+        atomic_write_json(self._compare_path(cache_day, symbols), out, indent=2)
 
     def invalidate_cache(self, symbol: str = "", sector_name: str = "") -> None:
         cache_day = self._cache_day()
