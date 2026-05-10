@@ -2,7 +2,10 @@
   "picks": [
     "CAMPUS",
     "CHAMBLFERT",
-    "GILLETTE"
+    "GILLETTE",
+    "VENUSREM",
+    "TIMKEN",
+    "SKFINDIA"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -11,7 +14,11 @@
       "CHAMBLFERT",
       "GILLETTE"
     ],
-    "swing": [],
+    "swing": [
+      "VENUSREM",
+      "TIMKEN",
+      "SKFINDIA"
+    ],
     "intraday": [],
     "breakout": []
   }
