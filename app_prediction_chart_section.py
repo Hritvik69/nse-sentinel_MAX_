@@ -1274,20 +1274,34 @@ def _render_tomorrow_picks_chart_strip() -> None:
         .pc-tmr-shell {
           border:1px solid rgba(86,118,150,0.34);
           border-radius:18px;
-          padding:12px 14px 10px 14px;
+          padding:0;
           background:
             radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 26%),
             linear-gradient(180deg, rgba(10,17,27,0.97), rgba(6,10,17,0.99));
           box-shadow:0 14px 28px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(255,255,255,0.02);
           margin:0 0 18px 0;
+          overflow:hidden;
         }
-        .pc-tmr-header {
+        .pc-tmr-shell > summary {
+          list-style:none;
+        }
+        .pc-tmr-shell > summary::-webkit-details-marker {
+          display:none;
+        }
+        .pc-tmr-summary {
           display:flex;
           align-items:center;
           justify-content:space-between;
           gap:10px;
           flex-wrap:wrap;
-          margin-bottom:8px;
+          min-height:48px;
+          padding:12px 14px;
+          cursor:pointer;
+          user-select:none;
+          outline:none;
+        }
+        .pc-tmr-summary:focus-visible {
+          box-shadow:inset 0 0 0 2px rgba(240,180,41,0.46);
         }
         .pc-tmr-title {
           font-family:'Syne',sans-serif;
@@ -1297,7 +1311,38 @@ def _render_tomorrow_picks_chart_strip() -> None:
           text-transform:uppercase;
           color:#f0b429;
         }
-        .pc-tmr-copy { font-size:11px; color:#88a8c7; }
+        .pc-tmr-shutter {
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          min-height:26px;
+          padding:4px 8px;
+          border-radius:999px;
+          border:1px solid rgba(240,180,41,0.38);
+          background:rgba(240,180,41,0.08);
+          color:#f0b429;
+          font-size:10px;
+          font-weight:800;
+          letter-spacing:0.6px;
+          text-transform:uppercase;
+        }
+        .pc-tmr-toggle-text::after { content:"Show"; }
+        .pc-tmr-shell[open] .pc-tmr-toggle-text::after { content:"Hide"; }
+        .pc-tmr-arrow {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          width:16px;
+          height:16px;
+        }
+        .pc-tmr-arrow::before {
+          content:">";
+          transform:rotate(0deg);
+          transition:transform 0.16s ease;
+        }
+        .pc-tmr-shell[open] .pc-tmr-arrow::before { transform:rotate(90deg); }
+        .pc-tmr-body { padding:0 14px 10px 14px; }
+        .pc-tmr-copy { margin:-2px 0 8px 0; font-size:11px; color:#88a8c7; }
         .pc-tmr-row {
           display:grid;
           grid-template-columns:minmax(120px, 150px) 1fr;
@@ -1307,6 +1352,7 @@ def _render_tomorrow_picks_chart_strip() -> None:
           border-top:1px solid rgba(42,61,86,0.46);
         }
         .pc-tmr-row:first-of-type { border-top:none; padding-top:0; }
+        .pc-tmr-copy + .pc-tmr-row { border-top:none; padding-top:0; }
         .pc-tmr-label {
           display:inline-flex;
           align-items:center;
@@ -1379,13 +1425,19 @@ def _render_tomorrow_picks_chart_strip() -> None:
     )
     st.markdown(
         (
-            '<div class="pc-tmr-shell">'
-            '<div class="pc-tmr-header">'
-            '<div class="pc-tmr-title">Tomorrow\'s Picks</div>'
+            '<details class="pc-tmr-shell">'
+            '<summary class="pc-tmr-summary" aria-label="Toggle Tomorrow\'s Picks">'
+            '<span class="pc-tmr-title">Tomorrow\'s Picks</span>'
+            '<span class="pc-tmr-shutter" aria-hidden="true">'
+            '<span class="pc-tmr-toggle-text"></span>'
+            '<span class="pc-tmr-arrow"></span>'
+            '</span>'
+            '</summary>'
+            '<div class="pc-tmr-body">'
             '<div class="pc-tmr-copy">Compact 4-lane view: Relax, Swing, Intraday, Breakout.</div>'
-            '</div>'
             + "".join(rows_html)
             + '</div>'
+            + '</details>'
         ),
         unsafe_allow_html=True,
     )
