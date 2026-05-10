@@ -1403,12 +1403,14 @@ def render_prediction_chart_section(
     Call from app.py when  pred_chart_show_panel  is True.
     """
     _css()
+    strip_rendered = False
     if tomorrow_strip_renderer is not None:
         try:
             tomorrow_strip_renderer()
+            strip_rendered = True
         except Exception:
             pass
-    else:
+    if not strip_rendered:
         _render_tomorrow_picks_chart_strip()
 
     # ── Fallback ticker list ──────────────────────────────────────────
