@@ -8592,7 +8592,10 @@ with st.sidebar:
         pass
 
 if _show_pred_chart_panel:
-    render_prediction_chart_section(ticker_list=all_tickers)
+    render_prediction_chart_section(
+        ticker_list=all_tickers,
+        tomorrow_strip_renderer=lambda: render_tomorrow_picks_ticker_strip(embedded=True),
+    )
     st.stop()
 
 if _show_imported_ai_learning_panel:
