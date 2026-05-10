@@ -3,6 +3,9 @@
     "CAMPUS",
     "CHAMBLFERT",
     "GILLETTE",
+    "FDC",
+    "EPL",
+    "MARKOLINES",
     "VENUSREM",
     "TIMKEN",
     "SKFINDIA",
@@ -10,8 +13,6 @@
     "3PLAND",
     "DOLATALGO",
     "FIEMIND",
-    "FDC",
-    "MARKOLINES",
     "TBZ",
     "SUPRAJIT",
     "APLLTD"
@@ -21,7 +22,10 @@
     "relax": [
       "CAMPUS",
       "CHAMBLFERT",
-      "GILLETTE"
+      "GILLETTE",
+      "FDC",
+      "EPL",
+      "MARKOLINES"
     ],
     "swing": [
       "VENUSREM",
@@ -34,9 +38,7 @@
       "DOLATALGO"
     ],
     "momentum": [
-      "FIEMIND",
-      "FDC",
-      "MARKOLINES"
+      "FIEMIND"
     ],
     "breakout": [
       "TBZ",
