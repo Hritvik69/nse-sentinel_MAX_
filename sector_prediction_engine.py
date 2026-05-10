@@ -542,6 +542,8 @@ def _sig_consecutive(ohlc: pd.DataFrame) -> float:
             streak += 1
         else:
             break
+    if streak <= 1:
+        return 50.0
     return _norm(streak if cur else -streak, -6, 6)
 
 
@@ -599,9 +601,15 @@ def _sig_bullish_pct(scan_df: pd.DataFrame, stocks: list[str]) -> float:
 def _sig_money_flow(ohlc: pd.DataFrame, lb: int = 10) -> float:
     if len(ohlc) < lb:
         return 50.0
-    t  = ohlc.tail(lb)
-    mf = (t["Volume"] * (t["Close"] - t["Open"]) / (t["High"] - t["Low"] + 1e-9)).mean()
-    return _norm(float(mf), -1e7, 1e7)
+    t   = ohlc.tail(lb)
+    hl  = (t["High"] - t["Low"]).replace(0, np.nan)
+    typ = (t["High"] + t["Low"] + t["Close"]) / 3.0
+    dv  = (t["Volume"] * typ).sum()
+    if dv <= 0:
+        return 50.0
+    net = (t["Volume"] * typ * (t["Close"] - t["Open"]) / (hl + 1e-9)).sum()
+    ratio = net / (dv + 1e-9)
+    return _norm(float(ratio), -0.15, 0.15)
 
 
 def _sig_participation(scan_df: pd.DataFrame, stocks: list[str]) -> float:

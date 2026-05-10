@@ -2903,6 +2903,123 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
         return payload
 
 
+def _build_imported_ai_top3_source_rows(records: list[dict[str, object]]) -> pd.DataFrame:
+    imported = [
+        str(record.get("ticker", "")).strip()
+        for record in records
+        if str(record.get("ticker", "")).strip()
+    ]
+    if not imported:
+        return pd.DataFrame()
+
+    scan_map: dict[str, dict[str, object]] = {}
+    scan_df = st.session_state.get("last_scan_df")
+    if isinstance(scan_df, pd.DataFrame) and not scan_df.empty:
+        symbol_col = "Symbol" if "Symbol" in scan_df.columns else "Ticker" if "Ticker" in scan_df.columns else ""
+        if symbol_col:
+            working = scan_df.copy()
+            working["_top3_symbol"] = working[symbol_col].map(_normalize_tomorrow_symbol)
+            working = working[working["_top3_symbol"].isin(imported)].copy()
+            working = working.drop_duplicates(subset=["_top3_symbol"], keep="first")
+            for _, row in working.iterrows():
+                symbol = _normalize_tomorrow_symbol(row.get("_top3_symbol"))
+                if symbol:
+                    scan_map[symbol] = row.drop(labels=["_top3_symbol"], errors="ignore").to_dict()
+
+    rows: list[dict[str, object]] = []
+    for record in records:
+        symbol = str(record.get("ticker", "")).strip()
+        if not symbol:
+            continue
+        snapshot = dict(record.get("snapshot", {}) or {})
+        source_row = dict(scan_map.get(symbol) or snapshot)
+        if not source_row:
+            continue
+        source_row.setdefault("Ticker", symbol)
+        source_row.setdefault("Symbol", symbol)
+        rows.append(source_row)
+
+    return pd.DataFrame(rows)
+
+
+def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
+    records = list(panel.get("records", []) or [])
+    source_df = _build_imported_ai_top3_source_rows(records)
+
+    with st.expander("NSE Sentinel Top 3 Picker", expanded=not source_df.empty):
+        st.caption(
+            "Uses the master prompt formula locally on the saved Imported AI rows. "
+            "No new market data is fetched here."
+        )
+        tab_output, tab_prompt, tab_reality = st.tabs(
+            ["Top 3 Output", "Master Prompt", "Self Improve Reality"]
+        )
+
+        with tab_output:
+            if source_df.empty:
+                st.info("No stored scan rows are available yet for the imported basket.")
+            else:
+                try:
+                    from nse_sentinel_top3 import rank_top3_from_rows
+
+                    top3 = rank_top3_from_rows(
+                        source_df,
+                        as_of=get_expected_data_date(),
+                        market_context=st.session_state.get("market_bias_result"),
+                    )
+                    output_text = str(top3.get("text", "") or "")
+                    st.code(output_text, language="text")
+                    st.download_button(
+                        "Download Top 3 Output",
+                        data=output_text.encode("utf-8-sig"),
+                        file_name=f"nse_sentinel_top3_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        key="imported_ai_top3_output_download",
+                        width="stretch",
+                    )
+                except Exception as exc:
+                    st.warning(f"Top 3 picker could not run right now: {exc}")
+
+        with tab_prompt:
+            try:
+                from nse_sentinel_top3 import load_top3_prompt_text
+
+                prompt_text = load_top3_prompt_text()
+            except Exception:
+                prompt_text = "NSE Sentinel Top 3 prompt is unavailable."
+            st.download_button(
+                "Download Master Prompt",
+                data=prompt_text.encode("utf-8-sig"),
+                file_name="nse_sentinel_top3_prompt.txt",
+                mime="text/plain",
+                key="imported_ai_top3_prompt_download",
+                width="stretch",
+            )
+            st.text_area(
+                "Reusable prompt",
+                value=prompt_text,
+                height=360,
+                key="imported_ai_top3_prompt_text",
+            )
+
+        with tab_reality:
+            logged_today = int(panel.get("logged_today_count", 0) or 0)
+            if logged_today <= 0:
+                st.warning(
+                    "Logged Today is 0. Self Improve is currently a data logger, not an immediate trainer."
+                )
+            else:
+                st.success(f"Logged Today: {logged_today}. These rows are now feeding the tracking log.")
+            st.markdown(
+                """
+- Self Improve logs imported snapshots into the prediction feedback CSV.
+- It records signal values, scores, and later outcomes for history.
+- It does not retrain a model or change weights immediately.
+- Meaningful model updates need enough validated next-session outcomes first.
+                """.strip()
+            )
+
+
 def render_imported_ai_learning_panel() -> None:
     if not st.session_state.get("imported_ai_learning_show_panel", False):
         return
@@ -3035,6 +3152,8 @@ def render_imported_ai_learning_panel() -> None:
         st.caption(
             f"Stored row data is still missing for some imported symbols: {_missing_preview}"
         )
+
+    _render_imported_ai_top3_prompt_panel(panel)
 
     if not table.empty:
         st.dataframe(
@@ -3934,6 +4053,7 @@ _MKT_LOCK   = threading.Lock()
 _MKT_CACHE: dict[str, float] = {}
 _NIFTY_LOCK = threading.Lock()
 _NIFTY_20D_RET: float | None = None
+_NIFTY_COMPUTING = False
 
 # SPEED FIX — restore mktcap cache from session_state on each rerun so
 # mode 1/2 re-scans don't re-fetch tickers already looked up this session.
@@ -3993,55 +4113,62 @@ def get_nifty_20d_return() -> float | None:
     BUG FIX: Applies Time Travel cutoff so Mode 4 relative-strength
     comparison uses historical Nifty data, not live current data.
     """
-    global _NIFTY_20D_RET
+    global _NIFTY_20D_RET, _NIFTY_COMPUTING
     with _NIFTY_LOCK:
         if _NIFTY_20D_RET is not None:
             return _NIFTY_20D_RET
+        if _NIFTY_COMPUTING:
+            return None
+        _NIFTY_COMPUTING = True
     try:
-        if _engine_utils is not None:
-            for tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
-                df_pre = _engine_utils.ALL_DATA.get(tk)
-                if df_pre is None or len(df_pre) < 25 or "Close" not in df_pre.columns:
-                    continue
-                if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
-                    df_pre = _tt.apply_time_travel_cutoff(df_pre)
-                close_pre = df_pre["Close"].dropna()
-                if len(close_pre) >= 21:
-                    base = float(close_pre.iloc[-21])
-                    if base <= 0:
+        try:
+            if _engine_utils is not None:
+                for tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
+                    df_pre = _engine_utils.ALL_DATA.get(tk)
+                    if df_pre is None or len(df_pre) < 25 or "Close" not in df_pre.columns:
                         continue
-                    ret = float(close_pre.iloc[-1] / base - 1.0)
-                    with _NIFTY_LOCK:
-                        _NIFTY_20D_RET = ret
-                    return ret
-    except Exception:
-        pass
-    try:
-        with _YF_SEM:
-            df_n = yf.download(
-                "^NSEI", period="2mo", interval="1d",
-                auto_adjust=True, progress=False, timeout=10, threads=False,
-            )
-        # BUG FIX: Without this, Mode 4 compares a historical stock return
-        # against today's Nifty return, corrupting relative-strength logic
-        # in every Time Travel scan.
-        if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
-            df_n = _tt.apply_time_travel_cutoff(df_n)
-        if df_n is None or len(df_n) < 21:
+                    if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
+                        df_pre = _tt.apply_time_travel_cutoff(df_pre)
+                    close_pre = df_pre["Close"].dropna()
+                    if len(close_pre) >= 21:
+                        base = float(close_pre.iloc[-21])
+                        if base <= 0:
+                            continue
+                        ret = float(close_pre.iloc[-1] / base - 1.0)
+                        with _NIFTY_LOCK:
+                            _NIFTY_20D_RET = ret
+                        return ret
+        except Exception:
+            pass
+        try:
+            with _YF_SEM:
+                df_n = yf.download(
+                    "^NSEI", period="2mo", interval="1d",
+                    auto_adjust=True, progress=False, timeout=10, threads=False,
+                )
+            # BUG FIX: Without this, Mode 4 compares a historical stock return
+            # against today's Nifty return, corrupting relative-strength logic
+            # in every Time Travel scan.
+            if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
+                df_n = _tt.apply_time_travel_cutoff(df_n)
+            if df_n is None or len(df_n) < 21:
+                return None
+            close_n = df_n["Close"].dropna()
+            if len(close_n) < 21:
+                return None
+            n_today = float(close_n.iloc[-1])
+            n_ago20 = float(close_n.iloc[-21])
+            if n_ago20 <= 0:
+                return None
+            ret = (n_today - n_ago20) / n_ago20
+        except Exception:
             return None
-        close_n = df_n["Close"].dropna()
-        if len(close_n) < 21:
-            return None
-        n_today = float(close_n.iloc[-1])
-        n_ago20 = float(close_n.iloc[-21])
-        if n_ago20 <= 0:
-            return None
-        ret = (n_today - n_ago20) / n_ago20
-    except Exception:
-        return None
-    with _NIFTY_LOCK:
-        _NIFTY_20D_RET = ret
-    return ret
+        with _NIFTY_LOCK:
+            _NIFTY_20D_RET = ret
+        return ret
+    finally:
+        with _NIFTY_LOCK:
+            _NIFTY_COMPUTING = False
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -6477,7 +6604,7 @@ def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
 # ─────────────────────────────────────────────────────────────────────
 # STOCK ANALYSER  (Zero-API Refactored)
 # ─────────────────────────────────────────────────────────────────────
-def analyse(ticker, mode, retries=2):
+def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibility
     ticker_ns = ticker if ticker.endswith(".NS") else ticker + ".NS"
     _scan_diag.record_attempt(ticker_ns)
     try:
@@ -6631,7 +6758,16 @@ def analyse(ticker, mode, retries=2):
                 "20D Return (%)":    round(ret_20d, 2) if not np.isnan(ret_20d) else np.nan,
             }
         return None
-    except Exception:
+    except MemoryError:
+        _scan_diag.record_failure(ticker_ns, "EXCEPTION")
+        raise
+    except Exception as exc:
+        _scan_diag.record_failure(ticker_ns, "EXCEPTION")
+        import logging
+        logging.warning(
+            "analyse(%s, mode=%s): %s: %s",
+            ticker_ns, mode, type(exc).__name__, exc
+        )
         return None
 
 

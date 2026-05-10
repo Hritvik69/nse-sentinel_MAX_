@@ -28,7 +28,9 @@ if SKLEARN_OK:
 _MODEL:  "LogisticRegression | None" = None  # noqa: F821
 _SCALER: "StandardScaler | None"    = None  # noqa: F821
 _LOCK   = threading.Lock()
+_TRAINING: bool = False
 _BT_CACHE: dict[str, float] = {}
+_BT_CACHE_MAX = 3500
 _BT_LOCK  = threading.Lock()
 
 _TRAIN_TICKERS = [
@@ -154,6 +156,8 @@ def backtest_mode4(row: dict, ticker: str) -> float:
         result = 50.0
 
     with _BT_LOCK:
+        if len(_BT_CACHE) >= _BT_CACHE_MAX:
+            _BT_CACHE.clear()
         _BT_CACHE[ticker_ns] = result
     return result
 
@@ -201,38 +205,41 @@ def _build_features_mode4(close: pd.Series, volume: pd.Series) -> pd.DataFrame |
 
 
 def train_model_mode4() -> bool:
-    global _MODEL, _SCALER
+    global _MODEL, _SCALER, _TRAINING
     if not SKLEARN_OK:
         return False
     with _LOCK:
         if _MODEL is not None:
             return True
+        if _TRAINING:
+            return False
+        _TRAINING = True
 
-    all_rows: list[pd.DataFrame] = []
-    for t in _TRAIN_TICKERS:
-        # BUG FIX: Use get_df_for_ticker (TT-patched) instead of download_history
-        # so ML training in Time Travel mode only sees historical data.
-        df_h = get_df_for_ticker(t)
-        try:
-            from time_travel_engine import apply_time_travel_cutoff as _tt_cut_tr
-            df_h = _tt_cut_tr(df_h)
-        except Exception:
-            pass
-        if df_h is None:
-            continue
-        rows = _build_features_mode4(df_h["Close"], df_h["Volume"])
-        if rows is not None:
-            all_rows.append(rows)
-
-    if not all_rows:
-        return False
-    data = pd.concat(all_rows, ignore_index=True)
-    if len(data) < 60:
-        return False
-
-    FEAT = ["rsi", "vol_ratio", "ema_dist", "ret_20d", "near_20h", "ema_trend"]
-    X, y = data[FEAT].values, data["target"].values
     try:
+        all_rows: list[pd.DataFrame] = []
+        for t in _TRAIN_TICKERS:
+            # BUG FIX: Use get_df_for_ticker (TT-patched) instead of download_history
+            # so ML training in Time Travel mode only sees historical data.
+            df_h = get_df_for_ticker(t)
+            try:
+                from time_travel_engine import apply_time_travel_cutoff as _tt_cut_tr
+                df_h = _tt_cut_tr(df_h)
+            except Exception:
+                pass
+            if df_h is None:
+                continue
+            rows = _build_features_mode4(df_h["Close"], df_h["Volume"])
+            if rows is not None:
+                all_rows.append(rows)
+
+        if not all_rows:
+            return False
+        data = pd.concat(all_rows, ignore_index=True)
+        if len(data) < 60:
+            return False
+
+        FEAT = ["rsi", "vol_ratio", "ema_dist", "ret_20d", "near_20h", "ema_trend"]
+        X, y = data[FEAT].values, data["target"].values
         try:
             X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.20, random_state=4, stratify=y)
         except Exception:
@@ -253,6 +260,9 @@ def train_model_mode4() -> bool:
     except Exception as e:
         print(f"[Mode4 ML] train failed: {e}")
         return False
+    finally:
+        with _LOCK:
+            _TRAINING = False
 
 
 def predict_ml_mode4(row: dict) -> float:

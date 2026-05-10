@@ -14,10 +14,11 @@ def normalize_compare_symbols(values: list[object] | tuple[object, ...] | None, 
     ordered: list[str] = []
     for raw in values or []:
         symbol = str(raw or "").strip().upper()
-        if not symbol:
-            continue
         if not symbol.endswith(".NS"):
             symbol = f"{symbol}.NS"
+        base = symbol[:-3].strip()
+        if not base:
+            continue
         if symbol in seen:
             continue
         seen.add(symbol)

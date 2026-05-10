@@ -85,7 +85,9 @@ def record_success(ticker: str) -> None:
     with _LOCK:
         _attempted.add(ticker)
         _succeeded.add(ticker)
-        _failed.pop(ticker, None)  # un-fail if previously marked
+        prev_reason = _failed.pop(ticker, None)  # un-fail if previously marked
+        if prev_reason is not None:
+            _reason_count[prev_reason] = max(0, _reason_count[prev_reason] - 1)
 
 
 def record_failure(ticker: str, reason: FailReason) -> None:

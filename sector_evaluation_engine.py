@@ -141,7 +141,7 @@ def _equity_curve(returns: list[float]) -> list[float]:
 
 def _calibration(df: pd.DataFrame) -> tuple[list[CalibrationBucket], float]:
     buckets: list[CalibrationBucket] = []
-    if df.empty:
+    if df.empty or "confidence" not in df.columns:
         return buckets, 0.0
     df = df.copy()
     df["_c"] = df["confidence"].apply(_f)

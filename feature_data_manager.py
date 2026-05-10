@@ -45,6 +45,7 @@ _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedel
 _ROOT = Path(__file__).resolve().parent
 _FEATURE_CACHE_ROOT = _ROOT / "data" / "feature_cache"
 _SCANNER_SNAPSHOT_ROOT = _ROOT / "data" / "snapshots"
+_PREDICTION_CACHE_TTL_MINUTES = 90
 _SAVED_TODAY: set[str] = set()
 _SAVED_TODAY_DAY: date | None = None
 _SAVED_TODAY_LOCK = threading.Lock()
@@ -1027,7 +1028,20 @@ class FeatureDataManager:
         try:
             if not path.exists():
                 return None
-            return json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            saved_at_str = str(payload.get("saved_at", "") or "")
+            if saved_at_str:
+                try:
+                    saved_dt = datetime.fromisoformat(saved_at_str)
+                    if saved_dt.tzinfo is None:
+                        saved_dt = saved_dt.replace(tzinfo=timezone.utc)
+                    age_min = (datetime.now(tz=saved_dt.tzinfo) - saved_dt).total_seconds() / 60.0
+                    window = str(payload.get("window", "CLOSED") or "CLOSED").upper()
+                    if window in ("LIVE", "PRE_MARKET") and age_min > _PREDICTION_CACHE_TTL_MINUTES:
+                        return None
+                except Exception:
+                    pass
+            return payload
         except Exception:
             return None
 

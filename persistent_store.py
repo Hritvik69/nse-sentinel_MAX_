@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import base64
 import json
+import queue as _queue
 import threading
+import time as _time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -174,17 +176,20 @@ def _gh_put(secrets: dict, path: str, content_bytes: bytes, sha: str | None = No
         }
         if sha:
             payload["sha"] = sha
-        resp = requests.put(
-            url,
-            headers={
-                "Authorization": f"token {secrets['token']}",
-                "Accept": "application/vnd.github+json",
-                "Content-Type": "application/json",
-            },
-            data=json.dumps(payload),
-            timeout=20,
-        )
-        return resp.status_code in (200, 201)
+        headers = {
+            "Authorization": f"token {secrets['token']}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+        }
+        for delay in (0, 2, 4, 8):
+            if delay:
+                _time.sleep(delay)
+            resp = requests.put(url, headers=headers, data=json.dumps(payload), timeout=20)
+            if resp.status_code in (200, 201):
+                return True
+            if resp.status_code not in (429, 503):
+                return False
+        return False
     except Exception:
         return False
 
@@ -210,6 +215,9 @@ _SYNC_ALIASES = {
 }
 
 _PUSH_LOCK = threading.Lock()
+_PUSH_QUEUE: "_queue.Queue[Path | None]" = _queue.Queue(maxsize=20)
+_PUSH_WORKER_STARTED = False
+_PUSH_WORKER_LOCK = threading.Lock()
 
 
 def _ensure_data_dir() -> None:
@@ -217,6 +225,58 @@ def _ensure_data_dir() -> None:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
+
+
+def _do_push_blocking(local_path: Path) -> None:
+    """Push one file synchronously; errors are swallowed by design."""
+    try:
+        secrets = _get_secrets()
+        if secrets is None:
+            return
+        local_name = local_path.name
+        remote_path = _SYNC_FILES.get(local_name) or _SYNC_ALIASES.get(local_name)
+        if remote_path is None:
+            import logging
+            logging.debug(f"persistent_store: {local_name!r} not in sync manifest -- skipped")
+            return
+        if not local_path.exists():
+            import logging
+            logging.debug(f"persistent_store: {local_path} does not exist -- skipped")
+            return
+        content = local_path.read_bytes()
+        with _PUSH_LOCK:
+            existing = _gh_get(secrets, remote_path)
+            sha = existing["sha"] if isinstance(existing, dict) else None
+            _gh_put(secrets, remote_path, content, sha)
+    except Exception:
+        pass
+
+
+def _run_push_worker() -> None:
+    """Single background worker draining queued GitHub pushes."""
+    while True:
+        try:
+            local_path = _PUSH_QUEUE.get(timeout=5)
+        except _queue.Empty:
+            continue
+        try:
+            if local_path is None:
+                break
+            _do_push_blocking(local_path)
+        except Exception:
+            pass
+        finally:
+            _PUSH_QUEUE.task_done()
+
+
+def _ensure_push_worker() -> None:
+    global _PUSH_WORKER_STARTED
+    with _PUSH_WORKER_LOCK:
+        if not _PUSH_WORKER_STARTED:
+            thread = threading.Thread(target=_run_push_worker, daemon=True)
+            thread.name = "persistent_store_push_worker"
+            thread.start()
+            _PUSH_WORKER_STARTED = True
 
 
 def pull_all() -> int:
@@ -255,40 +315,20 @@ def push_file(local_path: Path | str, *, block: bool = False) -> bool:
     """
     Push one managed file to GitHub.
 
-    By default this queues a daemon background thread and returns immediately.
+    By default this queues work for a single daemon background worker.
     Set block=True for tests or explicit forced-sync scenarios.
     """
     local_path = Path(local_path)
 
-    def _do_push() -> None:
-        secrets = _get_secrets()
-        if secrets is None:
-            return
-        local_name = local_path.name
-        remote_path = _SYNC_FILES.get(local_name) or _SYNC_ALIASES.get(local_name)
-        if remote_path is None:
-            import logging
-            logging.debug(f"persistent_store: {local_name!r} not in sync manifest -- skipped")
-            return
-        if not local_path.exists():
-            import logging
-            logging.debug(f"persistent_store: {local_path} does not exist -- skipped")
-            return
-        try:
-            content = local_path.read_bytes()
-            with _PUSH_LOCK:
-                existing = _gh_get(secrets, remote_path)
-                sha = existing["sha"] if isinstance(existing, dict) else None
-                _gh_put(secrets, remote_path, content, sha)
-        except Exception:
-            pass
-
     if block:
-        _do_push()
+        _do_push_blocking(local_path)
         return True
 
-    thread = threading.Thread(target=_do_push, daemon=True)
-    thread.start()
+    _ensure_push_worker()
+    try:
+        _PUSH_QUEUE.put_nowait(local_path)
+    except _queue.Full:
+        pass
     return True
 
 
