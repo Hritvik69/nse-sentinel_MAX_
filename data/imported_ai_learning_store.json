@@ -417,23 +417,23 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-06T16:12:45",
+      "last_imported_at": "2026-05-10T04:27:14",
       "snapshot": {
         "Symbol": "APLLTD",
-        "Price (₹)": 785.5,
-        "RSI": 64.2,
-        "Vol / Avg": 4.1,
-        "Dist to High (%)": 1.44,
-        "Δ vs EMA20 (%)": 4.91,
+        "Price (₹)": 787.05,
+        "RSI": 65.6,
+        "Vol / Avg": 3.82,
+        "Dist to High (%)": 1.74,
+        "Δ vs EMA20 (%)": 4.16,
         "EMA20 Slope": "Rising",
-        "Momentum": "Strong",
-        "Final Score": 84.0,
+        "Momentum": "Moderate",
+        "Final Score": 81.0,
         "Signal": "LIVE BREAKOUT",
         "Chart Link": "https://www.tradingview.com/chart/?symbol=NSE:APLLTD",
         "Action": "🟢 Buy Tomorrow",
         "Hold Days": "2–4 Days",
-        "Decision Score": 74.7,
-        "Why This Stock?": "Meta 84.0% | Calibrated 84.0% | Regime fit 55.0% | Accuracy history 55.0%"
+        "Decision Score": 72.7,
+        "Why This Stock?": "Meta 81.0% | Calibrated 81.0% | Regime fit 55.0% | Accuracy history 55.0%"
       }
     },
     {
@@ -1751,7 +1751,67 @@
         "AI Key Signal": "Bullish Pct",
         "AI Regime": "Range Bound"
       }
+    },
+    {
+      "ticker": "TBZ",
+      "categories": [
+        "Breakout Pulse"
+      ],
+      "sources": [
+        "Live Breakout Pulse Top 3"
+      ],
+      "modes": [
+        0
+      ],
+      "last_imported_at": "2026-05-10T04:27:14",
+      "snapshot": {
+        "Symbol": "TBZ",
+        "Price (₹)": 154.01,
+        "RSI": 67.7,
+        "Vol / Avg": 3.44,
+        "Dist to High (%)": 1.9,
+        "Δ vs EMA20 (%)": 5.42,
+        "EMA20 Slope": "Rising",
+        "Momentum": "Strong",
+        "Final Score": 84.0,
+        "Signal": "LIVE BREAKOUT",
+        "Chart Link": "https://www.tradingview.com/chart/?symbol=NSE:TBZ",
+        "Action": "🟢 Buy Tomorrow",
+        "Hold Days": "2–4 Days",
+        "Decision Score": 74.7,
+        "Why This Stock?": "Meta 84.0% | Calibrated 84.0% | Regime fit 55.0% | Accuracy history 55.0%"
+      }
+    },
+    {
+      "ticker": "SUPRAJIT",
+      "categories": [
+        "Breakout Pulse"
+      ],
+      "sources": [
+        "Live Breakout Pulse Top 3"
+      ],
+      "modes": [
+        0
+      ],
+      "last_imported_at": "2026-05-10T04:27:14",
+      "snapshot": {
+        "Symbol": "SUPRAJIT",
+        "Price (₹)": 446.1,
+        "RSI": 65.7,
+        "Vol / Avg": 2.29,
+        "Dist to High (%)": 0.87,
+        "Δ vs EMA20 (%)": 5.68,
+        "EMA20 Slope": "Rising",
+        "Momentum": "Strong",
+        "Final Score": 83.0,
+        "Signal": "LIVE BREAKOUT",
+        "Chart Link": "https://www.tradingview.com/chart/?symbol=NSE:SUPRAJIT",
+        "Action": "🔵 Wait",
+        "Hold Days": "—",
+        "Decision Score": 74.0,
+        "Why This Stock?": "Meta 83.0% | Calibrated 83.0% | Regime fit 55.0% | Accuracy history 55.0%"
+      }
     }
   ],
-  "updated_at": "2026-05-10T04:24:36"
+  "updated_at": "2026-05-10T04:27:14"
 }
