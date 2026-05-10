@@ -106,10 +106,13 @@ def truncate_df(df: pd.DataFrame | None, cutoff: date, min_rows: int = 10) -> pd
         return None
     cutoff_date = _coerce_date(cutoff)
     if cutoff_date is None:
-        return df.copy()
+        return None
     try:
         out = df.copy()
-        idx_dates = pd.to_datetime(out.index, errors="coerce").date
+        parsed_index = pd.to_datetime(out.index, errors="coerce")
+        if pd.isna(parsed_index).any():
+            return None
+        idx_dates = parsed_index.date
         out = out.loc[idx_dates <= cutoff_date].copy()
         if len(out) < max(1, int(min_rows)):
             return None
@@ -123,7 +126,7 @@ def truncate_df(df: pd.DataFrame | None, cutoff: date, min_rows: int = 10) -> pd
         out.attrs["_nse_market_date"] = cutoff_date.isoformat()
         return out
     except Exception:
-        return df.copy()
+        return None
 
 
 def get_cached_frame(

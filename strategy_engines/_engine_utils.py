@@ -106,16 +106,19 @@ def _apply_time_travel_cutoff_if_needed(
         if hasattr(_tt, "truncate_df"):
             return _tt.truncate_df(df, cutoff, min_rows=min_rows)
     except Exception:
-        pass
+        return None
     try:
-        idx_dates = pd.to_datetime(df.index, errors="coerce").date
+        parsed_index = pd.to_datetime(df.index, errors="coerce")
+        if pd.isna(parsed_index).any():
+            return None
+        idx_dates = parsed_index.date
         out = df.loc[idx_dates <= cutoff].copy()
         out.attrs.update(dict(getattr(df, "attrs", {}) or {}))
         out.attrs["_nse_tt_cutoff"] = cutoff.isoformat()
         out.attrs["_nse_market_date"] = cutoff.isoformat()
         return out if len(out) >= max(1, int(min_rows)) else None
     except Exception:
-        return df
+        return None
 
 
 def _remember_frame(ticker_ns: str, df: pd.DataFrame | None) -> None:

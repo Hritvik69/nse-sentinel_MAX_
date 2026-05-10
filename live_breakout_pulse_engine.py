@@ -88,12 +88,14 @@ except ImportError:
 
 try:
     from strategy_engines._engine_utils import (
+        _SEM as _SHARED_YF_SEM,
         get_df_for_ticker as _shared_get_df_for_ticker,
         prepare_market_session_data as _prepare_market_session_data,
     )
     _SHARED_DATA_OK = True
 except Exception:
     _SHARED_DATA_OK = False
+    _SHARED_YF_SEM = threading.BoundedSemaphore(4)
 
     def _shared_get_df_for_ticker(ticker: str):  # type: ignore[misc]
         return None
@@ -323,7 +325,8 @@ def _download_live(ticker_ns: str, cutoff: date | None) -> pd.DataFrame | None:
     """
     try:
         time.sleep(_REQUEST_DELAY)
-        df = yf.download(ticker_ns, **_yf_download_kwargs(cutoff, timeout=10, threads=False))
+        with _SHARED_YF_SEM:
+            df = yf.download(ticker_ns, **_yf_download_kwargs(cutoff, timeout=10, threads=False))
         if df is None or df.empty:
             return None
         if isinstance(df.columns, pd.MultiIndex):
@@ -351,11 +354,12 @@ def _download_live_batch(tickers_ns: list[str], cutoff: date | None) -> dict[str
         return {}
 
     try:
-        batch_df = yf.download(
-            normalized,
-            group_by="ticker",
-            **_yf_download_kwargs(cutoff, timeout=20, threads=True),
-        )
+        with _SHARED_YF_SEM:
+            batch_df = yf.download(
+                normalized,
+                group_by="ticker",
+                **_yf_download_kwargs(cutoff, timeout=20, threads=True),
+            )
     except Exception:
         return {ticker_ns: None for ticker_ns in normalized}
 
@@ -554,7 +558,9 @@ def _score_ticker(
 
         return {
             "Symbol":            sym,
-            "Price (₹)":         round(price, 2),
+            "Price (\u20b9)":         round(price, 2),
+            "Price (\u00e2\u201a\u00b9)":         round(price, 2),
+            "Price (\u00c3\u00a2\u00e2\u20ac\u0161\u00c2\u00b9)":         round(price, 2),
             "RSI":               round(rsi_val, 1),
             "Vol / Avg":         round(vol_rat, 2),
             "Dist to High (%)":  round(dist_high, 2),

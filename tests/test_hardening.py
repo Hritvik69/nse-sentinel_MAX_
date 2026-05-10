@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import base64
+import io
+import json
 import os
 import pickle
 import queue
 import shutil
 import tempfile
 import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -323,6 +329,340 @@ class HardeningRegressionTests(unittest.TestCase):
             dsm._SNAPSHOT_ARCHIVE = old_archive  # type: ignore[assignment]
             dsm._invalidate_snapshot_caches()
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_persistent_store_keyed_conflict_merges_preserve_validations(self) -> None:
+        import persistent_store as ps
+
+        remote = (
+            "prediction_id,symbol,mode,market_date,import_source,prediction_direction,actual_next_return_pct,correct,outcome_label\n"
+            "p1,TEST,2,2026-05-08,scan,Bullish,1.2300,True,correct\n"
+            "p2,OLD,2,2026-05-08,scan,Bearish,-0.5000,True,correct\n"
+        ).encode("utf-8")
+        local = (
+            "prediction_id,symbol,mode,market_date,import_source,prediction_direction,actual_next_return_pct,correct,outcome_label,final_score\n"
+            "p1,TEST,2,2026-05-08,scan,Bullish,,,,72.5\n"
+            "p3,LOCAL,2,2026-05-09,scan,Bullish,,,,80.0\n"
+        ).encode("utf-8")
+
+        merged_bytes = ps._merge_remote_local("data/prediction_feedback_log.csv", remote, local)
+        self.assertIsNotNone(merged_bytes)
+        merged = pd.read_csv(io.BytesIO(merged_bytes), dtype=str, keep_default_na=False)
+        self.assertEqual(len(merged), 3)
+        p1 = merged[merged["prediction_id"] == "p1"].iloc[0]
+        self.assertEqual(p1["actual_next_return_pct"], "1.2300")
+        self.assertEqual(p1["correct"], "True")
+        self.assertEqual(p1["outcome_label"], "correct")
+        self.assertEqual(p1["final_score"], "72.5")
+
+        sector_remote = (
+            "prediction_id,sector,market_date,ohlc_source,prediction_direction,exit_price,return_pct,correct\n"
+            "s1,IT,2026-05-08,weighted_sector_basket,Bullish,101.0,1.0,True\n"
+        ).encode("utf-8")
+        sector_local = (
+            "prediction_id,sector,market_date,ohlc_source,prediction_direction,exit_price,return_pct,correct,confidence\n"
+            "s1,IT,2026-05-08,weighted_sector_basket,Bullish,,,,75\n"
+            "s2,AUTO,2026-05-08,leader,Bearish,,,,60\n"
+        ).encode("utf-8")
+        sector_bytes = ps._merge_remote_local("data/sector_prediction_log.csv", sector_remote, sector_local)
+        sector = pd.read_csv(io.BytesIO(sector_bytes), dtype=str, keep_default_na=False)
+        self.assertEqual(len(sector), 2)
+        s1 = sector[sector["prediction_id"] == "s1"].iloc[0]
+        self.assertEqual(s1["exit_price"], "101.0")
+        self.assertEqual(s1["correct"], "True")
+
+        perf_remote = b"signal_name,observations,wins,win_rate,last_updated,dynamic_weight\nema_slope,10,6,0.6000,old,0.1\n"
+        perf_local = b"signal_name,observations,wins,win_rate,last_updated,dynamic_weight\nema_slope,12,7,0.5833,new,0.11\nmomentum,3,2,0.6667,new,0.05\n"
+        perf_bytes = ps._merge_remote_local("data/sector_signal_performance.csv", perf_remote, perf_local)
+        perf = pd.read_csv(io.BytesIO(perf_bytes), dtype=str, keep_default_na=False)
+        self.assertEqual(set(perf["signal_name"]), {"ema_slope", "momentum"})
+        ema = perf[perf["signal_name"] == "ema_slope"].iloc[0]
+        self.assertEqual(ema["observations"], "12")
+        self.assertEqual(ema["wins"], "7")
+
+    def test_persistent_store_pull_merges_remote_with_newer_local(self) -> None:
+        import persistent_store as ps
+
+        tmp = Path(tempfile.mkdtemp())
+        old_data_dir = ps._DATA_DIR
+        old_sync = ps._SYNC_FILES
+        old_secrets = ps._get_secrets
+        old_get = ps._gh_get
+        old_raw = ps._gh_get_raw
+        try:
+            ps._DATA_DIR = tmp  # type: ignore[assignment]
+            ps._SYNC_FILES = {"prediction_feedback_log.csv": "data/prediction_feedback_log.csv"}  # type: ignore[assignment]
+            local_path = tmp / "prediction_feedback_log.csv"
+            local_path.write_text(
+                "prediction_id,symbol,mode,market_date,import_source,prediction_direction,actual_next_return_pct,correct\n"
+                "p1,TEST,2,2026-05-08,scan,Bullish,2.0000,True\n"
+                "p_local,LOCAL,2,2026-05-09,scan,Bullish,,\n",
+                encoding="utf-8",
+            )
+            remote = (
+                "prediction_id,symbol,mode,market_date,import_source,prediction_direction,actual_next_return_pct,correct\n"
+                "p1,TEST,2,2026-05-08,scan,Bullish,,\n"
+                "p_remote,REMOTE,2,2026-05-07,scan,Bearish,-1.0000,True\n"
+            ).encode("utf-8")
+            ps._get_secrets = lambda: {"token": "t", "owner": "o", "repo": "r", "branch": "main"}  # type: ignore[assignment]
+            ps._gh_get = lambda secrets, path: {"content": base64.b64encode(remote).decode("ascii")}  # type: ignore[assignment]
+            ps._gh_get_raw = lambda secrets, path: None  # type: ignore[assignment]
+
+            self.assertEqual(ps.pull_all(), 1)
+            pulled = pd.read_csv(local_path, dtype=str, keep_default_na=False)
+            self.assertEqual(set(pulled["prediction_id"]), {"p1", "p_local", "p_remote"})
+            p1 = pulled[pulled["prediction_id"] == "p1"].iloc[0]
+            self.assertEqual(p1["actual_next_return_pct"], "2.0000")
+            self.assertEqual(p1["correct"], "True")
+        finally:
+            ps._DATA_DIR = old_data_dir  # type: ignore[assignment]
+            ps._SYNC_FILES = old_sync  # type: ignore[assignment]
+            ps._get_secrets = old_secrets  # type: ignore[assignment]
+            ps._gh_get = old_get  # type: ignore[assignment]
+            ps._gh_get_raw = old_raw  # type: ignore[assignment]
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_persistent_store_nested_json_merge(self) -> None:
+        import persistent_store as ps
+
+        remote = {
+            "picks": ["AAA", "BBB"],
+            "notes": "remote note",
+            "sections": {"breakout": ["AAA"], "swing": ["BBB"]},
+            "records": [{"ticker": "AAA", "categories": ["Remote"], "snapshot": {"score": 1}}],
+        }
+        local = {
+            "picks": ["BBB", "CCC"],
+            "notes": "",
+            "sections": {"breakout": ["CCC"]},
+            "records": [{"ticker": "AAA", "categories": ["Local"], "snapshot": {"signal": "BUY"}}],
+        }
+        merged_bytes = ps._merge_remote_local(
+            "data/tomorrow_picks_store.json",
+            json.dumps(remote).encode("utf-8"),
+            json.dumps(local).encode("utf-8"),
+        )
+        merged = json.loads(merged_bytes.decode("utf-8"))
+        self.assertEqual(merged["notes"], "remote note")
+        self.assertEqual(merged["picks"], ["AAA", "BBB", "CCC"])
+        self.assertEqual(merged["sections"]["breakout"], ["AAA", "CCC"])
+        self.assertEqual(merged["records"][0]["categories"], ["Remote", "Local"])
+        self.assertEqual(merged["records"][0]["snapshot"]["score"], 1)
+        self.assertEqual(merged["records"][0]["snapshot"]["signal"], "BUY")
+
+    def test_snapshot_save_is_thread_safe_and_archives_atomically(self) -> None:
+        import data_session_manager as dsm
+
+        tmp = Path(tempfile.mkdtemp())
+        old_root = dsm._SNAPSHOT_ROOT
+        old_archive = dsm._SNAPSHOT_ARCHIVE
+        old_window = dsm.get_current_window
+        try:
+            dsm._SNAPSHOT_ROOT = tmp / "snapshots"  # type: ignore[assignment]
+            dsm._SNAPSHOT_ARCHIVE = tmp / "market_snapshot_latest.zip"  # type: ignore[assignment]
+            dsm.get_current_window = lambda: "CLOSED"  # type: ignore[assignment]
+            dsm._invalidate_snapshot_caches()
+            snap_day = date(2026, 5, 8)
+            data = {"TEST.NS": _sample_ohlcv("2026-05-01", periods=6)}
+
+            results: list[int] = []
+
+            def save_once() -> int:
+                return dsm.save_closing_snapshot(data, snap_day)
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                for future in as_completed([executor.submit(save_once) for _ in range(5)]):
+                    results.append(future.result())
+
+            self.assertEqual(sum(results), 1)
+            self.assertTrue(dsm.snapshot_exists(snap_day))
+            self.assertTrue(dsm._SNAPSHOT_ARCHIVE.exists())
+            leftovers = list((tmp / "snapshots").glob(".2026-05-08.*.tmp"))
+            self.assertEqual(leftovers, [])
+        finally:
+            dsm._SNAPSHOT_ROOT = old_root  # type: ignore[assignment]
+            dsm._SNAPSHOT_ARCHIVE = old_archive  # type: ignore[assignment]
+            dsm.get_current_window = old_window  # type: ignore[assignment]
+            dsm._invalidate_snapshot_caches()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_time_travel_cutoff_fails_closed_and_handles_timezone_index(self) -> None:
+        import time_travel_engine as tt
+
+        malformed = _sample_ohlcv(periods=20)
+        malformed.index = ["bad-index"] * len(malformed)
+        self.assertIsNone(tt.truncate_df(malformed, date(2026, 5, 8), min_rows=5))
+
+        tz_df = _sample_ohlcv("2026-05-01", periods=10)
+        tz_df.index = pd.date_range("2026-05-01", periods=10, freq="B", tz="Asia/Kolkata")
+        truncated = tt.truncate_df(tz_df, date(2026, 5, 8), min_rows=5)
+        self.assertIsNotNone(truncated)
+        self.assertLessEqual(pd.to_datetime(truncated.index[-1]).date(), date(2026, 5, 8))
+
+    def test_breakout_and_feature_time_travel_cutoffs_fail_closed(self) -> None:
+        import breakout_radar_engine as radar
+        import feature_data_manager as fdm
+
+        malformed = _sample_ohlcv(periods=60)
+        malformed.index = ["not-a-date"] * len(malformed)
+        self.assertIsNone(radar._strict_time_travel_slice(malformed, date(2026, 5, 8), min_rows=45))
+
+        manager = fdm.FeatureDataManager(cache_root=Path(tempfile.mkdtemp()))
+        try:
+            self.assertIsNone(
+                manager._apply_time_travel_cutoff(malformed, cutoff=date(2026, 5, 8), min_rows=5)
+            )
+        finally:
+            shutil.rmtree(manager.cache_root, ignore_errors=True)
+
+    def test_ticker_universe_does_not_cache_degraded_then_recovers(self) -> None:
+        import nse_ticker_universe as uni
+
+        old_build = uni._build
+        old_tmp = uni._TMP_TICKER_FILE
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            uni._TMP_TICKER_FILE = str(tmp / "tickers.txt")  # type: ignore[assignment]
+            uni.invalidate_cache(clear_disk=True)
+            calls = {"n": 0}
+
+            def fake_build(live: bool) -> list[str]:
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    return [f"LOW{i}.NS" for i in range(10)]
+                return [f"FULL{i}.NS" for i in range(2000)]
+
+            uni._build = fake_build  # type: ignore[assignment]
+            self.assertEqual(len(uni.get_all_tickers(live=True)), 10)
+            self.assertNotIn(True, uni._cache)
+            self.assertEqual(len(uni.get_all_tickers(live=True)), 2000)
+            self.assertIn(True, uni._cache)
+        finally:
+            uni._build = old_build  # type: ignore[assignment]
+            uni._TMP_TICKER_FILE = old_tmp  # type: ignore[assignment]
+            uni.invalidate_cache(clear_disk=True)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_feature_cache_rejects_short_period_and_corrupt_snapshot(self) -> None:
+        import data_session_manager as dsm
+        import feature_data_manager as fdm
+
+        tmp = Path(tempfile.mkdtemp())
+        old_snapshot_root = fdm._SCANNER_SNAPSHOT_ROOT
+        old_dsm_root = dsm._SNAPSHOT_ROOT
+        old_dsm_archive = dsm._SNAPSHOT_ARCHIVE
+        try:
+            manager = fdm.FeatureDataManager(cache_root=tmp / "feature_cache")
+            cache_day = date(2026, 5, 8)
+            short_df = _sample_ohlcv("2026-04-01", periods=25)
+            manager._save_stock_cache(
+                "TEST.NS",
+                short_df,
+                period="2mo",
+                interval="1d",
+                source="unit",
+                cache_day=cache_day,
+            )
+            loaded, _ = manager._load_stock_cache(
+                "TEST.NS",
+                period="1y",
+                interval="1d",
+                cache_day=cache_day,
+                min_rows=5,
+            )
+            self.assertIsNone(loaded)
+
+            fdm._SCANNER_SNAPSHOT_ROOT = tmp / "snapshots"  # type: ignore[assignment]
+            dsm._SNAPSHOT_ROOT = fdm._SCANNER_SNAPSHOT_ROOT  # type: ignore[assignment]
+            dsm._SNAPSHOT_ARCHIVE = tmp / "market_snapshot_latest.zip"  # type: ignore[assignment]
+            dsm._invalidate_snapshot_caches()
+            snap_dir = fdm._SCANNER_SNAPSHOT_ROOT / cache_day.isoformat()
+            snap_dir.mkdir(parents=True)
+            csv_path = snap_dir / "TEST.NS.csv"
+            _sample_ohlcv("2026-05-01", periods=6).to_csv(csv_path)
+            dsm.atomic_write_json(
+                snap_dir / "_meta.json",
+                {"complete": True, "saved": 1, "checksums": {csv_path.name: "bad"}},
+            )
+            loaded_snapshot, _ = manager._load_scanner_snapshot("TEST.NS", cache_day, min_rows=5)
+            self.assertIsNone(loaded_snapshot)
+        finally:
+            fdm._SCANNER_SNAPSHOT_ROOT = old_snapshot_root  # type: ignore[assignment]
+            dsm._SNAPSHOT_ROOT = old_dsm_root  # type: ignore[assignment]
+            dsm._SNAPSHOT_ARCHIVE = old_dsm_archive  # type: ignore[assignment]
+            dsm._invalidate_snapshot_caches()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_compare_cache_uses_hash_path_and_stores_symbols(self) -> None:
+        import feature_data_manager as fdm
+
+        tmp = Path(tempfile.mkdtemp())
+        old_expected_date = fdm.get_expected_data_date
+        try:
+            fdm.get_expected_data_date = lambda: date(2026, 5, 8)  # type: ignore[assignment]
+            manager = fdm.FeatureDataManager(cache_root=tmp)
+            symbols = [f"VERYLONGSYMBOLNAME{i:03d}.NS" for i in range(80)]
+            payload = {"battle_df": "{}"}
+            manager.save_compare_cache(symbols, payload)
+            compare_dir = manager._compare_dir(manager._cache_day())
+            files = list(compare_dir.glob("*.json"))
+            self.assertEqual(len(files), 1)
+            self.assertLess(len(files[0].name), 80)
+            saved = json.loads(files[0].read_text(encoding="utf-8"))
+            self.assertEqual(saved["symbols"], manager._normalize_compare_symbols(symbols))
+            self.assertIsNotNone(manager.load_compare_cache(list(reversed(symbols))))
+        finally:
+            fdm.get_expected_data_date = old_expected_date  # type: ignore[assignment]
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_live_breakout_direct_download_uses_bounded_limiter(self) -> None:
+        import live_breakout_pulse_engine as pulse
+
+        old_sem = pulse._SHARED_YF_SEM
+        old_download = pulse.yf.download
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+
+        def fake_download(*args, **kwargs):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                time.sleep(0.02)
+                return _sample_ohlcv(periods=40)
+            finally:
+                with lock:
+                    active -= 1
+
+        try:
+            pulse._SHARED_YF_SEM = threading.BoundedSemaphore(2)
+            pulse.yf.download = fake_download  # type: ignore[assignment]
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                list(executor.map(lambda i: pulse._download_live(f"TEST{i}.NS", None), range(6)))
+            self.assertLessEqual(max_active, 2)
+        finally:
+            pulse._SHARED_YF_SEM = old_sem
+            pulse.yf.download = old_download  # type: ignore[assignment]
+
+    def test_live_breakout_price_alias_contract(self) -> None:
+        import live_breakout_pulse_engine as pulse
+
+        df = _sample_ohlcv("2026-04-01", periods=60)
+        df["Close"] = [100 + i * 0.8 for i in range(len(df))]
+        df["Open"] = df["Close"] - 0.5
+        df["High"] = df["Close"] + 1.0
+        df["Low"] = df["Close"] - 1.0
+        df["Volume"] = 1000
+        df.iloc[-1, df.columns.get_loc("Volume")] = 5000
+        row = pulse._score_ticker("TEST.NS", None, df_override=df)
+        self.assertIsNotNone(row)
+        self.assertIn("Price (\u20b9)", row)
+        legacy_alias = "Price (\u00e2\u201a\u00b9)"
+        double_encoded_alias = "Price (\u00c3\u00a2\u00e2\u20ac\u0161\u00c2\u00b9)"
+        self.assertIn(legacy_alias, row)
+        self.assertIn(double_encoded_alias, row)
+        self.assertEqual(row["Price (\u20b9)"], row[legacy_alias])
 
 
 if __name__ == "__main__":

@@ -451,10 +451,15 @@ def ticker_count() -> int:
     return len(get_all_tickers())
 
 
-def invalidate_cache() -> None:
+def invalidate_cache(clear_disk: bool = False) -> None:
     """Force re-build on next call."""
     with _LOCK:
         _cache.clear()
+    if clear_disk:
+        try:
+            Path(_TMP_TICKER_FILE).unlink(missing_ok=True)
+        except Exception as exc:
+            _record_diagnostic("tmp_cache_clear", exc)
 
 
 # ══════════════════════════════════════════════════════════════════════

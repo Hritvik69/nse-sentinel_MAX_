@@ -104,6 +104,17 @@ def _sf(v: object, default: float = 0.0) -> float:
         return default
 
 
+def _strict_time_travel_slice(df: pd.DataFrame | None, cutoff_date, min_rows: int = 45) -> pd.DataFrame | None:
+    if cutoff_date is None:
+        return df
+    try:
+        from time_travel_engine import truncate_df
+
+        return truncate_df(df, cutoff_date, min_rows=min_rows)
+    except Exception:
+        return None
+
+
 def _app_universe_tickers() -> list[str]:
     """
     Borrow the full app universe when running inside app.py so the focused
@@ -514,12 +525,8 @@ def _analyze_ohlcv(
 
         # ── Time-travel slice ─────────────────────────────────────────
         if cutoff_date is not None:
-            try:
-                mask = pd.to_datetime(df.index).date <= cutoff_date
-                df = df.loc[mask]
-            except Exception:
-                pass
-            if len(df) < 45:
+            df = _strict_time_travel_slice(df, cutoff_date, min_rows=45)
+            if df is None or len(df) < 45:
                 return None
 
         df = df.tail(250)  # cap to ~1 year for performance
