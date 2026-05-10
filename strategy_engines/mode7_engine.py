@@ -36,15 +36,23 @@ from strategy_engines.constants import (
     MODE7_VOL_CONFIRM_MAX,
     MODE7_VOL_CONFIRM_MIN,
     MODE7_VOL_WEAK,
+    debug_log,
 )
 from strategy_engines._engine_utils import (
     safe, ema, rsi_vec, SKLEARN_OK, get_df_for_ticker,
 )
 
+_SKLEARN_READY = False
 if SKLEARN_OK:
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import train_test_split
+    try:
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.model_selection import train_test_split
+
+        _SKLEARN_READY = True
+    except Exception as exc:
+        debug_log("Mode 7 sklearn import disabled: %s", exc, exc_info=True)
+        _SKLEARN_READY = False
 
 
 _MODEL: "LogisticRegression | None" = None  # noqa: F821
@@ -486,7 +494,7 @@ def _build_features_mode7(close: pd.Series, volume: pd.Series) -> pd.DataFrame |
 
 def train_model_mode7() -> bool:
     global _MODEL, _SCALER, _TRAINING
-    if not SKLEARN_OK:
+    if not _SKLEARN_READY:
         return False
     with _LOCK:
         if _MODEL is not None:
@@ -554,7 +562,7 @@ def train_model_mode7() -> bool:
 
 
 def predict_ml_mode7(row: dict) -> float:
-    if not SKLEARN_OK:
+    if not _SKLEARN_READY:
         return 50.0
     with _LOCK:
         mdl, sc = _MODEL, _SCALER
