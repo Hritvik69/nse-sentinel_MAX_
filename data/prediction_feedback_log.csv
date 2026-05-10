@@ -2398,3 +2398,4 @@ logged_at,symbol,sector,mode,import_source,import_category,prediction_score,fina
 2026-05-10T04:17:01,NELCAST,,3,,,9.4700,34.0600,AVOID,Low,Sideways / no edge,Ranging,73.3100,15.8600,15.1300,HIGH,0,,,
 2026-05-10T04:17:01,LALPATHLAB,PHARMA,3,,,8.9700,34.3600,AVOID,Low,Sideways / no edge,Ranging,71.6700,1.1500,12.2700,HIGH,0,,,
 2026-05-10T04:17:01,NETWEB,,3,,,8.8600,34.0200,AVOID,Low,Sideways / no edge,Ranging,72.6900,1.1400,11.8500,HIGH,0,,,
+2026-05-10T04:17:30,CHAMBLFERT,,6,Mode 6 Top 3 | Mode 3 Top 3,Swing | Relax,58.8200,62.0000,WATCH,High,Sideways / no edge,Ranging,57.5100,1.4000,1.8800,LOW,1,,,
