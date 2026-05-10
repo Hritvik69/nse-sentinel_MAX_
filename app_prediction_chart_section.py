@@ -1222,16 +1222,17 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
     if imported_symbols:
         display_tickers = imported_symbols + [ticker for ticker in display_tickers if ticker not in imported_symbols]
 
-    focus_symbol = _normalize_prediction_chart_symbol(
+    requested_focus_symbol = _normalize_prediction_chart_symbol(
         st.session_state.pop("prediction_chart_focus_symbol", "")
     )
-    if not focus_symbol:
-        focus_symbol = _normalize_prediction_chart_symbol(st.session_state.get("pc_loaded_symbol", ""))
+    loaded_symbol = _normalize_prediction_chart_symbol(st.session_state.get("pc_loaded_symbol", ""))
 
     if display_tickers:
         default_symbol = (
-            focus_symbol
-            if focus_symbol in display_tickers
+            requested_focus_symbol
+            if requested_focus_symbol in display_tickers
+            else loaded_symbol
+            if loaded_symbol in display_tickers
             else imported_symbols[0]
             if imported_symbols
             else "RELIANCE"
@@ -1334,8 +1335,12 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
         needs_reset = False
         if current_selected not in display_tickers:
             needs_reset = True
-        elif focus_symbol and focus_symbol in display_tickers and current_selected != focus_symbol:
-            initial_symbol = focus_symbol
+        elif (
+            requested_focus_symbol
+            and requested_focus_symbol in display_tickers
+            and current_selected != requested_focus_symbol
+        ):
+            initial_symbol = requested_focus_symbol
             needs_reset = True
 
         if needs_reset:
@@ -1367,14 +1372,15 @@ def render_prediction_chart_section(ticker_list: list[str] | None = None) -> Non
 
     # ── Symbol tracking ───────────────────────────────────────────────
     st.caption("Shared flow: ALL_DATA first, feature cache second, yfinance last.")
-    trigger_symbol = st.session_state.get("pc_loaded_symbol")
+    trigger_symbol = _normalize_prediction_chart_symbol(st.session_state.get("pc_loaded_symbol", ""))
     if load_btn:
         try:
             fetch_stock_data.clear()
         except Exception:
             pass
-        st.session_state["pc_loaded_symbol"] = selected_bare
-        trigger_symbol = selected_bare
+        selected_symbol = _normalize_prediction_chart_symbol(selected_bare)
+        st.session_state["pc_loaded_symbol"] = selected_symbol
+        trigger_symbol = selected_symbol
 
     if not trigger_symbol:
         st.markdown(
