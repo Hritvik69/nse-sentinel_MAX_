@@ -2504,3 +2504,6 @@ logged_at,symbol,sector,mode,import_source,import_category,prediction_score,fina
 2026-05-10T04:24:24,PIRAMALFIN,,5,,,10.1200,22.2400,AVOID,Low,Sideways / no edge,Ranging,64.8900,1.1500,7.5400,MEDIUM,0,,,
 2026-05-10T04:24:24,SUYOG,,5,,,9.4300,21.6800,AVOID,Low,Sideways / no edge,Ranging,64.1600,1.1500,8.1000,MEDIUM,0,,,
 2026-05-10T04:24:24,CENTUM,,5,,,7.7600,24.6000,AVOID,Low,Sideways / no edge,Ranging,64.0300,2.8900,8.0900,HIGH,0,,,
+2026-05-10T04:27:14,APLLTD,,0,Live Breakout Pulse Top 3,Breakout Pulse,,81.0000,LIVE BREAKOUT,,,,65.6000,3.8200,4.1600,,0,,,
+2026-05-10T04:27:14,TBZ,,0,Live Breakout Pulse Top 3,Breakout Pulse,,84.0000,LIVE BREAKOUT,,,,67.7000,3.4400,5.4200,,0,,,
+2026-05-10T04:27:14,SUPRAJIT,AUTO,0,Live Breakout Pulse Top 3,Breakout Pulse,,83.0000,LIVE BREAKOUT,,,,65.7000,2.2900,5.6800,,0,,,
