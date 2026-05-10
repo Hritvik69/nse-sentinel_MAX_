@@ -28,7 +28,7 @@ COLOUR PALETTE (TradingView)
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -1186,12 +1186,20 @@ def _render_feedback_overlay(symbol: str, latest_prediction: dict) -> None:
 # MAIN UI PANEL
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render_prediction_chart_section(ticker_list: list[str] | None = None) -> None:
+def render_prediction_chart_section(
+    ticker_list: list[str] | None = None,
+    tomorrow_strip_renderer: Callable[[], None] | None = None,
+) -> None:
     """
     Render the full "📊 Prediction Chart Tomorrow" panel.
     Call from app.py when  pred_chart_show_panel  is True.
     """
     _css()
+    if tomorrow_strip_renderer is not None:
+        try:
+            tomorrow_strip_renderer()
+        except Exception:
+            pass
 
     # ── Fallback ticker list ──────────────────────────────────────────
     if not ticker_list:

@@ -4862,16 +4862,21 @@ def render_tomorrow_picks_panel() -> None:
         )
 
 
-def render_tomorrow_picks_ticker_strip() -> None:
+def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
     store, _storage_mode = _load_tomorrow_store()
     sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+    container_margin_top = "0px" if embedded else "-66px"
+    container_margin_bottom = "14px" if embedded else "2px"
+    shell_margin = "0 0 18px 0" if embedded else "-18px 0 8px 0"
+    mobile_container_margin_top = "0px" if embedded else "-18px"
+    mobile_shell_margin = "0 0 14px 0" if embedded else "-8px 0 8px 0"
 
     st.markdown(
         """
         <style>
         div[data-testid="stElementContainer"]:has(.tmr-board-shell) {
-          margin-top:-66px !important;
-          margin-bottom:2px !important;
+          margin-top:__CONTAINER_MARGIN_TOP__ !important;
+          margin-bottom:__CONTAINER_MARGIN_BOTTOM__ !important;
         }
         .tmr-board-shell {
           border:1px solid rgba(86,118,150,0.34);
@@ -4883,7 +4888,7 @@ def render_tomorrow_picks_ticker_strip() -> None:
           box-shadow:
             0 14px 28px rgba(0,0,0,0.16),
             inset 0 0 0 1px rgba(255,255,255,0.02);
-          margin:-18px 0 8px 0;
+          margin:__SHELL_MARGIN__;
         }
         .tmr-board-header {
           display:flex;
@@ -4995,10 +5000,10 @@ def render_tomorrow_picks_ticker_strip() -> None:
         }
         @media (max-width: 900px) {
           div[data-testid="stElementContainer"]:has(.tmr-board-shell) {
-            margin-top:-18px !important;
+            margin-top:__MOBILE_CONTAINER_MARGIN_TOP__ !important;
           }
           .tmr-board-shell {
-            margin:-8px 0 8px 0;
+            margin:__MOBILE_SHELL_MARGIN__;
           }
           .tmr-board-row {
             grid-template-columns:1fr;
@@ -5009,7 +5014,11 @@ def render_tomorrow_picks_ticker_strip() -> None:
           }
         }
         </style>
-        """,
+        """.replace("__CONTAINER_MARGIN_TOP__", container_margin_top)
+        .replace("__CONTAINER_MARGIN_BOTTOM__", container_margin_bottom)
+        .replace("__SHELL_MARGIN__", shell_margin)
+        .replace("__MOBILE_CONTAINER_MARGIN_TOP__", mobile_container_margin_top)
+        .replace("__MOBILE_SHELL_MARGIN__", mobile_shell_margin),
         unsafe_allow_html=True,
     )
 
@@ -8583,8 +8592,10 @@ with st.sidebar:
         pass
 
 if _show_pred_chart_panel:
-    render_tomorrow_picks_ticker_strip()
-    render_prediction_chart_section(ticker_list=all_tickers)
+    render_prediction_chart_section(
+        ticker_list=all_tickers,
+        tomorrow_strip_renderer=lambda: render_tomorrow_picks_ticker_strip(embedded=True),
+    )
     st.stop()
 
 if _show_imported_ai_learning_panel:
