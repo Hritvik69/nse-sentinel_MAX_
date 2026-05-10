@@ -4,6 +4,7 @@
     "FDC",
     "EPL",
     "MARKOLINES",
+    "APLLTD",
     "VENUSREM",
     "TIMKEN",
     "SKFINDIA",
@@ -15,8 +16,7 @@
     "CHAMBLFERT",
     "GMRAIRPORT",
     "TBZ",
-    "SUPRAJIT",
-    "APLLTD"
+    "SUPRAJIT"
   ],
   "notes": "",
   "sections": {
@@ -24,7 +24,8 @@
       "GILLETTE",
       "FDC",
       "EPL",
-      "MARKOLINES"
+      "MARKOLINES",
+      "APLLTD"
     ],
     "swing": [
       "VENUSREM",
@@ -44,8 +45,7 @@
     ],
     "breakout": [
       "TBZ",
-      "SUPRAJIT",
-      "APLLTD"
+      "SUPRAJIT"
     ]
   }
 }
