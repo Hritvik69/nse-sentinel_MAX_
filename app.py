@@ -1287,12 +1287,12 @@ def render_prediction_chart_section(*args, **kwargs):
     the initial app shell render.
     """
     global _prediction_chart_renderer
-    if callable(_prediction_chart_renderer):
-        return _prediction_chart_renderer(*args, **kwargs)
     try:
-        from app_prediction_chart_section import (
-            render_prediction_chart_section as _render_prediction_chart_section,
-        )
+        import importlib
+        import app_prediction_chart_section as _prediction_chart_section_module
+
+        _prediction_chart_section_module = importlib.reload(_prediction_chart_section_module)
+        _render_prediction_chart_section = _prediction_chart_section_module.render_prediction_chart_section
 
         _prediction_chart_renderer = _render_prediction_chart_section
         return _prediction_chart_renderer(*args, **kwargs)
