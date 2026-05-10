@@ -3,6 +3,9 @@
     "CAMPUS",
     "CHAMBLFERT",
     "GILLETTE",
+    "FIEMIND",
+    "FDC",
+    "MARKOLINES",
     "VENUSREM",
     "TIMKEN",
     "SKFINDIA",
@@ -18,7 +21,10 @@
     "relax": [
       "CAMPUS",
       "CHAMBLFERT",
-      "GILLETTE"
+      "GILLETTE",
+      "FIEMIND",
+      "FDC",
+      "MARKOLINES"
     ],
     "swing": [
       "VENUSREM",
