@@ -5,6 +5,7 @@
     "EPL",
     "MARKOLINES",
     "APLLTD",
+    "CAMPUS",
     "VENUSREM",
     "TIMKEN",
     "SKFINDIA",
@@ -12,7 +13,6 @@
     "3PLAND",
     "DOLATALGO",
     "FIEMIND",
-    "CAMPUS",
     "CHAMBLFERT",
     "GMRAIRPORT",
     "TBZ",
@@ -25,7 +25,8 @@
       "FDC",
       "EPL",
       "MARKOLINES",
-      "APLLTD"
+      "APLLTD",
+      "CAMPUS"
     ],
     "swing": [
       "VENUSREM",
@@ -39,7 +40,6 @@
     ],
     "momentum": [
       "FIEMIND",
-      "CAMPUS",
       "CHAMBLFERT",
       "GMRAIRPORT"
     ],
