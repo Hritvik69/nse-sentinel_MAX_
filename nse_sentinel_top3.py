@@ -118,7 +118,14 @@ def _level_text(value: object) -> str:
     text = _text(value).upper()
     if not text:
         return "LOW"
-    if "NO TRAP" in text or "CLEAN" in text or "NONE" in text or "SAFE" in text:
+    if (
+        "NO TRAP" in text
+        or "NO HIGH" in text
+        or "NOT HIGH" in text
+        or "CLEAN" in text
+        or "NONE" in text
+        or "SAFE" in text
+    ):
         return "LOW"
     if "LOW" in text:
         return "LOW"
