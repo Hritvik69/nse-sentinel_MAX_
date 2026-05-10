@@ -5,7 +5,10 @@
     "GILLETTE",
     "VENUSREM",
     "TIMKEN",
-    "SKFINDIA"
+    "SKFINDIA",
+    "DBSTOCKBRO",
+    "3PLAND",
+    "DOLATALGO"
   ],
   "notes": "jniiknjknji",
   "sections": {
@@ -19,7 +22,11 @@
       "TIMKEN",
       "SKFINDIA"
     ],
-    "intraday": [],
+    "intraday": [
+      "DBSTOCKBRO",
+      "3PLAND",
+      "DOLATALGO"
+    ],
     "breakout": []
   }
 }
