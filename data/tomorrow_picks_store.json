@@ -1,30 +1,10 @@
 {
-  "picks": [
-    "IMPAL",
-    "YASHO",
-    "OBCL",
-    "GOKEX",
-    "UDS",
-    "SAGCEM",
-    "JISLDVREQS",
-    "SALONA"
-  ],
+  "picks": [],
   "notes": "jniiknjknji",
   "sections": {
-    "relax": [
-      "IMPAL",
-      "YASHO"
-    ],
+    "relax": [],
     "swing": [],
-    "intraday": [
-      "OBCL",
-      "GOKEX",
-      "UDS"
-    ],
-    "breakout": [
-      "SAGCEM",
-      "JISLDVREQS",
-      "SALONA"
-    ]
+    "intraday": [],
+    "breakout": []
   }
 }
