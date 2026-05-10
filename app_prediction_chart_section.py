@@ -28,11 +28,23 @@ COLOUR PALETTE (TradingView)
 from __future__ import annotations
 
 import math
+import html as _html
+import json
+from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+_TOMORROW_STORE_PATH = Path(__file__).resolve().parent / "data" / "tomorrow_picks_store.json"
+_TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "breakout")
+_TOMORROW_SECTION_META = {
+    "relax": ("Relax", "#22c55e"),
+    "swing": ("Swing", "#f0b429"),
+    "intraday": ("Intraday", "#00d4a8"),
+    "breakout": ("Breakout", "#ff6b6b"),
+}
 
 try:
     from prediction_feedback_store import read_feedback_log as _read_feedback_log
@@ -1183,6 +1195,202 @@ def _render_feedback_overlay(symbol: str, latest_prediction: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+def _normalize_tomorrow_strip_symbol(value: object) -> str:
+    symbol = str(value or "").strip().upper()
+    if symbol.endswith(".NS"):
+        symbol = symbol[:-3]
+    return symbol
+
+
+def _load_tomorrow_strip_sections() -> dict[str, list[str]]:
+    sections: dict[str, list[str]] = {bucket: [] for bucket in _TOMORROW_SECTION_ORDER}
+    try:
+        store = st.session_state.get("tomorrow_picks_store")
+        if not isinstance(store, dict) and _TOMORROW_STORE_PATH.exists():
+            store = json.loads(_TOMORROW_STORE_PATH.read_text(encoding="utf-8"))
+        if not isinstance(store, dict):
+            return sections
+
+        seen: set[str] = set()
+        raw_sections = store.get("sections", {})
+        if isinstance(raw_sections, dict):
+            for bucket in _TOMORROW_SECTION_ORDER:
+                values = raw_sections.get(bucket, [])
+                if not isinstance(values, (list, tuple)):
+                    continue
+                for raw in values:
+                    symbol = _normalize_tomorrow_strip_symbol(raw)
+                    if symbol and symbol not in seen and len(seen) < 20:
+                        sections[bucket].append(symbol)
+                        seen.add(symbol)
+
+        raw_picks = store.get("picks", [])
+        if isinstance(raw_picks, (list, tuple)):
+            for raw in raw_picks:
+                symbol = _normalize_tomorrow_strip_symbol(raw)
+                if symbol and symbol not in seen and len(seen) < 20:
+                    sections["relax"].append(symbol)
+                    seen.add(symbol)
+        return sections
+    except Exception:
+        return sections
+
+
+def _render_tomorrow_picks_chart_strip() -> None:
+    sections = _load_tomorrow_strip_sections()
+    rows_html: list[str] = []
+    for bucket in _TOMORROW_SECTION_ORDER:
+        label, accent = _TOMORROW_SECTION_META[bucket]
+        bucket_symbols = sections.get(bucket, [])
+        if bucket_symbols:
+            visible_symbols = bucket_symbols[:4]
+            hidden_count = max(0, len(bucket_symbols) - len(visible_symbols))
+            items_html = "".join(
+                (
+                    '<span class="pc-tmr-chip">'
+                    '<span class="pc-tmr-badge">NSE</span>'
+                    f'{_html.escape(symbol)}'
+                    '</span>'
+                )
+                for symbol in visible_symbols
+            )
+            if hidden_count:
+                items_html += f'<span class="pc-tmr-overflow">+{hidden_count}</span>'
+        else:
+            items_html = '<span class="pc-tmr-empty">Empty strip</span>'
+        rows_html.append(
+            (
+                f'<div class="pc-tmr-row" style="--pc-tmr-accent:{accent};">'
+                f'<div class="pc-tmr-label">{_html.escape(label)} '
+                f'<span>{len(bucket_symbols)}</span></div>'
+                f'<div class="pc-tmr-items">{items_html}</div>'
+                '</div>'
+            )
+        )
+
+    st.markdown(
+        """
+        <style>
+        .pc-tmr-shell {
+          border:1px solid rgba(86,118,150,0.34);
+          border-radius:18px;
+          padding:12px 14px 10px 14px;
+          background:
+            radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 26%),
+            linear-gradient(180deg, rgba(10,17,27,0.97), rgba(6,10,17,0.99));
+          box-shadow:0 14px 28px rgba(0,0,0,0.16), inset 0 0 0 1px rgba(255,255,255,0.02);
+          margin:0 0 18px 0;
+        }
+        .pc-tmr-header {
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          flex-wrap:wrap;
+          margin-bottom:8px;
+        }
+        .pc-tmr-title {
+          font-family:'Syne',sans-serif;
+          font-size:16px;
+          font-weight:800;
+          letter-spacing:0.8px;
+          text-transform:uppercase;
+          color:#f0b429;
+        }
+        .pc-tmr-copy { font-size:11px; color:#88a8c7; }
+        .pc-tmr-row {
+          display:grid;
+          grid-template-columns:minmax(120px, 150px) 1fr;
+          gap:10px;
+          align-items:center;
+          padding:8px 0;
+          border-top:1px solid rgba(42,61,86,0.46);
+        }
+        .pc-tmr-row:first-of-type { border-top:none; padding-top:0; }
+        .pc-tmr-label {
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          width:max-content;
+          padding:6px 10px;
+          border-radius:999px;
+          border:1px solid color-mix(in srgb, var(--pc-tmr-accent) 34%, rgba(255,255,255,0.12));
+          background:rgba(9,15,24,0.88);
+          color:#f4f8ff;
+          font-size:11px;
+          font-weight:800;
+          letter-spacing:0.4px;
+          text-transform:uppercase;
+        }
+        .pc-tmr-label span { color:var(--pc-tmr-accent); }
+        .pc-tmr-items { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+        .pc-tmr-chip {
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          padding:7px 10px;
+          border-radius:999px;
+          border:1px solid color-mix(in srgb, var(--pc-tmr-accent) 28%, rgba(72,102,134,0.30));
+          background:linear-gradient(180deg, rgba(13,22,33,0.94), rgba(9,15,24,0.98));
+          color:#dce7f4;
+          font-size:11px;
+          font-weight:700;
+        }
+        .pc-tmr-badge {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:30px;
+          padding:3px 7px;
+          border-radius:999px;
+          background:rgba(9,28,36,0.92);
+          color:var(--pc-tmr-accent);
+          border:1px solid color-mix(in srgb, var(--pc-tmr-accent) 32%, rgba(255,255,255,0.10));
+          font-size:9px;
+          letter-spacing:0.7px;
+          text-transform:uppercase;
+        }
+        .pc-tmr-empty {
+          display:inline-flex;
+          align-items:center;
+          min-height:28px;
+          padding:0 2px;
+          color:#6f8ba8;
+          font-size:11px;
+        }
+        .pc-tmr-overflow {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:36px;
+          padding:7px 10px;
+          border-radius:999px;
+          border:1px dashed rgba(106,130,158,0.38);
+          color:#8fb0cf;
+          font-size:11px;
+          font-weight:700;
+        }
+        @media (max-width: 900px) {
+          .pc-tmr-row { grid-template-columns:1fr; gap:6px; }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        (
+            '<div class="pc-tmr-shell">'
+            '<div class="pc-tmr-header">'
+            '<div class="pc-tmr-title">Tomorrow\'s Picks</div>'
+            '<div class="pc-tmr-copy">Compact 4-lane view: Relax, Swing, Intraday, Breakout.</div>'
+            '</div>'
+            + "".join(rows_html)
+            + '</div>'
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 # MAIN UI PANEL
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1195,11 +1403,7 @@ def render_prediction_chart_section(
     Call from app.py when  pred_chart_show_panel  is True.
     """
     _css()
-    if tomorrow_strip_renderer is not None:
-        try:
-            tomorrow_strip_renderer()
-        except Exception:
-            pass
+    _render_tomorrow_picks_chart_strip()
 
     # ── Fallback ticker list ──────────────────────────────────────────
     if not ticker_list:
