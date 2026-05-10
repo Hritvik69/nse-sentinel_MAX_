@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "CAMPUS",
+    "CHAMBLFERT",
+    "GILLETTE"
+  ],
   "notes": "jniiknjknji",
   "sections": {
-    "relax": [],
+    "relax": [
+      "CAMPUS",
+      "CHAMBLFERT",
+      "GILLETTE"
+    ],
     "swing": [],
     "intraday": [],
     "breakout": []
