@@ -1,7 +1,5 @@
 {
   "picks": [
-    "CAMPUS",
-    "CHAMBLFERT",
     "GILLETTE",
     "FDC",
     "EPL",
@@ -13,6 +11,9 @@
     "3PLAND",
     "DOLATALGO",
     "FIEMIND",
+    "CAMPUS",
+    "CHAMBLFERT",
+    "GMRAIRPORT",
     "TBZ",
     "SUPRAJIT",
     "APLLTD"
@@ -20,8 +21,6 @@
   "notes": "",
   "sections": {
     "relax": [
-      "CAMPUS",
-      "CHAMBLFERT",
       "GILLETTE",
       "FDC",
       "EPL",
@@ -38,7 +37,10 @@
       "DOLATALGO"
     ],
     "momentum": [
-      "FIEMIND"
+      "FIEMIND",
+      "CAMPUS",
+      "CHAMBLFERT",
+      "GMRAIRPORT"
     ],
     "breakout": [
       "TBZ",
