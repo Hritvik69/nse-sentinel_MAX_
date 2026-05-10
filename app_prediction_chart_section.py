@@ -1408,6 +1408,8 @@ def render_prediction_chart_section(
             tomorrow_strip_renderer()
         except Exception:
             pass
+    else:
+        _render_tomorrow_picks_chart_strip()
 
     # ── Fallback ticker list ──────────────────────────────────────────
     if not ticker_list:
