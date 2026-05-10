@@ -131,7 +131,7 @@ def final_score_mode7(row: pd.Series, market_bias: dict | None = None) -> float:
         trap_risk = _text(row, "Trap Risk", "LOW")
         advanced = _text(row, "Advanced Trap", "NONE")
         vol = _num(row, "Vol / Avg", 1.0)
-        de20 = _num(row, "Δ vs EMA20 (%)", _num(row, "Î” vs EMA20 (%)", 0.0))
+        de20 = _num(row, "Δ vs EMA20 (%)", _num(row, "Delta vs EMA20 (%)", 0.0))
         rsi = _num(row, "RSI", 50.0)
 
         if trap_prob == "HIGH" or trap_risk == "HIGH" or "FAKE" in advanced:
@@ -213,7 +213,7 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
         trap_risk = _text_series(out, "Trap Risk", "LOW")
         advanced = _text_series(out, "Advanced Trap", "NONE")
         vol = _num_series(out, "Vol / Avg", 1.0)
-        de20 = _num_series(out, "Δ vs EMA20 (%)", _num_series(out, "Î” vs EMA20 (%)", 0.0))
+        de20 = _num_series(out, "Δ vs EMA20 (%)", _num_series(out, "Delta vs EMA20 (%)", 0.0))
         rsi = _num_series(out, "RSI", 50.0)
 
         try:
@@ -222,28 +222,32 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
                 regime = str(market_bias.get("regime", "") or "").lower()
                 base_tight = _num_series(out, "Base Tightness (%)", 99.0)
                 reg_adj = pd.Series(0.0, index=out.index, dtype="float64")
-                reg_adj += np.where(
-                    (("bullish" in bias) or ("trending up" in regime))
-                    & setup.isin(["BREAKOUT READY", "EARLY BREAKOUT", "MOMENTUM CONTINUATION"]),
-                    3.0,
-                    0.0,
-                )
-                reg_adj += np.where((("bearish" in bias) or ("trending down" in regime)), -3.0, 0.0)
-                reg_adj += np.where((("bearish" in bias) or ("trending down" in regime)) & vol.lt(1.3), -2.0, 0.0)
-                reg_adj += np.where(
-                    (("ranging" in regime) or ("sideways" in bias))
-                    & setup.isin(["RESISTANCE COMPRESSION", "SUPPORT BOUNCE"])
-                    & base_tight.le(8.0),
-                    3.0,
-                    0.0,
-                )
-                reg_adj += np.where(
-                    (("ranging" in regime) or ("sideways" in bias))
-                    & setup.eq("EARLY BREAKOUT")
-                    & vol.lt(1.4),
-                    -2.0,
-                    0.0,
-                )
+                # FIX BUG 2: scalar regime flags extracted first so
+                # np.where receives a proper per-row boolean Series mask.
+                # Old code used (("bullish" in bias) or ...) directly inside
+                # np.where — a scalar True/False applied the same adj to ALL
+                # rows regardless of their individual setup/vol values.
+                is_bullish = bool("bullish" in bias or "trending up" in regime)
+                is_bearish = bool("bearish" in bias or "trending down" in regime)
+                is_ranging = bool("ranging" in regime or "sideways" in bias)
+
+                if is_bullish:
+                    reg_adj += np.where(
+                        setup.isin(["BREAKOUT READY", "EARLY BREAKOUT", "MOMENTUM CONTINUATION"]),
+                        3.0, 0.0,
+                    )
+                if is_bearish:
+                    reg_adj -= 3.0
+                    reg_adj += np.where(vol.lt(1.3), -2.0, 0.0)
+                if is_ranging:
+                    reg_adj += np.where(
+                        setup.isin(["RESISTANCE COMPRESSION", "SUPPORT BOUNCE"]) & base_tight.le(8.0),
+                        3.0, 0.0,
+                    )
+                    reg_adj += np.where(
+                        setup.eq("EARLY BREAKOUT") & vol.lt(1.4),
+                        -2.0, 0.0,
+                    )
                 mode7_final += reg_adj.clip(-5.0, 5.0)
         except (TypeError, ValueError):
             debug_log("Mode 7 regime adjustment failed", exc_info=True)
