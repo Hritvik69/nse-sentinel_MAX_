@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import threading
 from datetime import date, datetime, timedelta, timezone
 from io import StringIO
@@ -317,9 +318,22 @@ class FeatureDataManager:
         return self._prediction_dir(cache_day) / f"{self._normalize_sector(sector_name)}.json"
 
     def _compare_path(self, cache_day: date, symbols: list[str]) -> Path:
+        key = hashlib.sha256("|".join(self._normalize_compare_symbols(symbols)).encode("utf-8")).hexdigest()[:24]
+        return self._compare_dir(cache_day) / f"compare_{key}.json"
+
+    def _legacy_compare_path(self, cache_day: date, symbols: list[str]) -> Path:
         joined = "_".join(sorted(self._normalize_symbol(sym, append_nse_suffix=False) for sym in symbols if str(sym).strip()))
         safe = joined.replace("/", "_").replace(":", "_")
         return self._compare_dir(cache_day) / f"{safe}.json"
+
+    def _normalize_compare_symbols(self, symbols: list[str]) -> list[str]:
+        return sorted(
+            {
+                self._normalize_symbol(sym, append_nse_suffix=False)
+                for sym in symbols
+                if str(sym).strip()
+            }
+        )
 
     def _status_note(self, note: str = "", *, tt_cutoff: date | None = None) -> str:
         parts: list[str] = []
@@ -350,6 +364,35 @@ class FeatureDataManager:
         if raw.endswith("d"):
             return max(14, value)
         return 120
+
+    def _cache_covers_period(
+        self,
+        df: pd.DataFrame | None,
+        *,
+        period: str,
+        cache_day: date,
+        min_rows: int,
+    ) -> bool:
+        try:
+            if df is None or df.empty or len(df) < max(1, int(min_rows)):
+                return False
+            if str(period or "").strip().lower() in {"", "1d", "5d"}:
+                return True
+            required_days = self._period_lookback_days(period)
+            if required_days <= 14:
+                return True
+            idx = pd.to_datetime(df.index, errors="coerce")
+            if pd.isna(idx).any():
+                return False
+            first_day = idx.min().date()
+            last_day = idx.max().date()
+            if last_day > cache_day:
+                return False
+            span_days = max(0, (last_day - first_day).days)
+            tolerance = max(5, min(30, int(required_days * 0.15)))
+            return span_days >= max(0, required_days - tolerance)
+        except Exception:
+            return False
 
     def _ensure_day_dirs(self, cache_day: date) -> None:
         day_dir = self._day_dir(cache_day)
@@ -411,10 +454,14 @@ class FeatureDataManager:
         attrs = dict(getattr(normalized, "attrs", {}) or {})
         if cutoff is not None:
             try:
-                mask = pd.to_datetime(normalized.index).date <= cutoff
-                normalized = normalized.loc[mask].copy()
+                if _tt is not None and hasattr(_tt, "truncate_df"):
+                    normalized = _tt.truncate_df(normalized, cutoff, min_rows=min_rows)
+                else:
+                    return None
             except Exception:
-                pass
+                return None
+            if normalized is None:
+                return None
         normalized = self._coerce_frame(normalized, min_rows=min_rows)
         if normalized is None:
             return None
@@ -561,14 +608,44 @@ class FeatureDataManager:
     def _resolve_snapshot_path(self, symbol: str, cache_day: date) -> tuple[Path | None, date | None]:
         candidates = [cache_day] + [cache_day - timedelta(days=offset) for offset in range(1, 8)]
         for day in candidates:
+            if _dsm is not None and hasattr(_dsm, "snapshot_exists"):
+                try:
+                    if not bool(_dsm.snapshot_exists(day)):
+                        continue
+                except Exception:
+                    continue
             csv_path = _SCANNER_SNAPSHOT_ROOT / day.isoformat() / f"{symbol}.csv"
             if csv_path.exists():
                 return csv_path, day
         return None, None
 
+    def _snapshot_file_valid(self, csv_path: Path, snapshot_day: date) -> tuple[bool, str]:
+        meta_path = _SCANNER_SNAPSHOT_ROOT / snapshot_day.isoformat() / "_meta.json"
+        if not meta_path.exists():
+            return True, ""
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if not bool(meta.get("complete", False)):
+                return False, ""
+            checksums = meta.get("checksums", {})
+            saved_at = str(meta.get("captured_at", "") or "")
+            if isinstance(checksums, dict) and checksums:
+                expected = str(checksums.get(csv_path.name, "") or "")
+                if not expected:
+                    return False, saved_at
+                digest = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+                if digest != expected:
+                    return False, saved_at
+            return True, saved_at
+        except Exception:
+            return False, ""
+
     def _load_scanner_snapshot(self, symbol: str, cache_day: date, min_rows: int = 5) -> tuple[pd.DataFrame | None, str]:
         csv_path, snapshot_day = self._resolve_snapshot_path(symbol, cache_day)
         if csv_path is None or snapshot_day is None:
+            return None, ""
+        valid_snapshot, saved_at = self._snapshot_file_valid(csv_path, snapshot_day)
+        if not valid_snapshot:
             return None, ""
         try:
             df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
@@ -579,14 +656,6 @@ class FeatureDataManager:
             return None, ""
         df.attrs["_nse_data_source"] = "snapshot"
         df.attrs["_nse_market_date"] = snapshot_day.isoformat()
-        saved_at = ""
-        meta_path = _SCANNER_SNAPSHOT_ROOT / snapshot_day.isoformat() / "_meta.json"
-        try:
-            if meta_path.exists():
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                saved_at = str(meta.get("captured_at", "") or "")
-        except Exception:
-            saved_at = ""
         if saved_at:
             df.attrs["_nse_captured_at"] = saved_at
         return df, saved_at
@@ -629,6 +698,13 @@ class FeatureDataManager:
         if df is None:
             return None, payload
         if str(payload.get("interval", interval) or interval) != interval:
+            return None, payload
+        if not self._cache_covers_period(
+            df,
+            period=period,
+            cache_day=cache_day,
+            min_rows=min_rows,
+        ):
             return None, payload
         return df, payload
 
@@ -1043,18 +1119,26 @@ class FeatureDataManager:
 
     def load_compare_cache(self, symbols: list[str]) -> dict[str, Any] | None:
         cache_day = self._cache_day()
-        path = self._compare_path(cache_day, symbols)
+        normalized_symbols = self._normalize_compare_symbols(symbols)
+        paths = [self._compare_path(cache_day, symbols), self._legacy_compare_path(cache_day, symbols)]
         try:
-            if not path.exists():
-                return None
-            return json.loads(path.read_text(encoding="utf-8"))
+            for path in paths:
+                if not path.exists():
+                    continue
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload_symbols = payload.get("symbols", None) if isinstance(payload, dict) else None
+                if isinstance(payload_symbols, list) and self._normalize_compare_symbols(payload_symbols) != normalized_symbols:
+                    continue
+                return payload
         except Exception:
             return None
+        return None
 
     def save_compare_cache(self, symbols: list[str], payload: dict[str, Any]) -> None:
         cache_day = self._cache_day()
         self._ensure_day_dirs(cache_day)
         out = dict(payload)
+        out["symbols"] = self._normalize_compare_symbols(symbols)
         out.setdefault("saved_at", _now_ist().isoformat())
         out.setdefault("market_date", cache_day.isoformat())
         out.setdefault("window", get_current_window())

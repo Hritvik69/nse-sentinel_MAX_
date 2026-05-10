@@ -3583,11 +3583,11 @@ def _aura_fetch(symbol: str) -> "pd.DataFrame | None":
         if df is None or df.empty or cutoff is None:
             return df
         try:
-            mask = pd.to_datetime(df.index).date <= cutoff
-            t    = df.loc[mask]
-            return t if len(t) >= 10 else None
+            if _TIME_TRAVEL_OK and hasattr(_tt, "truncate_df"):
+                return _tt.truncate_df(df, cutoff, min_rows=10)
+            return None
         except Exception:
-            return df
+            return None
 
     # 1️⃣ Try ALL_DATA cache — _cut enforces cutoff even if not pre-truncated.
     # Note: after the get_df_for_ticker Bug 7 fix, the cached frame is already
@@ -6060,8 +6060,11 @@ def _save_tickers_to_gsheets(tickers: list) -> None:
         pass
 
 
-@st.cache_data(ttl=43200, show_spinner=False)
-def fetch_nse_tickers() -> list:
+class _DegradedTickerUniverse(Exception):
+    pass
+
+
+def _fetch_nse_tickers_uncached() -> tuple[list[str], bool]:
     # Keep the biggest known universe instead of letting a later
     # partial fetch shrink the scan list after cache/session expiry.
     best_known = _merge_ticker_lists(
@@ -6138,19 +6141,58 @@ def fetch_nse_tickers() -> list:
 
     if best_known:
         st.session_state["_ticker_master_list"] = best_known
-        _save_local_ticker_master(best_known)
+        st.session_state["_ticker_universe_degraded"] = len(best_known) < _TICKER_GOOD_COUNT
+        if len(best_known) >= _TICKER_GOOD_COUNT:
+            _save_local_ticker_master(best_known)
         _prev_gs_count = int(st.session_state.get("_gsheets_saved_ticker_count", 0) or 0)
         if len(best_known) >= _TICKER_GOOD_COUNT and len(best_known) > _prev_gs_count:
             _save_tickers_to_gsheets(best_known)
             st.session_state["_gsheets_saved_ticker_count"] = len(best_known)
 
-    return best_known
+    degraded = len(best_known) < _TICKER_GOOD_COUNT
+    return best_known, degraded
+
+
+@st.cache_data(ttl=43200, show_spinner=False)
+def _fetch_authoritative_nse_tickers() -> list[str]:
+    tickers, degraded = _fetch_nse_tickers_uncached()
+    if degraded:
+        raise _DegradedTickerUniverse
+    return tickers
+
+
+def fetch_nse_tickers() -> list[str]:
+    try:
+        tickers = _fetch_authoritative_nse_tickers()
+        st.session_state["_ticker_universe_degraded"] = False
+        return tickers
+    except _DegradedTickerUniverse:
+        tickers, degraded = _fetch_nse_tickers_uncached()
+        st.session_state["_ticker_universe_degraded"] = degraded
+        return tickers
+    except Exception:
+        st.session_state["_ticker_universe_degraded"] = True
+        return []
 
 
 def _get_cached_nse_tickers(*, show_spinner: bool = False, force_refresh: bool = False) -> list[str]:
     try:
         if force_refresh:
+            try:
+                _fetch_authoritative_nse_tickers.clear()
+            except Exception:
+                pass
+            try:
+                from nse_ticker_universe import invalidate_cache as _invalidate_universe_cache
+
+                try:
+                    _invalidate_universe_cache(clear_disk=True)
+                except TypeError:
+                    _invalidate_universe_cache()
+            except Exception:
+                pass
             st.session_state.pop("_ui_all_tickers", None)
+            st.session_state.pop("_ticker_master_list", None)
         cached = st.session_state.get("_ui_all_tickers", [])
         if isinstance(cached, list) and cached:
             return list(cached)
@@ -8651,6 +8693,15 @@ with st.sidebar:
         )
         if st.button("🔄 Restore Full Ticker List", key="restore_full_ticker_list_btn"):
             st.cache_data.clear()
+            try:
+                from nse_ticker_universe import invalidate_cache as _invalidate_universe_cache
+
+                try:
+                    _invalidate_universe_cache(clear_disk=True)
+                except TypeError:
+                    _invalidate_universe_cache()
+            except Exception:
+                pass
             st.session_state.pop("_ticker_master_list", None)
             st.session_state.pop("_ui_all_tickers", None)
             _invalidate_sidebar_data_status_cache()
@@ -8825,6 +8876,13 @@ if _tt_banner and _show_home_scanner:
         f'{_tt_banner}</div>',
         unsafe_allow_html=True,
     )
+
+if main_scan_clicked:
+    if st.session_state.get("_main_scan_running", False):
+        st.warning("A market scan is already running. Please wait for it to finish.")
+        main_scan_clicked = False
+    else:
+        st.session_state["_main_scan_running"] = True
 
 if main_scan_clicked:
     st.caption(f"⏳ Scanning {n:,} NSE Equities - Mode {mode_display['display_num']}: {mode_display['display_name']}")
@@ -9061,6 +9119,7 @@ if main_scan_clicked:
     try:
         results, elapsed = run_scan(scan_tickers, mode, workers=workers)
     finally:
+        st.session_state.pop("_main_scan_running", None)
         # Always restore — even if scan raised an exception
         if _tt_active_date is not None and _TIME_TRAVEL_OK:
             _tt.restore()
@@ -10032,6 +10091,13 @@ else:
 
     # Execute the battle pipeline only when the sidebar requested it.
     if isinstance(_battle_request_tickers, list) and _battle_request_tickers:
+        if st.session_state.get("_battle_analysis_running", False):
+            st.warning("Battle analysis is already running. Please wait for it to finish.")
+            _battle_request_tickers = None
+        else:
+            st.session_state["_battle_analysis_running"] = True
+
+    if isinstance(_battle_request_tickers, list) and _battle_request_tickers:
         with st.spinner(f"⚔️ Analysing {len(_battle_request_tickers)} stock(s)…"):
             # ── 🕰️ Activate time-travel for battle if toggle is on ─────
             _tt_battle_date = st.session_state.get("tt_date_val")
@@ -10090,6 +10156,7 @@ else:
                 st.session_state["battle_results_df"] = pd.DataFrame()
                 st.session_state["battle_source_statuses"] = []
             finally:
+                st.session_state.pop("_battle_analysis_running", None)
                 st.session_state["battle_tickers_request"] = None
                 if _tt_battle_date is not None and _TIME_TRAVEL_OK:
                     _tt.restore()

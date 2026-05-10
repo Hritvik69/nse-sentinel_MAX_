@@ -5,6 +5,8 @@ import hashlib
 import logging
 import shutil
 import tempfile
+import threading
+import uuid
 import zipfile
 from functools import lru_cache
 from datetime import date, datetime, time as dtime, timedelta, timezone
@@ -29,6 +31,7 @@ _FRAME_DATE_ATTR = "_nse_market_date"
 _FRAME_WINDOW_ATTR = "_nse_window"
 _FRAME_CAPTURED_AT_ATTR = "_nse_captured_at"
 _LOG = logging.getLogger(__name__)
+_SNAPSHOT_SAVE_LOCK = threading.RLock()
 
 
 def _invalidate_snapshot_caches() -> None:
@@ -69,28 +72,44 @@ def _restore_snapshot_archive_if_available() -> None:
 
 
 def _archive_latest_snapshot(snap_dir: Path) -> None:
+    tmp_path: Path | None = None
     try:
         if not snap_dir.exists() or not snap_dir.is_dir():
             return
-        _SNAPSHOT_ARCHIVE.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = _SNAPSHOT_ARCHIVE.with_suffix(".zip.tmp")
-        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for path in snap_dir.rglob("*"):
-                if not path.is_file():
-                    continue
-                if not (path.name.endswith(".csv") or path.name == "_meta.json"):
-                    continue
-                archive.write(path, arcname=str(Path(snap_dir.name) / path.relative_to(snap_dir)))
-        tmp_path.replace(_SNAPSHOT_ARCHIVE)
-        try:
-            from persistent_store import push_file
+        with _SNAPSHOT_SAVE_LOCK:
+            _SNAPSHOT_ARCHIVE.parent.mkdir(parents=True, exist_ok=True)
+            handle = tempfile.NamedTemporaryFile(
+                prefix=f".{_SNAPSHOT_ARCHIVE.stem}.",
+                suffix=".zip.tmp",
+                dir=str(_SNAPSHOT_ARCHIVE.parent),
+                delete=False,
+            )
+            tmp_path = Path(handle.name)
+            handle.close()
+            with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for path in snap_dir.rglob("*"):
+                    if not path.is_file():
+                        continue
+                    if not (path.name.endswith(".csv") or path.name == "_meta.json"):
+                        continue
+                    archive.write(path, arcname=str(Path(snap_dir.name) / path.relative_to(snap_dir)))
+            tmp_path.replace(_SNAPSHOT_ARCHIVE)
+            tmp_path = None
+            try:
+                from persistent_store import push_file
 
-            if not push_file(_SNAPSHOT_ARCHIVE):
-                _LOG.error("snapshot archive sync queueing failed")
-        except Exception:
-            _LOG.exception("snapshot archive sync failed")
+                if not push_file(_SNAPSHOT_ARCHIVE):
+                    _LOG.error("snapshot archive sync queueing failed")
+            except Exception:
+                _LOG.exception("snapshot archive sync failed")
     except Exception:
         _LOG.exception("snapshot archive creation failed")
+    finally:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 def _snapshot_meta_path(market_date) -> Path:
@@ -604,46 +623,55 @@ def _cleanup_old_snapshots(reference_date: date) -> None:
 
 
 def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool = False) -> int:
+    temp_dir: Path | None = None
+    old_dir: Path | None = None
     try:
         snap_day = _coerce_date(market_date)
         current_window = get_current_window()
         if current_window not in {"CLOSED", "WEEKEND"}:
             return 0
-        if snapshot_exists(snap_day):
-            return 0
         if not isinstance(ALL_DATA, dict) or not ALL_DATA:
             return 0
 
-        snap_dir = get_snapshot_path(snap_day)
-        snap_dir.parent.mkdir(parents=True, exist_ok=True)
-        temp_dir = Path(
-            tempfile.mkdtemp(
-                prefix=f".{snap_day.isoformat()}.",
-                suffix=".tmp",
-                dir=str(snap_dir.parent),
+        with _SNAPSHOT_SAVE_LOCK:
+            if snapshot_exists(snap_day):
+                return 0
+
+            snap_dir = get_snapshot_path(snap_day)
+            snap_dir.parent.mkdir(parents=True, exist_ok=True)
+            temp_dir = Path(
+                tempfile.mkdtemp(
+                    prefix=f".{snap_day.isoformat()}.",
+                    suffix=".tmp",
+                    dir=str(snap_dir.parent),
+                )
             )
-        )
 
-        saved = 0
-        checksums: dict[str, str] = {}
-        for ticker, df in ALL_DATA.items():
-            try:
-                if df is None or df.empty or not isinstance(df, pd.DataFrame):
+            saved = 0
+            checksums: dict[str, str] = {}
+            for ticker, df in ALL_DATA.items():
+                try:
+                    if df is None or df.empty or not isinstance(df, pd.DataFrame):
+                        continue
+                    if require_live_source and not get_frame_source(df).startswith("live"):
+                        continue
+                    last_seen = pd.to_datetime(df.index[-1]).date()
+                    if last_seen != snap_day:
+                        continue
+                    safe_name = str(ticker).replace(":", "_").replace("/", "_")
+                    out_path = temp_dir / f"{safe_name}.csv"
+                    atomic_write_csv_df(out_path, df.sort_index())
+                    checksums[out_path.name] = _file_sha256(out_path)
+                    saved += 1
+                except Exception:
                     continue
-                if require_live_source and not get_frame_source(df).startswith("live"):
-                    continue
-                last_seen = pd.to_datetime(df.index[-1]).date()
-                if last_seen != snap_day:
-                    continue
-                safe_name = str(ticker).replace(":", "_").replace("/", "_")
-                out_path = temp_dir / f"{safe_name}.csv"
-                atomic_write_csv_df(out_path, df.sort_index())
-                checksums[out_path.name] = _file_sha256(out_path)
-                saved += 1
-            except Exception:
-                continue
 
-        if saved > 0:
+            if saved <= 0:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                temp_dir = None
+                _cleanup_old_snapshots(snap_day)
+                return 0
+
             meta = {
                 "market_date": snap_day.isoformat(),
                 "captured_at": _now_ist().isoformat(),
@@ -655,21 +683,44 @@ def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool
             }
             atomic_write_json(temp_dir / "_meta.json", meta, indent=2)
             if snap_dir.exists():
-                old_dir = snap_dir.with_name(f".{snap_dir.name}.partial-{int(datetime.now().timestamp())}")
+                old_dir = snap_dir.with_name(f".{snap_dir.name}.partial-{int(datetime.now().timestamp())}-{uuid.uuid4().hex[:8]}")
                 try:
                     snap_dir.replace(old_dir)
                 except Exception:
                     shutil.rmtree(snap_dir, ignore_errors=True)
             temp_dir.replace(snap_dir)
+            temp_dir = None
             _archive_latest_snapshot(snap_dir)
             _invalidate_snapshot_caches()
-        else:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            if old_dir is not None:
+                shutil.rmtree(old_dir, ignore_errors=True)
+                old_dir = None
 
-        _cleanup_old_snapshots(snap_day)
-        return saved
+            _cleanup_old_snapshots(snap_day)
+            return saved
     except Exception:
         return 0
+    finally:
+        if temp_dir is not None:
+            try:
+                parent = temp_dir.parent.resolve()
+                expected_parent = get_snapshot_path(market_date).parent.resolve()
+                if parent == expected_parent and temp_dir.name.startswith(f".{_coerce_date(market_date).isoformat()}."):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+        if old_dir is not None:
+            try:
+                snap_dir = get_snapshot_path(market_date)
+                parent = old_dir.parent.resolve()
+                expected_parent = snap_dir.parent.resolve()
+                if parent == expected_parent and old_dir.name.startswith(f".{_coerce_date(market_date).isoformat()}.partial-"):
+                    if snap_dir.exists():
+                        shutil.rmtree(old_dir, ignore_errors=True)
+                    elif old_dir.exists():
+                        old_dir.replace(snap_dir)
+            except Exception:
+                pass
 
 
 def load_snapshot_into_ALL_DATA(market_date) -> int:

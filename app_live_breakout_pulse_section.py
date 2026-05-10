@@ -92,6 +92,24 @@ def _signal_badge(sig: str) -> str:
     )
 
 
+_PRICE_DISPLAY_COL = "Price (\u20b9)"
+_PRICE_ALIAS_COLS = (
+    _PRICE_DISPLAY_COL,
+    "Price (\u00e2\u201a\u00b9)",
+    "Price (\u00c3\u00a2\u00e2\u20ac\u0161\u00c2\u00b9)",
+)
+
+
+def _with_live_pulse_display_aliases(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if _PRICE_DISPLAY_COL not in out.columns:
+        for alias in _PRICE_ALIAS_COLS:
+            if alias in out.columns:
+                out[_PRICE_DISPLAY_COL] = out[alias]
+                break
+    return out
+
+
 def _start_scan_feedback(label: str):
     progress_bar = st.progress(0.0)
     col_a, col_b = st.columns([3, 1])
@@ -257,7 +275,12 @@ def render_live_breakout_pulse(
         )
 
     # ── Trigger scan ─────────────────────────────────────────────────
+    if _run_scan_now and st.session_state.get("_live_pulse_scan_running", False):
+        st.warning("Live Breakout Pulse is already running. Please wait for it to finish.")
+        _run_scan_now = False
+
     if _run_scan_now:
+        st.session_state["_live_pulse_scan_running"] = True
         _pb, _status_box, _meta_box, _started_at = _start_scan_feedback(
             "Preparing live breakout scan..."
         )
@@ -310,6 +333,7 @@ def render_live_breakout_pulse(
                 _latest_total if _latest_total > 0 else _latest_done,
                 _latest_found,
             )
+            st.session_state.pop("_live_pulse_scan_running", None)
 
     # ── Retrieve stored results ───────────────────────────────────────
     pulse_df        = st.session_state.get("live_pulse_results_df", pd.DataFrame())
@@ -386,6 +410,7 @@ def render_live_breakout_pulse(
     if "Final Score" in top_pulse_df.columns:
         top_pulse_df = top_pulse_df.sort_values("Final Score", ascending=False).reset_index(drop=True)
     top_pulse_df = apply_trade_decision_simple_any(top_pulse_df.copy())
+    top_pulse_df = _with_live_pulse_display_aliases(top_pulse_df)
     top_pulse_df = top_pulse_df.head(3).copy()
     top_pulse_symbols = []
     if "Symbol" in top_pulse_df.columns:
@@ -405,6 +430,8 @@ def render_live_breakout_pulse(
         "Hold Days",
         "Chart Link",
     ]
+    if _PRICE_DISPLAY_COL in top_pulse_df.columns and _PRICE_DISPLAY_COL not in top_pulse_cols:
+        top_pulse_cols.insert(3, _PRICE_DISPLAY_COL)
     top_pulse_cols = [col for col in top_pulse_cols if col in top_pulse_df.columns]
     if not top_pulse_df.empty and top_pulse_cols:
         st.markdown('<h3 style="margin-bottom:6px;">Top 3 Breakout Stocks</h3>', unsafe_allow_html=True)
@@ -415,6 +442,7 @@ def render_live_breakout_pulse(
                 "Symbol": st.column_config.TextColumn("Ticker"),
                 "Final Score": st.column_config.NumberColumn("Score", format="%.1f"),
                 "Signal": st.column_config.TextColumn("Signal"),
+                _PRICE_DISPLAY_COL: st.column_config.NumberColumn(_PRICE_DISPLAY_COL, format="\u20b9%.2f"),
                 "RSI": st.column_config.NumberColumn("RSI", format="%.1f"),
                 "Vol / Avg": st.column_config.NumberColumn("Vol/Avg", format="%.2fx"),
                 "Chart Link": st.column_config.LinkColumn("Chart", display_text="Open Chart"),
@@ -480,6 +508,7 @@ def render_live_breakout_pulse(
     # ── Column config (shared) ────────────────────────────────────────
     _col_cfg = {
         "Symbol":           st.column_config.TextColumn("Ticker"),
+        _PRICE_DISPLAY_COL:  st.column_config.NumberColumn(_PRICE_DISPLAY_COL, format="\u20b9%.2f"),
         "Price (₹)":        st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
         "RSI":              st.column_config.NumberColumn("RSI", format="%.1f"),
         "Vol / Avg":        st.column_config.NumberColumn("Vol/Avg", format="%.2f×"),
@@ -499,6 +528,7 @@ def render_live_breakout_pulse(
             st.info("No stocks in this category.")
             return
         display_data = apply_trade_decision_simple_any(data.copy())
+        display_data = _with_live_pulse_display_aliases(display_data)
         st.caption(
             f"Showing top {_VISIBLE_RESULT_LIMIT} of {len(data)} results in this tab. Download keeps all rows."
         )

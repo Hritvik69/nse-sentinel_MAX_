@@ -26,6 +26,7 @@ import queue as _queue
 import threading
 import time as _time
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from atomic_io import atomic_write_bytes
@@ -204,12 +205,200 @@ def _gh_put(secrets: dict, path: str, content_bytes: bytes, sha: str | None = No
     return bool(_gh_put_status(secrets, path, content_bytes, sha).get("ok"))
 
 
-def _merge_csv_bytes(remote_bytes: bytes, local_bytes: bytes) -> bytes | None:
+_CSV_KEY_COLUMNS = {
+    "prediction_feedback_log.csv": (
+        "prediction_id",
+        ("symbol", "mode", "market_date", "import_source", "prediction_direction"),
+    ),
+    "tomorrow_master_predictions.csv": (
+        "",
+        ("ticker", "direction", "computed_at"),
+    ),
+    "sector_prediction_log.csv": (
+        "prediction_id",
+        ("sector", "market_date", "ohlc_source", "prediction_direction"),
+    ),
+    "sector_predictions.csv": (
+        "prediction_id",
+        ("sector", "market_date", "ohlc_source", "prediction_direction"),
+    ),
+    "sector_signal_performance.csv": (
+        "",
+        ("signal_name",),
+    ),
+}
+
+_VALIDATION_COLUMNS = {
+    "actual_next_return_pct",
+    "actual_return",
+    "correct",
+    "outcome_label",
+    "validated_at",
+    "validated_on",
+    "validation_date",
+    "validation_status",
+    "final_status",
+    "exit_price",
+    "return_pct",
+    "target_policy_version",
+}
+
+
+def _is_blank(value: object) -> bool:
     try:
-        remote = pd.read_csv(BytesIO(remote_bytes), dtype=str)
-        local = pd.read_csv(BytesIO(local_bytes), dtype=str)
-        merged = pd.concat([remote, local], ignore_index=True, sort=False)
-        merged = merged.drop_duplicates(keep="last")
+        if value is None:
+            return True
+        if pd.isna(value):
+            return True
+    except Exception:
+        pass
+    return str(value).strip() in ("", "nan", "None", "NaT")
+
+
+def _read_csv_bytes(content: bytes) -> pd.DataFrame:
+    return pd.read_csv(BytesIO(content), dtype=str, keep_default_na=False)
+
+
+def _normalise_key_value(value: object) -> str:
+    text = "" if _is_blank(value) else str(value).strip()
+    return text.upper() if text.endswith(".NS") else text
+
+
+def _logical_csv_key(row: pd.Series | dict, id_column: str, tuple_columns: tuple[str, ...]) -> tuple[str, ...]:
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    if id_column:
+        pid = getter(id_column, "")
+        if not _is_blank(pid):
+            return ("id", str(pid).strip())
+    values: list[str] = []
+    for col in tuple_columns:
+        value = getter(col, "")
+        if col == "market_date" and _is_blank(value):
+            try:
+                logged_at = getter("logged_at", getter("predicted_at", ""))
+                parsed = pd.to_datetime(logged_at, errors="coerce")
+                if not pd.isna(parsed):
+                    value = parsed.date().isoformat()
+            except Exception:
+                value = ""
+        values.append(_normalise_key_value(value))
+    return tuple(["logical"] + values)
+
+
+def _row_nonempty_count(row: pd.Series | dict) -> int:
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    try:
+        keys = list(row.keys())  # type: ignore[union-attr]
+    except Exception:
+        keys = []
+    return sum(0 if _is_blank(getter(key, "")) else 1 for key in keys)
+
+
+def _merge_row_values(existing: dict[str, object], incoming: dict[str, object]) -> dict[str, object]:
+    merged = dict(existing)
+    for col in set(existing) | set(incoming):
+        old = merged.get(col, "")
+        new = incoming.get(col, "")
+        if col in _VALIDATION_COLUMNS:
+            if _is_blank(old) and not _is_blank(new):
+                merged[col] = new
+            elif not _is_blank(old):
+                merged[col] = old
+            else:
+                merged[col] = new
+            continue
+        if not _is_blank(new):
+            merged[col] = new
+        elif col not in merged:
+            merged[col] = ""
+    return merged
+
+
+def _merge_signal_performance(remote: pd.DataFrame, local: pd.DataFrame) -> pd.DataFrame:
+    columns = list(dict.fromkeys(list(remote.columns) + list(local.columns)))
+    rows: dict[str, dict[str, object]] = {}
+
+    def _float(row: dict[str, object], key: str, default: float = 0.0) -> float:
+        try:
+            value = float(row.get(key, default) or default)
+            return value if pd.notna(value) else default
+        except Exception:
+            return default
+
+    for _, row in pd.concat([remote, local], ignore_index=True, sort=False).iterrows():
+        item = {col: row.get(col, "") for col in columns}
+        signal = str(item.get("signal_name", "") or "").strip()
+        if not signal:
+            continue
+        current = rows.get(signal)
+        if current is None:
+            rows[signal] = item
+            continue
+        old_obs = _float(current, "observations")
+        new_obs = _float(item, "observations")
+        if new_obs > old_obs or (new_obs == old_obs and _row_nonempty_count(item) >= _row_nonempty_count(current)):
+            merged = _merge_row_values(current, item)
+        else:
+            merged = _merge_row_values(item, current)
+        obs = max(_float(current, "observations"), _float(item, "observations"))
+        wins = max(_float(current, "wins"), _float(item, "wins"))
+        merged["observations"] = str(int(obs)) if obs.is_integer() else str(obs)
+        merged["wins"] = str(int(wins)) if wins.is_integer() else str(wins)
+        if obs > 0:
+            merged["win_rate"] = f"{wins / obs:.4f}"
+        rows[signal] = merged
+
+    return pd.DataFrame(list(rows.values()), columns=columns)
+
+
+def _merge_keyed_csv(remote: pd.DataFrame, local: pd.DataFrame, *, id_column: str, tuple_columns: tuple[str, ...]) -> pd.DataFrame:
+    columns = list(dict.fromkeys(list(remote.columns) + list(local.columns)))
+    by_key: dict[tuple[str, ...], dict[str, object]] = {}
+    order: list[tuple[str, ...]] = []
+
+    for _, row in pd.concat([remote, local], ignore_index=True, sort=False).iterrows():
+        item = {col: row.get(col, "") for col in columns}
+        key = _logical_csv_key(item, id_column, tuple_columns)
+        if key not in by_key:
+            by_key[key] = item
+            order.append(key)
+            continue
+        by_key[key] = _merge_row_values(by_key[key], item)
+
+    return pd.DataFrame([by_key[key] for key in order], columns=columns)
+
+
+def _merge_generic_csv(remote: pd.DataFrame, local: pd.DataFrame) -> pd.DataFrame:
+    merged = pd.concat([remote, local], ignore_index=True, sort=False)
+    return merged.drop_duplicates(keep="last")
+
+
+def _can_key_csv(remote: pd.DataFrame, local: pd.DataFrame, *, id_column: str, tuple_columns: tuple[str, ...]) -> bool:
+    columns = set(remote.columns) | set(local.columns)
+    if tuple_columns and all(col in columns for col in tuple_columns):
+        return True
+    if id_column and id_column in columns:
+        combined = pd.concat([remote, local], ignore_index=True, sort=False)
+        return not combined[id_column].map(_is_blank).any()
+    return False
+
+
+def _merge_csv_bytes(remote_path: str, remote_bytes: bytes, local_bytes: bytes) -> bytes | None:
+    try:
+        remote = _read_csv_bytes(remote_bytes)
+        local = _read_csv_bytes(local_bytes)
+        file_name = Path(remote_path).name
+        key_spec = _CSV_KEY_COLUMNS.get(file_name)
+        if file_name == "sector_signal_performance.csv":
+            merged = _merge_signal_performance(remote, local)
+        elif key_spec is not None:
+            id_column, tuple_columns = key_spec
+            if _can_key_csv(remote, local, id_column=id_column, tuple_columns=tuple_columns):
+                merged = _merge_keyed_csv(remote, local, id_column=id_column, tuple_columns=tuple_columns)
+            else:
+                merged = _merge_generic_csv(remote, local)
+        else:
+            merged = _merge_generic_csv(remote, local)
         buf = StringIO()
         merged.to_csv(buf, index=False)
         return buf.getvalue().encode("utf-8")
@@ -217,27 +406,58 @@ def _merge_csv_bytes(remote_bytes: bytes, local_bytes: bytes) -> bytes | None:
         return None
 
 
+def _merge_list_items(remote: list[Any], local: list[Any]) -> list[Any]:
+    if all(isinstance(item, dict) and "ticker" in item for item in remote + local):
+        merged_by_ticker: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for item in remote + local:
+            key = str(item.get("ticker", "") or "").strip().upper()
+            if not key:
+                key = json.dumps(item, sort_keys=True, ensure_ascii=True)
+            if key not in merged_by_ticker:
+                merged_by_ticker[key] = dict(item)
+                order.append(key)
+            else:
+                merged_by_ticker[key] = _merge_json_values(merged_by_ticker[key], item)
+        return [merged_by_ticker[key] for key in order]
+
+    seen: set[str] = set()
+    merged: list[Any] = []
+    for item in remote + local:
+        key = json.dumps(item, sort_keys=True, ensure_ascii=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
+def _merge_json_values(remote: Any, local: Any) -> Any:
+    if isinstance(remote, dict) and isinstance(local, dict):
+        out = dict(remote)
+        for key, local_value in local.items():
+            if key in out:
+                out[key] = _merge_json_values(out[key], local_value)
+            elif not _is_blank(local_value):
+                out[key] = local_value
+            else:
+                out[key] = local_value
+        return out
+    if isinstance(remote, list) and isinstance(local, list):
+        return _merge_list_items(remote, local)
+    if _is_blank(local) and not _is_blank(remote):
+        return remote
+    return local
+
+
 def _merge_json_bytes(remote_bytes: bytes, local_bytes: bytes) -> bytes | None:
     try:
         remote = json.loads(remote_bytes.decode("utf-8"))
         local = json.loads(local_bytes.decode("utf-8"))
-        if isinstance(remote, list) and isinstance(local, list):
-            seen: set[str] = set()
-            merged = []
-            for item in remote + local:
-                key = json.dumps(item, sort_keys=True, ensure_ascii=True)
-                if key in seen:
-                    continue
-                seen.add(key)
-                merged.append(item)
-            return json.dumps(merged, ensure_ascii=True, indent=2).encode("utf-8")
-        if isinstance(remote, dict) and isinstance(local, dict):
-            merged = dict(remote)
-            merged.update(local)
-            return json.dumps(merged, ensure_ascii=True, indent=2).encode("utf-8")
+        merged = _merge_json_values(remote, local)
+        return json.dumps(merged, ensure_ascii=True, indent=2).encode("utf-8")
     except Exception:
         return None
-    return None
 
 
 def _merge_remote_local(remote_path: str, remote_bytes: bytes | None, local_bytes: bytes) -> bytes | None:
@@ -245,7 +465,7 @@ def _merge_remote_local(remote_path: str, remote_bytes: bytes | None, local_byte
         return None
     suffix = Path(remote_path).suffix.lower()
     if suffix == ".csv":
-        return _merge_csv_bytes(remote_bytes, local_bytes)
+        return _merge_csv_bytes(remote_path, remote_bytes, local_bytes)
     if suffix == ".json":
         return _merge_json_bytes(remote_bytes, local_bytes)
     return None
@@ -376,7 +596,15 @@ def pull_all() -> int:
                 raw = _gh_get_raw(secrets, remote_path)
                 if raw is None:
                     continue
-            atomic_write_bytes(_DATA_DIR / local_name, raw)
+            local_path = _DATA_DIR / local_name
+            if local_path.exists() and Path(remote_path).suffix.lower() in {".csv", ".json"}:
+                local_bytes = local_path.read_bytes()
+                merged = _merge_remote_local(remote_path, raw, local_bytes)
+                if merged is None:
+                    _LOG.error("persistent_store: pull merge failed for %s; keeping local file", remote_path)
+                    continue
+                raw = merged
+            atomic_write_bytes(local_path, raw)
             pulled += 1
         except Exception as exc:
             _LOG.error("persistent_store: pull failed for %s: %s", remote_path, str(exc)[:160])

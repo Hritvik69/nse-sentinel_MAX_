@@ -230,7 +230,12 @@ def _render_breakout_radar_tab(
         return
 
     _scan_now = bool(scan_clicked)
+    if _scan_now and st.session_state.get("_radar_scan_running", False):
+        st.warning("Breakout Radar is already running. Please wait for it to finish.")
+        _scan_now = False
+
     if _scan_now:
+        st.session_state["_radar_scan_running"] = True
         _pb, _status_box, _meta_box, _started_at = _start_scan_feedback(
             "Preparing breakout-radar scan..."
         )
@@ -275,6 +280,7 @@ def _render_breakout_radar_tab(
                 _latest_found,
                 "setups",
             )
+            st.session_state.pop("_radar_scan_running", None)
         scan_clicked = False
 
     if scan_clicked:
@@ -553,7 +559,12 @@ def _render_csv_next_day_tab(
         return
 
     _scan_now = bool(scan_clicked)
+    if _scan_now and st.session_state.get("_csv_next_day_scan_running", False):
+        st.warning("CSV probability scan is already running. Please wait for it to finish.")
+        _scan_now = False
+
     if _scan_now:
+        st.session_state["_csv_next_day_scan_running"] = True
         _pb, _status_box, _meta_box, _started_at = _start_scan_feedback(
             "Preparing CSV probability scan..."
         )
@@ -603,6 +614,7 @@ def _render_csv_next_day_tab(
                 _latest_found,
                 "buy-ready",
             )
+            st.session_state.pop("_csv_next_day_scan_running", None)
         scan_clicked = False
 
     if scan_clicked:
