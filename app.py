@@ -4865,9 +4865,9 @@ def render_tomorrow_picks_panel() -> None:
 def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
     store, _storage_mode = _load_tomorrow_store()
     sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
-    container_margin_top = "0px" if embedded else "-66px"
+    container_margin_top = "0px" if embedded else "-12px"
     container_margin_bottom = "14px" if embedded else "2px"
-    shell_margin = "0 0 18px 0" if embedded else "-18px 0 8px 0"
+    shell_margin = "0 0 18px 0" if embedded else "0 0 8px 0"
     mobile_container_margin_top = "0px" if embedded else "-18px"
     mobile_shell_margin = "0 0 14px 0" if embedded else "-8px 0 8px 0"
 
@@ -4881,7 +4881,7 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
         .tmr-board-shell {
           border:1px solid rgba(86,118,150,0.34);
           border-radius:18px;
-          padding:12px 14px 10px 14px;
+          padding:0;
           background:
             radial-gradient(circle at top right, rgba(240,180,41,0.12), transparent 26%),
             linear-gradient(180deg, rgba(10,17,27,0.97), rgba(6,10,17,0.99));
@@ -4889,14 +4889,28 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
             0 14px 28px rgba(0,0,0,0.16),
             inset 0 0 0 1px rgba(255,255,255,0.02);
           margin:__SHELL_MARGIN__;
+          overflow:hidden;
         }
-        .tmr-board-header {
+        .tmr-board-shell > summary {
+          list-style:none;
+        }
+        .tmr-board-shell > summary::-webkit-details-marker {
+          display:none;
+        }
+        .tmr-board-summary {
           display:flex;
           align-items:center;
           justify-content:space-between;
           gap:10px;
           flex-wrap:wrap;
-          margin-bottom:8px;
+          min-height:48px;
+          padding:12px 14px;
+          cursor:pointer;
+          user-select:none;
+          outline:none;
+        }
+        .tmr-board-summary:focus-visible {
+          box-shadow:inset 0 0 0 2px rgba(240,180,41,0.46);
         }
         .tmr-board-title {
           font-family:'Syne',sans-serif;
@@ -4906,7 +4920,47 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
           text-transform:uppercase;
           color:#f0b429;
         }
+        .tmr-board-shutter {
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          min-height:26px;
+          padding:4px 8px;
+          border-radius:999px;
+          border:1px solid rgba(240,180,41,0.38);
+          background:rgba(240,180,41,0.08);
+          color:#f0b429;
+          font-size:10px;
+          font-weight:800;
+          letter-spacing:0.6px;
+          text-transform:uppercase;
+        }
+        .tmr-board-toggle-text::after {
+          content:"Show";
+        }
+        .tmr-board-shell[open] .tmr-board-toggle-text::after {
+          content:"Hide";
+        }
+        .tmr-board-arrow {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          width:16px;
+          height:16px;
+        }
+        .tmr-board-arrow::before {
+          content:">";
+          transform:rotate(0deg);
+          transition:transform 0.16s ease;
+        }
+        .tmr-board-shell[open] .tmr-board-arrow::before {
+          transform:rotate(90deg);
+        }
+        .tmr-board-body {
+          padding:0 14px 10px 14px;
+        }
         .tmr-board-copy {
+          margin:-2px 0 8px 0;
           font-size:11px;
           color:#88a8c7;
         }
@@ -4919,6 +4973,10 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
           border-top:1px solid rgba(42,61,86,0.46);
         }
         .tmr-board-row:first-of-type {
+          border-top:none;
+          padding-top:0;
+        }
+        .tmr-board-copy + .tmr-board-row {
           border-top:none;
           padding-top:0;
         }
@@ -5058,13 +5116,19 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
 
     st.markdown(
         (
-            '<div class="tmr-board-shell">'
-            '<div class="tmr-board-header">'
-            '<div class="tmr-board-title">Tomorrow\'s Picks</div>'
+            '<details class="tmr-board-shell">'
+            '<summary class="tmr-board-summary" aria-label="Toggle Tomorrow\'s Picks">'
+            '<span class="tmr-board-title">Tomorrow\'s Picks</span>'
+            '<span class="tmr-board-shutter" aria-hidden="true">'
+            '<span class="tmr-board-toggle-text"></span>'
+            '<span class="tmr-board-arrow"></span>'
+            '</span>'
+            '</summary>'
+            '<div class="tmr-board-body">'
             '<div class="tmr-board-copy">Compact 4-lane view: Relax, Swing, Intraday, Breakout.</div>'
-            '</div>'
             + "".join(rows_html)
             + '</div>'
+            + '</details>'
         ),
         unsafe_allow_html=True,
     )
