@@ -4,6 +4,7 @@ Small reusable helpers for mode parsing and mode metadata access.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 from strategy_engines.constants import MODE_ID_COLUMN
@@ -66,10 +67,20 @@ def resolve_mode_id(value: object, default: int | None = None) -> int | None:
     raw = str(value or "").strip().lower()
     if not raw:
         return default
+    explicit = re.search(r"\bmode\s*[-#:]*\s*(\d+)\b", raw)
+    if explicit:
+        mode_id = int(explicit.group(1))
+        if mode_id in MODE_METADATA:
+            return mode_id
+    shorthand = re.search(r"\bm\s*[-#:]*\s*(\d+)\b", raw)
+    if shorthand:
+        mode_id = int(shorthand.group(1))
+        if mode_id in MODE_METADATA:
+            return mode_id
     labels = _reverse_label_map()
     if raw in labels:
         return labels[raw]
-    for label, mode in labels.items():
+    for label, mode in sorted(labels.items(), key=lambda item: len(item[0]), reverse=True):
         if label and label in raw:
             return mode
     return default

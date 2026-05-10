@@ -1057,6 +1057,7 @@ from strategy_engines.mode_registry import (
     get_mode_metadata,
     get_mode_pill_classes,
 )
+from strategy_engines.mode_helpers import resolve_mode_id
 try:
     import strategy_engines._engine_utils as _engine_utils  # type: ignore[import]
 except Exception:
@@ -1340,7 +1341,7 @@ _TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
 _IMPORTED_AI_STORE_PATH = Path(_HERE) / "data" / "imported_ai_learning_store.json"
 _TICKER_MASTER_STORE_PATH = Path(_HERE) / "data" / "ticker_master_list.json"
 
-_TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "breakout")
+_TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "momentum", "breakout")
 _TOMORROW_SECTION_META = {
     "relax": {
         "label": "Relax",
@@ -1356,6 +1357,11 @@ _TOMORROW_SECTION_META = {
         "label": "Intraday",
         "accent": "#00d4a8",
         "caption": "Fast tactical setups and tighter timing",
+    },
+    "momentum": {
+        "label": "Momentum",
+        "accent": "#b08cff",
+        "caption": "Mode 7 Momentum S&R and structure-first continuation",
     },
     "breakout": {
         "label": "Breakout",
@@ -1467,14 +1473,13 @@ def _normalize_tomorrow_bucket(bucket: object) -> str:
 
 
 def _tomorrow_bucket_for_mode(mode_value: object) -> str:
-    try:
-        mode_int = int(mode_value)
-    except Exception:
-        mode_int = 3
+    mode_int = resolve_mode_id(mode_value, 3) or 3
     return {
+        1: "momentum",
         3: "relax",
         6: "swing",
         5: "intraday",
+        7: "momentum",
     }.get(mode_int, "relax")
 
 
@@ -1877,7 +1882,8 @@ def _import_category_from_context(
     mode_value: object = 0,
 ) -> str:
     text = str(source_label or "").strip().lower()
-    bucket_key = _normalize_tomorrow_bucket(source_bucket)
+    raw_bucket = str(source_bucket or "").strip()
+    bucket_key = _normalize_tomorrow_bucket(raw_bucket) if raw_bucket else ""
     if "pulse" in text:
         return "Breakout Pulse"
     if "radar" in text and "csv" in text:
@@ -2052,6 +2058,8 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
             sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
             modes = _normalize_import_mode_list(item.get("modes", item.get("mode", [])))
+            if 7 in modes:
+                categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(item.get("last_imported_at", item.get("imported_at", "")) or "")
             snapshot = _build_import_snapshot_map(item.get("snapshot", {})).get(ticker, {})
         else:
@@ -2063,6 +2071,8 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = [_import_category_from_context(source_label=origin, mode_value=mode_value)]
             sources = [origin]
             modes = _normalize_import_mode_list(mode_value)
+            if 7 in modes:
+                categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(st.session_state.get("prediction_chart_imported_at", "") or "")
             snapshot = {}
 
@@ -4244,9 +4254,9 @@ def render_tomorrow_picks_panel() -> None:
         else "Local persistence is active. Picks stay saved until you delete them."
     )
     sync_caption = (
-        "Google Sheets keeps your four strips synced across sessions."
+        "Google Sheets keeps your strategy strips synced across sessions."
         if storage_mode == "cloud"
-        else "This machine stores your four strips permanently until removal."
+        else "This machine stores your strategy strips permanently until removal."
     )
     storage_label = "Cloud Sync" if storage_mode == "cloud" else "Local Save"
     default_bucket = _tomorrow_bucket_for_mode(st.session_state.get("mode", 3))
@@ -4579,7 +4589,7 @@ def render_tomorrow_picks_panel() -> None:
         st.markdown(
             (
                 '<div class="tmr-v2-lead">'
-                'Four dedicated strips keep Relax, Swing, Intraday, and Breakout ideas separate. '
+                'Dedicated strips keep Relax, Swing, Intraday, Momentum, and Breakout ideas separate. '
                 'Any ADD IN PICKS action now lands in the correct strip automatically, and each pick stays saved until you remove it.'
                 '</div>'
             ),
@@ -4596,9 +4606,9 @@ def render_tomorrow_picks_panel() -> None:
         st.markdown(
             (
                 '<div class="tmr-v2-metrics">'
-                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Saved Picks</div><div class="tmr-v2-metric-value">{saved_count}</div><div class="tmr-v2-metric-caption">Total stocks saved across all four strips</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Saved Picks</div><div class="tmr-v2-metric-value">{saved_count}</div><div class="tmr-v2-metric-caption">Total stocks saved across all strategy strips</div></div>'
                 f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Slots Left</div><div class="tmr-v2-metric-value">{slots_left}</div><div class="tmr-v2-metric-caption">Maximum 20 saved picks in total</div></div>'
-                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Active Strips</div><div class="tmr-v2-metric-value">{active_sections}/4</div><div class="tmr-v2-metric-caption">How many strategy lanes currently hold picks</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Active Strips</div><div class="tmr-v2-metric-value">{active_sections}/{len(_TOMORROW_SECTION_ORDER)}</div><div class="tmr-v2-metric-caption">How many strategy lanes currently hold picks</div></div>'
                 f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Storage</div><div class="tmr-v2-metric-value">{html.escape(storage_label)}</div><div class="tmr-v2-metric-caption">{html.escape(sync_caption)}</div></div>'
                 '</div>'
             ),
@@ -4794,7 +4804,7 @@ def render_tomorrow_picks_panel() -> None:
                     (
                         '<div class="tmr-v2-notes-caption">'
                         'Keep your thesis, entry logic, invalidation, or reminders here. '
-                        'Notes stay linked to the four-strip Tomorrow Picks board.'
+                        'Notes stay linked to the five-strip Tomorrow Picks board.'
                         '</div>'
                     ),
                     unsafe_allow_html=True,
@@ -4859,7 +4869,7 @@ def render_tomorrow_picks_panel() -> None:
                     st.rerun()
 
                 st.markdown(
-                    f'<div class="tmr-v2-notes-helper">Words saved: {notes_words}. Tip: keep strip-specific notes here so Relax, Swing, Intraday, and Breakout decisions stay in one place.</div>',
+                    f'<div class="tmr-v2-notes-helper">Words saved: {notes_words}. Tip: keep strip-specific notes here so Relax, Swing, Intraday, Momentum, and Breakout decisions stay in one place.</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -5135,7 +5145,7 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
             '</span>'
             '</summary>'
             '<div class="tmr-board-body">'
-            '<div class="tmr-board-copy">Compact 4-lane view: Relax, Swing, Intraday, Breakout.</div>'
+            '<div class="tmr-board-copy">Compact 5-lane view: Relax, Swing, Intraday, Momentum, Breakout.</div>'
             + "".join(rows_html)
             + '</div>'
             + '</details>'
