@@ -208,6 +208,7 @@ _SYNC_FILES = {
     "sector_predictions.csv": "data/sector_prediction_log.csv",
     "sector_signal_performance.csv": "data/sector_signal_performance.csv",
     "learning_model.pkl": "data/learning_model.pkl",
+    "market_snapshot_latest.zip": "data/market_snapshot_latest.zip",
 }
 
 _SYNC_ALIASES = {

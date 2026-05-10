@@ -63,11 +63,21 @@ import pandas as pd
 
 # ALL_DATA: the central preloaded OHLCV store (zero-API engine)
 try:
-    from strategy_engines._engine_utils import ALL_DATA  # type: ignore[import]
+    from strategy_engines._engine_utils import (  # type: ignore[import]
+        ALL_DATA,
+        get_df_for_ticker,
+        prepare_market_session_data,
+    )
     _ALL_DATA_OK = True
 except Exception:
     ALL_DATA: dict = {}
     _ALL_DATA_OK = False
+
+    def get_df_for_ticker(ticker_ns: str):  # type: ignore[misc]
+        return None
+
+    def prepare_market_session_data(*args, **kwargs):  # type: ignore[misc]
+        return {}
 
 # CSV loader (data_downloader) for standalone universe scans
 try:
@@ -644,7 +654,19 @@ def _get_df(ticker_ns: str) -> pd.DataFrame | None:
         try:
             csv_df = load_csv(ticker_ns)
             if csv_df is not None:
-                return _check_fresh(csv_df)
+                fresh_csv = _check_fresh(csv_df)
+                if fresh_csv is not None:
+                    return fresh_csv
+        except Exception:
+            pass
+
+    # 3. Central getter fallback. This still respects the session plan:
+    # snapshots/weekends do not hit live data unless the plan explicitly allows it.
+    if _ALL_DATA_OK:
+        try:
+            shared_df = get_df_for_ticker(ticker_ns)
+            if shared_df is not None and len(shared_df) >= 45:
+                return _check_fresh(shared_df)
         except Exception:
             pass
 
@@ -707,6 +729,18 @@ def _enrich_from_scan_df(df: pd.DataFrame, cutoff_date=None) -> pd.DataFrame:
     fallback when OHLCV is unavailable.
     """
     rows: list[dict] = []
+    try:
+        requested = [
+            str(row.get("Symbol") or row.get("Ticker") or "").strip()
+            for _, row in df.iterrows()
+        ]
+        prepare_market_session_data(
+            [sym if sym.endswith(".NS") else f"{sym}.NS" for sym in requested if sym],
+            period="6mo",
+            workers=8,
+        )
+    except Exception:
+        pass
 
     for _, row in df.iterrows():
         sym_raw = str(row.get("Symbol") or row.get("Ticker") or "").strip()
@@ -782,6 +816,15 @@ def _scan_universe(
     tickers = _get_all_tickers()
     if not tickers:
         return pd.DataFrame()
+
+    try:
+        prepare_market_session_data(
+            tickers,
+            period="6mo",
+            workers=max_workers,
+        )
+    except Exception:
+        pass
 
     rows: list[dict] = []
     total = len(tickers)

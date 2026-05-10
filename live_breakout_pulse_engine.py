@@ -86,6 +86,22 @@ except ImportError:
     def _tt_is_active():                  return False       # type: ignore[misc]
 
 
+try:
+    from strategy_engines._engine_utils import (
+        get_df_for_ticker as _shared_get_df_for_ticker,
+        prepare_market_session_data as _prepare_market_session_data,
+    )
+    _SHARED_DATA_OK = True
+except Exception:
+    _SHARED_DATA_OK = False
+
+    def _shared_get_df_for_ticker(ticker: str):  # type: ignore[misc]
+        return None
+
+    def _prepare_market_session_data(*args, **kwargs):  # type: ignore[misc]
+        return {}
+
+
 def _emit_progress(progress_callback, done: int, total: int, found: int) -> None:
     if progress_callback is None:
         return
@@ -374,6 +390,15 @@ def _download_live_batch(tickers_ns: list[str], cutoff: date | None) -> dict[str
 # SCORING ENGINE
 # ─────────────────────────────────────────────────────────────────────
 
+def _get_shared_frame(ticker_ns: str, cutoff: date | None) -> pd.DataFrame | None:
+    """Read one ticker through the central session-aware data path."""
+    try:
+        df = _shared_get_df_for_ticker(ticker_ns)
+        return _clean_live_df(df, cutoff)
+    except Exception:
+        return None
+
+
 def _score_ticker(
     ticker_ns: str,
     cutoff: date | None,
@@ -582,13 +607,31 @@ def run_live_breakout_pulse(
     results: list[dict] = []
     done    = 0
     lock    = threading.Lock()
+    data_stats: dict[str, object] = {}
+    use_shared_data = bool(_SHARED_DATA_OK)
+
+    if use_shared_data:
+        try:
+            data_stats = _prepare_market_session_data(
+                tickers_ns,
+                period="6mo",
+                workers=_BATCH_WORKERS,
+            )
+        except Exception:
+            data_stats = {}
+            use_shared_data = False
+
     batches = [
         tickers_ns[i:i + _BATCH_SIZE]
         for i in range(0, total, _BATCH_SIZE)
     ]
 
     def _worker(batch: list[str]) -> tuple[list[dict], int]:
-        batch_frames = _download_live_batch(batch, cutoff_date)
+        batch_frames = (
+            {ticker_ns: _get_shared_frame(ticker_ns, cutoff_date) for ticker_ns in batch}
+            if use_shared_data
+            else _download_live_batch(batch, cutoff_date)
+        )
         batch_results: list[dict] = []
         for ticker_ns in batch:
             frame = batch_frames.get(ticker_ns)
@@ -616,6 +659,8 @@ def run_live_breakout_pulse(
     if not results:
         empty = pd.DataFrame()
         empty.attrs["universe_scanned"] = total
+        empty.attrs["data_source"] = "shared_session" if use_shared_data else "direct_yfinance"
+        empty.attrs["data_stats"] = data_stats
         if cutoff_date is not None:
             empty.attrs["time_travel_date"] = pd.to_datetime(cutoff_date).date().isoformat()
         return empty
@@ -623,6 +668,8 @@ def run_live_breakout_pulse(
     df = pd.DataFrame(results)
     df = df.sort_values("Final Score", ascending=False).reset_index(drop=True)
     df.attrs["universe_scanned"] = total
+    df.attrs["data_source"] = "shared_session" if use_shared_data else "direct_yfinance"
+    df.attrs["data_stats"] = data_stats
     if cutoff_date is not None:
         df.attrs["time_travel_date"] = pd.to_datetime(cutoff_date).date().isoformat()
     return df

@@ -8989,13 +8989,18 @@ if main_scan_clicked:
             "Ready",
         )
 
-    if _tt_active_date is None and do_snapshot and window == "CLOSED" and not snapshot_exists(expected_date):
+    if (
+        _tt_active_date is None
+        and do_snapshot
+        and str(window).upper() in {"CLOSED", "WEEKEND"}
+        and not snapshot_exists(expected_date)
+    ):
         try:
             from strategy_engines._engine_utils import ALL_DATA
 
             saved = save_closing_snapshot(ALL_DATA, expected_date, require_live_source=True)
             if saved > 0:
-                st.success(f"💾 Closing snapshot saved: {saved} tickers for {expected_date}")
+                st.success(f"💾 Market-data snapshot saved: {saved} tickers for {expected_date}")
         except Exception:
             pass
 

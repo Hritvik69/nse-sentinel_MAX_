@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import zipfile
 from functools import lru_cache
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
@@ -18,6 +19,7 @@ _MARKET_OPEN = dtime(9, 30)
 _MARKET_CLOSE = dtime(16, 0)
 _ROOT = Path(__file__).resolve().parent
 _SNAPSHOT_ROOT = _ROOT / "data" / "snapshots"
+_SNAPSHOT_ARCHIVE = _ROOT / "data" / "market_snapshot_latest.zip"
 _FRAME_SOURCE_ATTR = "_nse_data_source"
 _FRAME_DATE_ATTR = "_nse_market_date"
 _FRAME_WINDOW_ATTR = "_nse_window"
@@ -30,6 +32,57 @@ def _invalidate_snapshot_caches() -> None:
         _available_snapshot_dates_cached.cache_clear()
         _latest_snapshot_on_or_before_cached.cache_clear()
         _acceptable_data_dates_cached.cache_clear()
+    except Exception:
+        pass
+
+
+def _restore_snapshot_archive_if_available() -> None:
+    try:
+        if not _SNAPSHOT_ARCHIVE.exists():
+            return
+        _SNAPSHOT_ROOT.mkdir(parents=True, exist_ok=True)
+        root_resolved = _SNAPSHOT_ROOT.resolve()
+        with zipfile.ZipFile(_SNAPSHOT_ARCHIVE, "r") as archive:
+            for member in archive.infolist():
+                if member.is_dir():
+                    continue
+                name = member.filename.replace("\\", "/").lstrip("/")
+                if not name or name.startswith("../") or "/../" in name:
+                    continue
+                if not (name.endswith(".csv") or name.endswith("_meta.json")):
+                    continue
+                target = (_SNAPSHOT_ROOT / name).resolve()
+                try:
+                    target.relative_to(root_resolved)
+                except Exception:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member, "r") as src:
+                    target.write_bytes(src.read())
+    except Exception:
+        pass
+
+
+def _archive_latest_snapshot(snap_dir: Path) -> None:
+    try:
+        if not snap_dir.exists() or not snap_dir.is_dir():
+            return
+        _SNAPSHOT_ARCHIVE.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = _SNAPSHOT_ARCHIVE.with_suffix(".zip.tmp")
+        with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in snap_dir.rglob("*"):
+                if not path.is_file():
+                    continue
+                if not (path.name.endswith(".csv") or path.name == "_meta.json"):
+                    continue
+                archive.write(path, arcname=str(Path(snap_dir.name) / path.relative_to(snap_dir)))
+        tmp_path.replace(_SNAPSHOT_ARCHIVE)
+        try:
+            from persistent_store import push_file
+
+            push_file(_SNAPSHOT_ARCHIVE)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -82,6 +135,7 @@ def _recent_market_days(anchor: date, count: int = 3) -> list[date]:
 def _available_snapshot_dates_cached() -> tuple[date, ...]:
     dates: list[date] = []
     try:
+        _restore_snapshot_archive_if_available()
         if not _SNAPSHOT_ROOT.exists():
             return tuple()
         for child in _SNAPSHOT_ROOT.iterdir():
@@ -354,9 +408,8 @@ def get_scan_data_plan() -> dict[str, object]:
         use_snapshot             = True
         force_live_refresh       = False
         save_snapshot_after_scan = False
-        source_label = "PRE-MARKET (Using Previous Day Data)"
-
         if has_snapshot:
+            source_label = "PRE-MARKET (Snapshot Loaded)"
             # Primary path — today's expected snapshot is present.
             summary = (
                 f"Pre-market session. Using stable snapshot from "
@@ -372,6 +425,7 @@ def get_scan_data_plan() -> dict[str, object]:
                 expected_date = fallback_date
                 has_snapshot  = True
                 snap_path     = get_snapshot_path(expected_date)
+                source_label  = "PRE-MARKET (Fallback Snapshot Loaded)"
                 summary = (
                     f"Pre-market session. Expected snapshot was missing. "
                     f"Using nearest available snapshot ({expected_date.isoformat()}). "
@@ -380,6 +434,7 @@ def get_scan_data_plan() -> dict[str, object]:
             else:
                 # Step 3: no snapshot of any kind exists — warn the user.
                 # Do NOT enable live fetch; pre-market data is unreliable.
+                source_label = "PRE-MARKET (Snapshot Missing)"
                 summary = (
                     f"Pre-market session. Snapshot for {expected_date.isoformat()} "
                     "is missing and no fallback snapshot was found. "
@@ -392,9 +447,9 @@ def get_scan_data_plan() -> dict[str, object]:
         use_snapshot             = True
         force_live_refresh       = False
         save_snapshot_after_scan = False
-        source_label = "WEEKEND (Using Last Trading Day Data)"
 
         if has_snapshot:
+            source_label = "WEEKEND (Snapshot Loaded)"
             summary = (
                 f"Weekend session. Using last trading day snapshot "
                 f"({expected_date.isoformat()}). Live refresh is disabled."
@@ -406,6 +461,7 @@ def get_scan_data_plan() -> dict[str, object]:
                 expected_date = fallback_date
                 has_snapshot  = True
                 snap_path     = get_snapshot_path(expected_date)
+                source_label  = "WEEKEND (Fallback Snapshot Loaded)"
                 summary = (
                     f"Weekend session. No snapshot found for the expected date. "
                     f"Using nearest available snapshot ({expected_date.isoformat()})."
@@ -415,6 +471,7 @@ def get_scan_data_plan() -> dict[str, object]:
                 use_snapshot             = False
                 force_live_refresh       = True
                 save_snapshot_after_scan = True
+                source_label             = "WEEKEND (Building Snapshot)"
                 summary = (
                     "Weekend session. No snapshot available. "
                     "Performing a one-time live fetch to build a snapshot."
@@ -450,6 +507,13 @@ def is_data_fresh(df: pd.DataFrame) -> bool:
         return False
 
     try:
+        expected_day = get_expected_data_date()
+        if last_seen == expected_day:
+            return True
+    except Exception:
+        pass
+
+    try:
         return last_seen in set(get_acceptable_data_dates())
     except Exception:
         return False
@@ -474,6 +538,7 @@ def snapshot_exists(market_date) -> bool:
 @lru_cache(maxsize=64)
 def _snapshot_exists_cached(day_iso: str) -> bool:
     try:
+        _restore_snapshot_archive_if_available()
         snap_dir = _SNAPSHOT_ROOT / day_iso
         if not snap_dir.exists():
             return False
@@ -504,7 +569,8 @@ def _cleanup_old_snapshots(reference_date: date) -> None:
 def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool = False) -> int:
     try:
         snap_day = _coerce_date(market_date)
-        if get_current_window() != "CLOSED":
+        current_window = get_current_window()
+        if current_window not in {"CLOSED", "WEEKEND"}:
             return 0
         if snapshot_exists(snap_day):
             return 0
@@ -542,6 +608,7 @@ def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool
                 json.dumps(meta, indent=2),
                 encoding="utf-8",
             )
+            _archive_latest_snapshot(snap_dir)
             _invalidate_snapshot_caches()
 
         _cleanup_old_snapshots(snap_day)
@@ -619,7 +686,15 @@ def get_data_status_label() -> str:
         return f"🔵 CLOSED MARKET (Building Snapshot) — {day_text}"
 
     if window == "PRE_MARKET":
-        return f"🟡 PRE-MARKET (Using Previous Day Data) — {day_text}"
+        if plan.get("use_snapshot") and plan.get("snapshot_exists"):
+            source_text = str(plan.get("source_label") or "PRE-MARKET (Snapshot Loaded)")
+            return f"🟡 {source_text} — {day_text}"
+        return f"🟡 PRE-MARKET (Snapshot Missing) — {day_text}"
 
     # WEEKEND
-    return f"⚪ WEEKEND (Using Last Trading Day Data) — {day_text}"
+    if plan.get("use_snapshot") and plan.get("snapshot_exists"):
+        source_text = str(plan.get("source_label") or "WEEKEND (Snapshot Loaded)")
+        return f"⚪ {source_text} — {day_text}"
+    if plan.get("save_snapshot_after_scan"):
+        return f"⚪ WEEKEND (Building Snapshot) — {day_text}"
+    return f"⚪ WEEKEND (Snapshot Missing) — {day_text}"

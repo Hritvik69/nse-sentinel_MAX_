@@ -224,8 +224,8 @@ def render_live_breakout_pulse(
     )
     st.markdown(
         '<div style="font-size:12px;color:#4a6480;margin-bottom:16px;">'
-        'Real-time breakout detection using LIVE yfinance data · '
-        'scans the full live NSE universe when available · Vol ≥ 1.5× required · RSI 78+ rejected</div>',
+        'Session-aware breakout detection using snapshot/cache outside live hours · '
+        'live refresh only when the market data policy allows it · Vol ≥ 1.5× required · RSI 78+ rejected</div>',
         unsafe_allow_html=True,
     )
 
@@ -318,6 +318,21 @@ def render_live_breakout_pulse(
 
     if last_scan_at:
         st.caption(f"Last scan: {last_scan_at}")
+
+    if isinstance(pulse_df, pd.DataFrame):
+        data_stats = pulse_df.attrs.get("data_stats", {})
+        if isinstance(data_stats, dict) and data_stats:
+            plan = data_stats.get("plan", {}) if isinstance(data_stats.get("plan"), dict) else {}
+            source_label = str(plan.get("source_label") or pulse_df.attrs.get("data_source") or "").strip()
+            snapshot_loaded = int(data_stats.get("snapshot_loaded", 0) or 0)
+            snapshot_saved = int(data_stats.get("snapshot_saved", 0) or 0)
+            if source_label:
+                bits = [source_label]
+                if snapshot_loaded > 0:
+                    bits.append(f"{snapshot_loaded:,} snapshot tickers loaded")
+                if snapshot_saved > 0:
+                    bits.append(f"{snapshot_saved:,} snapshot tickers saved")
+                st.caption("Data source: " + " | ".join(bits))
 
     if last_error:
         st.error(f"Scan failed: {last_error}")

@@ -1066,6 +1066,107 @@ def preload_history_batch(
     )
 
 
+def prepare_market_session_data(
+    tickers: list[str],
+    *,
+    period: str = "6mo",
+    workers: int = 12,
+    progress_callback=None,
+) -> dict[str, object]:
+    """
+    Apply the app's market-session data policy for standalone scanners.
+
+    This gives focused engines the same data architecture as the main modes:
+    load an existing snapshot when appropriate, preload missing history through
+    ALL_DATA, and save a first weekend/post-close snapshot after a live fetch.
+    """
+    tickers_ns = [
+        t if str(t).strip().upper().endswith(".NS") else f"{str(t).strip().upper()}.NS"
+        for t in (tickers or [])
+        if str(t).strip()
+    ]
+    seen: set[str] = set()
+    tickers_ns = [t for t in tickers_ns if not (t in seen or seen.add(t))]
+
+    plan: dict[str, object] = {}
+    try:
+        plan = dict(_get_scan_data_plan() or {})
+    except Exception:
+        plan = {}
+
+    snapshot_loaded = 0
+    snapshot_saved = 0
+    expected_date = plan.get("expected_date")
+    window = str(plan.get("window", _get_current_window()) or _get_current_window()).upper()
+    force_live_refresh = _should_force_live_refresh(bool(plan.get("force_live_refresh", False)))
+
+    if _current_time_travel_cutoff() is None and bool(plan.get("use_snapshot", False)):
+        try:
+            snapshot_exists_fn = getattr(_dsm, "snapshot_exists", None)
+            load_snapshot_fn = getattr(_dsm, "load_snapshot_into_ALL_DATA", None)
+            if (
+                callable(snapshot_exists_fn)
+                and callable(load_snapshot_fn)
+                and expected_date is not None
+                and snapshot_exists_fn(expected_date)
+            ):
+                snapshot_loaded = int(load_snapshot_fn(expected_date) or 0)
+        except Exception:
+            snapshot_loaded = 0
+
+    with _ALL_DATA_LOCK:
+        if force_live_refresh:
+            preload_tickers = list(tickers_ns)
+        else:
+            preload_tickers = [ticker_ns for ticker_ns in tickers_ns if ALL_DATA.get(ticker_ns) is None]
+
+    preload_stats: dict[str, int | bool]
+    if preload_tickers:
+        preload_stats = preload_all(
+            preload_tickers,
+            period=period,
+            workers=workers,
+            progress_callback=progress_callback,
+            force_live_refresh=force_live_refresh,
+        )
+    else:
+        preload_stats = {
+            "total": 0,
+            "loaded": 0,
+            "downloaded": 0,
+            "fallback_used": 0,
+            "cache_hits": 0,
+            "force_live_refresh": force_live_refresh,
+        }
+
+    if (
+        _current_time_travel_cutoff() is None
+        and bool(plan.get("save_snapshot_after_scan", False))
+        and window in {"CLOSED", "WEEKEND"}
+        and expected_date is not None
+    ):
+        try:
+            snapshot_exists_fn = getattr(_dsm, "snapshot_exists", None)
+            save_snapshot_fn = getattr(_dsm, "save_closing_snapshot", None)
+            if (
+                callable(snapshot_exists_fn)
+                and callable(save_snapshot_fn)
+                and not snapshot_exists_fn(expected_date)
+            ):
+                snapshot_saved = int(save_snapshot_fn(ALL_DATA, expected_date, require_live_source=True) or 0)
+        except Exception:
+            snapshot_saved = 0
+
+    return {
+        "plan": plan,
+        "requested": len(tickers_ns),
+        "preload_requested": len(preload_tickers),
+        "snapshot_loaded": snapshot_loaded,
+        "snapshot_saved": snapshot_saved,
+        **preload_stats,
+    }
+
+
 def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     """Return preloaded DF for a ticker, with fallback to live download.
     Caches the fallback result in ALL_DATA to prevent repeated API calls.

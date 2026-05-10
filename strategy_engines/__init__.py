@@ -23,6 +23,7 @@ from strategy_engines._engine_utils import (
     preload_all,
     get_df_for_ticker,
     preload_history_batch,
+    prepare_market_session_data,
 )
 
 
@@ -162,6 +163,7 @@ __all__ = [
     "preload_all",
     "get_df_for_ticker",
     "preload_history_batch",
+    "prepare_market_session_data",
     "get_engine_functions",
     "get_train_function",
     "backtest_with_preloaded",
