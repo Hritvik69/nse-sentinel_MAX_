@@ -1815,7 +1815,8 @@
     {
       "ticker": "FIEMIND",
       "categories": [
-        "Relax"
+        "Relax",
+        "Momentum"
       ],
       "sources": [
         "Mode 3 Top 3"
@@ -1823,7 +1824,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-10T08:31:18",
+      "last_imported_at": "2026-05-10T08:45:38",
       "snapshot": {
         "Symbol": "FIEMIND",
         "Price (₹)": 2267.0,
@@ -1914,7 +1915,8 @@
     {
       "ticker": "FDC",
       "categories": [
-        "Relax"
+        "Relax",
+        "Momentum"
       ],
       "sources": [
         "Mode 3 Top 3"
@@ -1922,7 +1924,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-10T08:31:18",
+      "last_imported_at": "2026-05-10T08:45:38",
       "snapshot": {
         "Symbol": "FDC",
         "Price (₹)": 380.2,
@@ -2013,7 +2015,8 @@
     {
       "ticker": "MARKOLINES",
       "categories": [
-        "Relax"
+        "Relax",
+        "Momentum"
       ],
       "sources": [
         "Mode 3 Top 3"
@@ -2021,7 +2024,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-10T08:31:18",
+      "last_imported_at": "2026-05-10T08:45:38",
       "snapshot": {
         "Symbol": "MARKOLINES",
         "Price (₹)": 160.16,
@@ -2110,5 +2113,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-10T08:31:18"
+  "updated_at": "2026-05-10T08:45:38"
 }
