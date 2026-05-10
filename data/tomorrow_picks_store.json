@@ -3,15 +3,15 @@
     "CAMPUS",
     "CHAMBLFERT",
     "GILLETTE",
-    "FIEMIND",
-    "FDC",
-    "MARKOLINES",
     "VENUSREM",
     "TIMKEN",
     "SKFINDIA",
     "DBSTOCKBRO",
     "3PLAND",
     "DOLATALGO",
+    "FIEMIND",
+    "FDC",
+    "MARKOLINES",
     "TBZ",
     "SUPRAJIT",
     "APLLTD"
@@ -21,10 +21,7 @@
     "relax": [
       "CAMPUS",
       "CHAMBLFERT",
-      "GILLETTE",
-      "FIEMIND",
-      "FDC",
-      "MARKOLINES"
+      "GILLETTE"
     ],
     "swing": [
       "VENUSREM",
@@ -35,6 +32,11 @@
       "DBSTOCKBRO",
       "3PLAND",
       "DOLATALGO"
+    ],
+    "momentum": [
+      "FIEMIND",
+      "FDC",
+      "MARKOLINES"
     ],
     "breakout": [
       "TBZ",
