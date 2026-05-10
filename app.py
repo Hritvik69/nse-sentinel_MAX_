@@ -1047,6 +1047,16 @@ from strategy_engines import (
     backtest_with_preloaded,
     get_df_for_ticker,
 )
+from strategy_engines.mode_registry import (
+    get_mode_color,
+    get_mode_colors,
+    get_mode_display,
+    get_mode_filter_rules,
+    get_mode_label,
+    get_mode_map,
+    get_mode_metadata,
+    get_mode_pill_classes,
+)
 try:
     import strategy_engines._engine_utils as _engine_utils  # type: ignore[import]
 except Exception:
@@ -5236,6 +5246,7 @@ hr { border-color:var(--border) !important; }
 .pill-m3 { color:#f0b429;background:rgba(240,180,41,0.08); }
 .pill-m5 { color:#ff8c00;background:rgba(255,140,0,0.08); }
 .pill-m6 { color:#ff4d6d;background:rgba(255,77,109,0.08); }
+.pill-m7 { color:#b08cff;background:rgba(176,140,255,0.12);box-shadow:inset 0 0 0 1px rgba(176,140,255,0.22); }
 .top-banner { display:flex;align-items:center;gap:16px;padding:20px 0 8px 0; }
 .banner-logo { font-family:var(--sans);font-weight:800;font-size:26px;color:var(--accent);letter-spacing:-0.5px; }
 .count-pill { background:rgba(0,212,168,0.1);border:1px solid var(--accent);color:var(--accent);border-radius:20px;padding:2px 12px;font-size:13px;font-weight:700;font-family:var(--mono); }
@@ -6751,7 +6762,7 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
             return None
 
         # SPEED FIX — mktcap only fetched for modes that actually use it (1 & 2).
-        # Modes 3-6 never reference mktcap_cr so skipping saves ~1000 API calls/scan.
+        # Modes 3-7 never reference mktcap_cr so skipping saves ~1000 API calls/scan.
         ok = False
         if mode == 1:
             mktcap_cr = get_mktcap_cr(ticker)
@@ -6807,6 +6818,47 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
                 lv > 1.1 * avg_vol_sma and
                 lc >= 0.97 * h10 and 50 <= ri <= 68 and lc > lo and lc > 40
             )
+        elif mode == 7:
+            if len(close) < 21:
+                _scan_diag.record_failure(ticker_ns, "TOO_SHORT")
+                return None
+            prev_e20 = float(ema(close, 20).iloc[-2]) if len(close) >= 2 else e20
+            h20 = float(close.iloc[-21:-1].max()) if len(close) >= 21 else float(close.max())
+            avg_vol_sma = float(volume.iloc[-21:-1].mean()) if len(volume) >= 21 else float(volume.mean())
+            vol_ratio = (lv / avg_vol_sma) if avg_vol_sma > 0 else 0.0
+            d20h_mode7 = (lc / h20 - 1.0) * 100.0 if h20 > 0 else 0.0
+            d_ema20_mode7 = (lc / e20 - 1.0) * 100.0 if e20 > 0 else 0.0
+            ret5d_mode7 = (lc / float(close.iloc[-6]) - 1.0) * 100.0 if len(close) >= 6 else 0.0
+            ret20d_mode7 = (lc / float(close.iloc[-21]) - 1.0) * 100.0 if len(close) >= 21 else 0.0
+            try:
+                high_p = df["High"].dropna()
+                lh = float(high_p.iloc[-1]) if len(high_p) else lc
+            except Exception:
+                lh = lc
+            upper_wick_pct = ((lh - max(lc, lo)) / lc) * 100.0 if lc > 0 else 0.0
+
+            trend_ok = lc > e20 > e50 > 0 and e20 >= prev_e20
+            not_overextended = -2.0 <= d_ema20_mode7 <= 7.0 and ret5d_mode7 <= 14.0
+            volume_ok = vol_ratio >= 1.15
+            clean_candle = lc >= lo * 0.995 and upper_wick_pct <= 2.8
+            breakout_ready = (
+                vol_ratio > 1.3 and -3.0 <= d20h_mode7 <= 2.0
+                and 52 <= ri <= 70 and clean_candle
+            )
+            support_bounce = (
+                abs(d_ema20_mode7) <= 3.0 and 52 <= ri <= 64
+                and -2.0 <= ret5d_mode7 <= 7.0 and ret20d_mode7 > 3.0
+                and lc >= lo * 0.995
+            )
+            resistance_compression = (
+                -6.0 <= d20h_mode7 < -2.0 and vol_ratio >= 1.1
+                and 50 <= ri <= 67 and ret20d_mode7 > 2.0
+                and d_ema20_mode7 <= 4.5 and clean_candle
+            )
+            ok = (
+                lc > 40 and trend_ok and volume_ok and not_overextended
+                and (breakout_ready or support_bounce or resistance_compression)
+            )
 
         if ok:
             h20_full      = float(close.iloc[-21:-1].max()) if len(close) >= 21 else float(close.max())
@@ -6815,7 +6867,16 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
             ret_5d  = (lc / float(close.iloc[-6]) - 1.0) * 100.0  if len(close) >= 6  else np.nan
             ret_20d = (lc / float(close.iloc[-21]) - 1.0) * 100.0 if len(close) >= 21 else np.nan
 
-            return {
+            _mode7_structure = {}
+            if mode == 7:
+                try:
+                    from strategy_engines.mode7_structure import analyze_mode7_structure
+
+                    _mode7_structure = analyze_mode7_structure(df)
+                except Exception:
+                    _mode7_structure = {}
+
+            _scan_row = {
                 "Symbol":            ticker.replace(".NS", ""),
                 "Price (₹)":         round(lc, 2),
                 "Volume":            int(lv),
@@ -6823,13 +6884,16 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
                 "EMA 20":            round(e20, 2),
                 "EMA 50":            round(e50, 2),
                 "Vol / Avg":         round(lv / avg_vol, 2) if avg_vol > 0 else 0,
-                "Mode":              {1:"🟢 Momentum",2:"🔵 Balanced",3:"🟡 Relaxed",
-                                      4:"🟣 Institutional",5:"🟠 Intraday",6:"🔴 Swing"}[mode],
+                "Mode ID":           int(mode),
+                "Mode":              get_mode_label(mode),
                 "Δ vs 20D High (%)": round(dist_20d_high, 2),
                 "Δ vs EMA20 (%)":    round(dist_ema20, 2),
                 "5D Return (%)":     round(ret_5d, 2)  if not np.isnan(ret_5d)  else np.nan,
                 "20D Return (%)":    round(ret_20d, 2) if not np.isnan(ret_20d) else np.nan,
             }
+            if _mode7_structure:
+                _scan_row.update(_mode7_structure)
+            return _scan_row
         return None
     except MemoryError:
         _scan_diag.record_failure(ticker_ns, "EXCEPTION")
@@ -6987,12 +7051,13 @@ def _render_scan_diagnostics_panel() -> None:
     except Exception:
         low_quality = int(reasons.get("LOW_QUALITY", 0) or 0)
     scan_mode = st.session_state.get("_scan_diag_mode")
+    scan_mode_label = "3" if scan_mode == 7 else scan_mode
     scan_stamp = st.session_state.get("_scan_diag_scan_time", st.session_state.get("scan_time", "—"))
 
     st.divider()
     st.caption("Scan Diagnostics")
     st.caption(
-        f"Mode {scan_mode} diagnostics · {scan_stamp}"
+        f"Mode {scan_mode_label} diagnostics · {scan_stamp}"
         if scan_mode is not None
         else f"Diagnostics · {scan_stamp}"
     )
@@ -7195,6 +7260,7 @@ _MODE_WEIGHTS = {
     4: dict(vol=1.0,  breakout=1.0, ema=1.5, rsi=1.2, pen=1.0),   # Institutional
     5: dict(vol=1.5,  breakout=1.2, ema=0.7, rsi=0.8, pen=0.9),   # Intraday
     6: dict(vol=1.0,  breakout=1.0, ema=1.5, rsi=1.2, pen=1.0),   # Swing
+    7: dict(vol=1.2,  breakout=1.7, ema=1.3, rsi=1.0, pen=1.2),   # Momentum S&R
 }
 
 
@@ -7320,6 +7386,7 @@ def compute_backtest_probability(row: dict, ticker: str, mode: int = 2) -> float
         4: dict(rsi_tol=3,  vol_tol=0.20, ema_trend=True,  near_high=True,  hw=20, hp=0.02),
         5: dict(rsi_tol=2,  vol_tol=0.15, ema_trend=True,  near_high=True,  hw=10, hp=0.01),
         6: dict(rsi_tol=3,  vol_tol=0.20, ema_trend=True,  near_high=False, hw=10, hp=0.02),
+        7: dict(rsi_tol=4,  vol_tol=0.25, ema_trend=True,  near_high=True,  hw=20, hp=0.03),
     }
     cfg = _MBTCFG.get(mode, _MBTCFG[2])
     ticker_ns = ticker if ticker.endswith(".NS") else ticker + ".NS"
@@ -7386,6 +7453,15 @@ def compute_backtest_probability(row: dict, ticker: str, mode: int = 2) -> float
             mask &= (vol_ratio > 1.5)                    # strong vol spike (intraday)
         elif mode == 6:
             mask &= (e20s > e20s.shift(1))               # rising EMA20 slope (swing)
+        elif mode == 7:
+            ema_dist = (close / e20s.replace(0, np.nan) - 1.0) * 100.0
+            mask &= (
+                (e20s > e20s.shift(1))
+                & (vol_ratio >= 1.3)
+                & (rsi_series >= 52)
+                & (rsi_series <= 70)
+                & (ema_dist <= 7.0)
+            )
 
         idx = np.where(mask.values)[0]
         idx = idx[idx < len(close) - 1]         # exclude last row
@@ -7566,6 +7642,7 @@ def predict_ml_probability(row: dict, mode: int = 2) -> float:
       Mode 4 (Institutional) → rewards RSI + 20D return
       Mode 5 (Intraday)  → rewards vol spike, penalises high RSI
       Mode 6 (Swing)     → rewards EMA distance + 5D return
+      Mode 7 (Momentum S&R) → rewards clean S&R structure + volume confirmation
     Falls back to 50 if model not ready or features invalid.
     """
     if not _SKLEARN_OK:
@@ -7608,6 +7685,12 @@ def predict_ml_probability(row: dict, mode: int = 2) -> float:
         elif mode == 6:                            # Swing
             if r5d > 1.5:               adj += 0.04
             if de20 < 3.0:              adj += 0.02   # not overextended
+        elif mode == 7:                            # Momentum S&R
+            if -2.0 <= d20h <= 1.5:      adj += 0.05
+            if 1.4 <= vol_r <= 2.8:      adj += 0.04
+            if 55 <= ri <= 67:           adj += 0.03
+            if de20 > 7.0 or ri > 74:    adj -= 0.08
+            if vol_r < 1.0:              adj -= 0.06
 
         final_p = float(np.clip(base_p + adj, 0.01, 0.99))
         return round(final_p * 100, 1)
@@ -8077,14 +8160,26 @@ def render_top_picks(df: pd.DataFrame, n: int = 5) -> None:
 # ═════════════════════════════════════════════════════════════════════
 # SIDEBAR  (unchanged logic, unchanged options)
 # ═════════════════════════════════════════════════════════════════════
-mode_names  = {1:"Momentum", 2:"Balanced", 3:"Relaxed", 4:"Institutional", 5:"Intraday", 6:"Swing"}
-mode_colors = {1:"#00d4a8",  2:"#0094ff",  3:"#f0b429", 4:"#b08cff", 5:"#00d4a8", 6:"#ff4d6d"}
-pill_cls    = {1:"pill-m1",  2:"pill-m2",  3:"pill-m3", 4:"pill-m3", 5:"pill-m5", 6:"pill-m6"}
-ui_mode_meta = {
-    3: {"display_num": 1, "display_name": "Relaxed"},
-    6: {"display_num": 2, "display_name": "Swing"},
-    5: {"display_num": 3, "display_name": "Intraday"},
-}
+mode_colors = get_mode_colors()
+pill_cls = get_mode_pill_classes()
+
+
+def get_mode_display_columns(mode_value: int, base_cols: list[str]) -> list[str]:
+    cols = list(base_cols)
+    if mode_value == 7:
+        mode7_cols = [
+            "Breakout Quality",
+            "Support Strength",
+            "Resistance Distance",
+            "Structure Quality",
+            "Volume Confirmation",
+            "Trap Probability",
+            "Momentum Continuation",
+            "Mode7 Verdict",
+        ]
+        insert_at = cols.index("Trap Check") if "Trap Check" in cols else len(cols)
+        cols = cols[:insert_at] + mode7_cols + cols[insert_at:]
+    return cols
 
 _SIDEBAR_PANEL_KEYS = (
     "show_sector_screener",
@@ -8177,11 +8272,14 @@ with st.sidebar:
     if not _PHASE4_LOGIC_OK:
         st.warning("⚠️ phase4_logic_engine.py failed to load — phase 4 signal refinements disabled.")
 
-    mode_map = {
-        "\U0001F7E1  Mode 1 - Relaxed (Wide Scan)": 3,
-        "\U0001F534  Mode 2 - Swing":               6,
-        "\U0001F7E2  Mode 3 - Intraday":            5,
-    }
+    mode_map = get_mode_map()
+    _current_strategy_mode = st.session_state.get("strategy_mode")
+    if (
+        isinstance(_current_strategy_mode, str)
+        and "MOMENTUM (S&R)" in _current_strategy_mode
+        and _current_strategy_mode not in mode_map
+    ):
+        st.session_state["strategy_mode"] = get_mode_metadata(7, copy=False)["ui_label"]
     if st.session_state.get("strategy_mode") not in mode_map:
         st.session_state["strategy_mode"] = next(iter(mode_map))
     mode_label = st.selectbox(
@@ -8191,21 +8289,22 @@ with st.sidebar:
         key="strategy_mode",
     )
     mode = mode_map[mode_label]
-    mode_display = ui_mode_meta.get(mode, {"display_num": mode, "display_name": mode_names.get(mode, "Mode")})
+    mode_display = get_mode_display(mode)
 
-    filter_data = {
-        3: [("EMA Trend","Close > EMA20 > EMA50"),("Volume","> 1.3× avg"),
-            ("RSI","50 – 72"),("Price Floor","₹50"),
-            ("20D High","Within 5%"),("Use Case","Wide Scan")],
-        5: [("EMA Trend","Close > EMA20 > EMA50"),("Volume","> 1.1× avg"),
-            ("RSI","52 – 60"),("Price Floor","₹20"),
-            ("10D High","Break above"),("Use Case","Tomorrow Push")],
-        6: [("EMA Trend","Close > EMA20 > EMA50"),("EMA20 Slope","Rising"),
-            ("Volume","> 1.3× avg & > prev"),("RSI","53 – 59"),
-            ("Price Floor","₹40"),("10D High","Break above")],
-    }
-    colors = {1:"#00d4a8",2:"#0094ff",3:"#f0b429",4:"#b08cff",5:"#ff8c00",6:"#ff4d6d"}
-    mc = colors[mode]
+    filter_data = {m: get_mode_filter_rules(m) for m in mode_map.values()}
+    mc = get_mode_color(mode)
+
+    if mode == 7:
+        st.markdown(
+            '<div title="Detects clean breakout structures, support bounces, and institutional momentum with volume confirmation." '
+            'style="background:linear-gradient(135deg,rgba(176,140,255,0.18),rgba(74,40,130,0.16));'
+            'border:1px solid rgba(176,140,255,0.44);border-radius:10px;padding:12px 14px;margin:8px 0 12px 0;'
+            'box-shadow:0 0 24px rgba(176,140,255,0.16);">'
+            '<div style="font-size:12px;font-weight:900;color:#b08cff;letter-spacing:0.8px;"><span style="color:#b08cff;">●</span> MODE 3 · MOMENTUM (S&amp;R)</div>'
+            '<div style="font-size:11px;color:#8ab4d8;margin-top:4px;">Support + Resistance Momentum Scanner</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
     params_html = "".join([
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
@@ -9125,10 +9224,7 @@ if st.session_state.get("show_bias_engine"):
 if _show_home_scanner and "results" in st.session_state:
     results     = st.session_state["results"]
     stored_mode = st.session_state.get("mode", mode)
-    stored_mode_display = ui_mode_meta.get(
-        stored_mode,
-        {"display_num": stored_mode, "display_name": mode_names.get(stored_mode, "Mode")},
-    )
+    stored_mode_display = get_mode_display(stored_mode)
     elapsed_d   = st.session_state.get("elapsed", 0)
     scan_time_d = st.session_state.get("scan_time", "—")
     mc2         = mode_colors.get(stored_mode, "#00d4a8")
@@ -9230,6 +9326,15 @@ if _show_home_scanner and "results" in st.session_state:
         if not _using_cached_scan_df:
             try:
                 df = apply_phase42_logic(df)
+            except Exception:
+                pass
+
+        # Mode 7 ranks structure first and suppresses trap-heavy prediction hype.
+        if not _using_cached_scan_df and stored_mode == 7:
+            try:
+                from strategy_engines.mode7_ranking import apply_mode7_ranking
+
+                df = apply_mode7_ranking(df, _mb)
             except Exception:
                 pass
 
@@ -9399,8 +9504,11 @@ if _show_home_scanner and "results" in st.session_state:
         # ── TASK 2 & 5: Clean Table with TradingView Link ─────────────
         table_df = df.copy()
         try:
-            from strategy_engines._engine_utils import add_rank_score_columns
-            table_df = add_rank_score_columns(table_df)
+            if stored_mode == 7 and "Mode7 Rank Score" in table_df.columns:
+                table_df["rank_score"] = pd.to_numeric(table_df["Mode7 Rank Score"], errors="coerce").fillna(0.0)
+            else:
+                from strategy_engines._engine_utils import add_rank_score_columns
+                table_df = add_rank_score_columns(table_df)
             if "rank_score" in table_df.columns:
                 table_df = table_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
                 table_df["Rank Score"] = table_df["rank_score"]
@@ -9418,6 +9526,7 @@ if _show_home_scanner and "results" in st.session_state:
             "Learned Prob %",
             "Action", "Hold Days",
         ]
+        display_cols = get_mode_display_columns(stored_mode, display_cols)
         display_cols = [c for c in display_cols if c in table_df.columns]
 
         st.dataframe(
@@ -9432,6 +9541,14 @@ if _show_home_scanner and "results" in st.session_state:
                 "Final Score": st.column_config.NumberColumn("Final Score", format="%.2f"),
                 "Prediction Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
                 "Conviction Tier": st.column_config.TextColumn("Conviction"),
+                "Breakout Quality": st.column_config.TextColumn("Breakout"),
+                "Support Strength": st.column_config.TextColumn("Support"),
+                "Resistance Distance": st.column_config.TextColumn("Resistance"),
+                "Structure Quality": st.column_config.TextColumn("Structure"),
+                "Volume Confirmation": st.column_config.TextColumn("Volume Confirm"),
+                "Trap Probability": st.column_config.TextColumn("Trap Prob"),
+                "Momentum Continuation": st.column_config.TextColumn("Continuation"),
+                "Mode7 Verdict": st.column_config.TextColumn("M7 Verdict", width="medium"),
                 "Trap Check": st.column_config.TextColumn("Trap Check"),
                 "Next-Day Signal": st.column_config.TextColumn("Signal"),
                 "TradingView": st.column_config.LinkColumn("TradingView Link", display_text="📈 Open Chart"),
@@ -9473,6 +9590,15 @@ if _show_home_scanner and "results" in st.session_state:
                     h_val = row.get('Δ vs 20D High (%)', 0)
                     rc3.metric("Δ vs 20D Hi", f"{h_val:+.2f}%" if pd.notna(h_val) else "—")
 
+                    if stored_mode == 7:
+                        st.write("")
+                        st.markdown("**Momentum S&R Structure**")
+                        m71, m72, m73, m74 = st.columns(4)
+                        m71.metric("Breakout", str(row.get("Breakout Quality", "—")))
+                        m72.metric("Support", str(row.get("Support Strength", "—")))
+                        m73.metric("Resistance", str(row.get("Resistance Distance", "—")))
+                        m74.metric("Structure", str(row.get("Structure Quality", "—")))
+
         # ── NEW: Clean Export Helper ──────────────────────────────────
         def get_clean_export_df(df):
             """Return a clean, emoji-free copy of df for CSV/Excel export.
@@ -9485,6 +9611,9 @@ if _show_home_scanner and "results" in st.session_state:
                 "Rank", "Rank Score", "Ticker", "Score",
                 "Backtest %", "ML %", "Final Score",
                 "Prediction Score", "Conviction Tier", "Trap Check", "Next-Day Signal",
+                "Breakout Quality", "Support Strength", "Resistance Distance",
+                "Structure Quality", "Volume Confirmation", "Trap Probability",
+                "Momentum Continuation",
             ]
 
             def _strip_emoji(val):
@@ -9550,7 +9679,7 @@ if _show_home_scanner and "results" in st.session_state:
             st.download_button(
                 label="⬇ Download Results CSV",
                 data=_csv_buf.getvalue().encode("utf-8-sig"),
-                file_name=f"nse_scan_{datetime.now().strftime('%Y%m%d_%H%M')}_mode{stored_mode}.csv",
+                file_name=f"nse_scan_{datetime.now().strftime('%Y%m%d_%H%M')}_mode{stored_mode_display['display_num']}.csv",
                 mime="text/csv",
                 width="stretch",
                 key="main_scan_csv_download",
@@ -9616,7 +9745,7 @@ if _show_home_scanner and "results" in st.session_state:
                         <div>
                           <div style="font-size:10px;color:#4a6480;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Self-Learning Brain For This Mode</div>
                           <div style="font-size:24px;font-weight:900;color:{_brain_color};">{html.escape(_brain_direction)} • {_brain_conf:.1f}%</div>
-                          <div style="font-size:12px;color:#8ab4d8;margin-top:4px;">Mode M{stored_mode} AI read on these top 3 candidates</div>
+                          <div style="font-size:12px;color:#8ab4d8;margin-top:4px;">Mode M{stored_mode_display["display_num"]} AI read on these top 3 candidates</div>
                         </div>
                         <div style="text-align:right;">
                           <span style="background:{_action_color}22;border:1.5px solid {_action_color};border-radius:999px;padding:6px 12px;font-size:11px;font-weight:800;color:{_action_color};">{html.escape(_brain_action)}</span>
@@ -9648,7 +9777,7 @@ if _show_home_scanner and "results" in st.session_state:
 
             _tomorrow_cols = [
                 "Symbol", "Tomorrow Pick Score", "AI Confidence", "AI Direction",
-                "Final Score", "Prediction Score", _signal_col, "AI Action", "AI Key Signal",
+                "Final Score", "Prediction Score", "Mode7 Verdict", _signal_col, "AI Action", "AI Key Signal",
                 "Conviction Tier", "Trap Check", "Chart",
                 "Action", "Hold Days",
             ]
@@ -9663,6 +9792,7 @@ if _show_home_scanner and "results" in st.session_state:
                     "AI Direction": st.column_config.TextColumn("AI Dir", width="small"),
                     "Final Score": st.column_config.NumberColumn("Final Score", format="%.1f"),
                     "Prediction Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
+                    "Mode7 Verdict": st.column_config.TextColumn("M7 Verdict", width="medium"),
                     "Adjusted Signal": st.column_config.TextColumn("Signal", width="medium"),
                     "Next-Day Signal": st.column_config.TextColumn("Signal", width="medium"),
                     "AI Action": st.column_config.TextColumn("AI Action", width="medium"),
@@ -9687,7 +9817,7 @@ if _show_home_scanner and "results" in st.session_state:
                 _tomorrow_symbols,
                 mode_value=stored_mode,
                 key_prefix=f"scan_top3_mode_{stored_mode}",
-                source_label=f"Mode {stored_mode} Top 3",
+                source_label=f"Mode {stored_mode_display['display_num']} Top 3",
                 source_bucket=_tomorrow_bucket_for_mode(stored_mode),
                 source_rows=_tomorrow_df,
                 helper_text="Add these mode picks into Imported AI Stocks for self-learning. Open AI Prediction later only when you want the chart.",

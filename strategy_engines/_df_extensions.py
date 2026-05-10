@@ -1,7 +1,7 @@
 """
 strategy_engines/_df_extensions.py
 ────────────────────────────────────
-DataFrame-accepting backtest & training wrappers for all 6 modes.
+DataFrame-accepting backtest & training wrappers for all strategy modes.
 
 These replace the ticker-based download_history() calls inside each engine.
 The scan loop passes pre-loaded DataFrames from ALL_DATA directly.
@@ -342,6 +342,75 @@ def backtest_mode6_df(row: dict, df: pd.DataFrame | None) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# MODE 7 — MOMENTUM (S&R)
+# ═══════════════════════════════════════════════════════════════════════
+
+def backtest_mode7_df(row: dict, df: pd.DataFrame | None) -> float:
+    """Mode 7: 3-5 day S&R continuation setup. Accepts pre-loaded df."""
+    if df is None:
+        return 50.0
+    try:
+        if len(df) < 60:
+            return 50.0
+        indicators = _get_indicators(df, _row_ticker(row))
+        close = indicators["close"]
+        e20s = indicators["e20s"]
+        e50s = indicators["e50s"]
+        rsi_s = indicators["rsi_s"]
+        vol_ratio = indicators["vol_ratio"]
+
+        high_20d = close.rolling(20, min_periods=10).max().shift(1)
+        dist_high = (close / high_20d.replace(0, np.nan) - 1.0) * 100.0
+        ema_dist = (close / e20s.replace(0, np.nan) - 1.0) * 100.0
+        ema_slope = e20s > e20s.shift(1)
+
+        mask = (
+            rsi_s.notna()
+            & (vol_ratio > 1.3)
+            & (close > e20s)
+            & (e20s > e50s)
+            & ema_slope
+            & (rsi_s >= 52.0)
+            & (rsi_s <= 70.0)
+            & (dist_high >= -5.0)
+            & (dist_high <= 2.5)
+            & (ema_dist <= 7.0)
+            & (ema_dist >= -2.0)
+        )
+        idx = np.where(mask.values)[0]
+        idx = idx[idx < len(close) - 5]
+        if len(idx) < 12:
+            return 50.0
+
+        cv = close.values
+        wins = 0
+        losses = 0
+        neutral = 0
+        for i in idx:
+            future = cv[i + 3 : i + 6]
+            if len(future) == 0 or cv[i] <= 0:
+                continue
+            best_ret = (np.nanmax(future) / cv[i] - 1.0) * 100.0
+            worst_ret = (np.nanmin(future) / cv[i] - 1.0) * 100.0
+            if best_ret > 2.5:
+                wins += 1
+            elif worst_ret < -2.0:
+                losses += 1
+            else:
+                neutral += 1
+
+        resolved = wins + losses
+        if resolved >= 8:
+            return round((wins / resolved) * 100.0, 1)
+        total = wins + losses + neutral
+        if total > 0:
+            return round(((wins + 0.5 * neutral) / total) * 100.0, 1)
+        return 50.0
+    except Exception:
+        return 50.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # DISPATCHER
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -352,6 +421,7 @@ _BACKTEST_FNS = {
     4: backtest_mode4_df,
     5: backtest_mode5_df,
     6: backtest_mode6_df,
+    7: backtest_mode7_df,
 }
 
 

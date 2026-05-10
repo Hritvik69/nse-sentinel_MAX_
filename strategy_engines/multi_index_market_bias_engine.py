@@ -29,16 +29,18 @@ Design rules
 • Index data : Downloaded once per session via yfinance; cached in-module.
 • Never modifies any existing column, engine, scoring, or ML logic.
 • Never crashes — every function wrapped in try/except.
-• Works alongside any scan mode (1–6).
+• Works alongside any scan mode.
 """
 
 from __future__ import annotations
 
+import math
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from strategy_engines.mode_registry import get_mode_label_map
 
 try:
     from strategy_engines._engine_utils import (
@@ -145,15 +147,7 @@ SECTOR_WEIGHTS: dict[str, float] = {
     "Nifty Next 50": 0.00,   # informational only — excluded from overall weight
 }
 
-# Mode label map (mirrors battle_mode_engine)
-_MODE_LABELS: dict[int, str] = {
-    1: "🟢 Momentum",
-    2: "🔵 Balanced",
-    3: "🟡 Relaxed",
-    4: "🟣 Institutional",
-    5: "🟠 Intraday",
-    6: "🔴 Swing",
-}
+_MODE_LABELS: dict[int, str] = get_mode_label_map()
 
 # ═══════════════════════════════════════════════════════════════════════
 # ── MODULE-LEVEL CACHE for index data (one download per session) ───────
@@ -399,6 +393,7 @@ def _build_stock_row(ticker_ns: str, mode: int, df: pd.DataFrame | None = None) 
             "EMA 20":             round(e20, 2),
             "EMA 50":             round(e50, 2),
             "Vol / Avg":          round(lv / avg_vol, 2) if avg_vol > 0 else 0.0,
+            "Mode ID":            int(mode),
             "Mode":               _MODE_LABELS.get(mode, "🔵 Balanced"),
             "Δ vs 20D High (%)":  round(d20h, 2),
             "Δ vs EMA20 (%)":     round(d_ema20, 2),
@@ -591,7 +586,7 @@ def build_sector_raw_rows(sector_name: str, mode: int = 2) -> list[dict]:
     Parameters
     ----------
     sector_name : str   One of the keys in INDEX_STOCK_MAP.
-    mode        : int   Strategy mode (1–6) for the "Mode" label column.
+    mode        : int   Strategy mode for the "Mode" label column.
 
     Returns
     -------
@@ -930,9 +925,6 @@ def compute_overall_market(all_sector_results: dict[str, dict]) -> dict:
 # never shadow the originals.  Original functions are called internally;
 # their return values are only extended, never mutated.
 # ═══════════════════════════════════════════════════════════════════════
-
-import math   # for log weight — stdlib, no new dependency
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UPGRADE 1 — FULL_INDEX_STOCK_MAP  (expanded coverage, backward-compat)

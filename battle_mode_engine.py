@@ -37,6 +37,7 @@ import pandas as pd
 
 # ── Existing helpers — imported, never modified ───────────────────────
 from strategy_engines._engine_utils import ema, rsi_vec
+from strategy_engines.mode_registry import get_mode_label_map
 from feature_data_manager import feature_manager
 
 
@@ -179,14 +180,7 @@ def _battle_notes(
 # INTERNAL: build one raw indicator row (no mode filter applied)
 # ─────────────────────────────────────────────────────────────────────
 
-_MODE_LABELS = {
-    1: "🟢 Momentum",
-    2: "🔵 Balanced",
-    3: "🟡 Relaxed",
-    4: "🟣 Institutional",
-    5: "🟠 Intraday",
-    6: "🔴 Swing",
-}
+_MODE_LABELS = get_mode_label_map()
 
 
 def _build_battle_row(ticker_ns: str, mode: int, df: pd.DataFrame | None = None) -> dict | None:
@@ -282,6 +276,7 @@ def _build_battle_row(ticker_ns: str, mode: int, df: pd.DataFrame | None = None)
             "EMA 20":             round(e20, 2),
             "EMA 50":             round(e50, 2),
             "Vol / Avg":          round(lv / avg_vol, 2) if avg_vol > 0 else 0.0,
+            "Mode ID":            int(mode),
             "Mode":               _MODE_LABELS.get(mode, "🔵 Balanced"),
             "Δ vs 20D High (%)":  round(dist_20d_high, 2),
             "Δ vs EMA20 (%)":     round(dist_ema20, 2),
@@ -306,7 +301,7 @@ def run_battle_mode(tickers: list[str], mode: int) -> list[dict]:
         User-supplied ticker symbols (with or without .NS suffix).
         Capped at 10 internally.
     mode : int
-        Strategy mode (1-6). Used only to set the "Mode" label and to
+        Strategy mode. Used only to set the "Mode" label and to
         configure engine functions — no scan filter is applied.
 
     Returns

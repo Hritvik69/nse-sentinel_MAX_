@@ -66,6 +66,7 @@ _MODE_FEATURES = {
     4: ["rsi", "vol_ratio", "ema_dist", "ret_20d", "near_20h", "ema_trend"],
     5: ["rsi", "vol_ratio", "near_5h", "ret_1d", "ret_5d", "vol_spk", "ema_trend"],
     6: ["rsi", "vol_ratio", "ema_dist", "ema_slope", "ret_5d", "rsi_ctrl", "vol_ctrl"],
+    7: ["rsi", "vol_ratio", "ema_dist", "dist_high", "ret_5d", "ret_20d", "ema_trend"],
 }
 
 
@@ -526,7 +527,7 @@ def _retrain_mode_models(feedback_df: pd.DataFrame, all_data: dict[str, Any]) ->
     summary = {"by_mode": {}, "best_mode": None, "worst_mode": None, "message": ""}
     try:
         parts = []
-        for mode in range(1, 7):
+        for mode in range(1, 8):
             trained = _fit_mode_model(mode, all_data)
             feedback_adj = _mode_feedback_adjustments(feedback_df, mode)
             merged = {**trained, **feedback_adj}
@@ -654,7 +655,7 @@ def _calibration_status(sector_log: pd.DataFrame) -> dict:
 def _mode_ensemble_components(row: dict, mode_status: dict) -> dict:
     scores = []
     probs = []
-    for mode in range(1, 7):
+    for mode in range(1, 8):
         try:
             score_fn, _, ml_fn, _ = get_engine_functions(mode)
             score, _ = score_fn(row)

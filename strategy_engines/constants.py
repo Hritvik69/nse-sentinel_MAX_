@@ -1,0 +1,88 @@
+"""
+Shared constants and debug logging for NSE Sentinel strategy engines.
+
+Keep this file free of data downloads, Streamlit imports, and app state.
+"""
+
+from __future__ import annotations
+
+import logging
+
+
+DEBUG_MODE = False
+LOGGER_NAME = "nse_sentinel"
+
+MODE_ID_COLUMN = "Mode ID"
+MODE7_ID = 7
+
+QUALITY_POINTS = {"HIGH": 100.0, "MEDIUM": 62.0, "LOW": 24.0}
+TRAP_POINTS = {"LOW": 100.0, "MEDIUM": 48.0, "HIGH": 0.0}
+
+MODE7_IDEAL_RSI_MIN = 55.0
+MODE7_IDEAL_RSI_MAX = 67.0
+MODE7_RSI_EXHAUSTION = 76.0
+MODE7_BREAKOUT_ZONE_MIN = -2.0
+MODE7_BREAKOUT_ZONE_MAX = 1.5
+MODE7_ENTRY_ZONE_MIN = -5.0
+MODE7_ENTRY_ZONE_MAX = 2.5
+MODE7_VOL_CONFIRM_MIN = 1.4
+MODE7_VOL_CONFIRM_MAX = 2.8
+MODE7_VOL_WEAK = 1.0
+MODE7_EMA_EXTENSION_WARN = 7.0
+MODE7_EMA_EXTENSION_HARD = 8.0
+MODE7_5D_SPIKE = 12.0
+MODE7_BASE_TIGHT_HIGH = 6.0
+MODE7_BASE_TIGHT_MEDIUM = 9.0
+MODE7_BASE_LOOSE = 14.0
+MODE7_SR_SCORE_HIGH = 72.0
+MODE7_SR_SCORE_WEAK = 42.0
+
+MODE7_POSITIVE_SETUPS = {
+    "BREAKOUT READY",
+    "SUPPORT BOUNCE",
+    "EARLY BREAKOUT",
+    "MOMENTUM CONTINUATION",
+    "RESISTANCE COMPRESSION",
+}
+MODE7_NEGATIVE_SETUPS = {
+    "FAKE BREAKOUT RISK",
+    "OVEREXTENDED",
+}
+
+
+def debug_log(message: str, *args: object, exc_info: bool = False) -> None:
+    """Lightweight debug logger. Silent unless DEBUG_MODE is enabled."""
+    if not DEBUG_MODE:
+        return
+    logging.getLogger(LOGGER_NAME).warning(message, *args, exc_info=exc_info)
+
+
+__all__ = [
+    "DEBUG_MODE",
+    "LOGGER_NAME",
+    "MODE_ID_COLUMN",
+    "MODE7_ID",
+    "QUALITY_POINTS",
+    "TRAP_POINTS",
+    "MODE7_IDEAL_RSI_MIN",
+    "MODE7_IDEAL_RSI_MAX",
+    "MODE7_RSI_EXHAUSTION",
+    "MODE7_BREAKOUT_ZONE_MIN",
+    "MODE7_BREAKOUT_ZONE_MAX",
+    "MODE7_ENTRY_ZONE_MIN",
+    "MODE7_ENTRY_ZONE_MAX",
+    "MODE7_VOL_CONFIRM_MIN",
+    "MODE7_VOL_CONFIRM_MAX",
+    "MODE7_VOL_WEAK",
+    "MODE7_EMA_EXTENSION_WARN",
+    "MODE7_EMA_EXTENSION_HARD",
+    "MODE7_5D_SPIKE",
+    "MODE7_BASE_TIGHT_HIGH",
+    "MODE7_BASE_TIGHT_MEDIUM",
+    "MODE7_BASE_LOOSE",
+    "MODE7_SR_SCORE_HIGH",
+    "MODE7_SR_SCORE_WEAK",
+    "MODE7_POSITIVE_SETUPS",
+    "MODE7_NEGATIVE_SETUPS",
+    "debug_log",
+]

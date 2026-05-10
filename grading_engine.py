@@ -54,6 +54,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from strategy_engines.mode_helpers import resolve_mode_id
+
 
 # ─────────────────────────────────────────────────────────────────────
 # INTERNAL HELPERS
@@ -237,19 +239,9 @@ def _prediction_score(
         confidence is high; bullish nudge is small and regime-conditional
     """
     try:
-        # ── Detect Mode 6 (Swing) safely ──────────────────────────────
-        # Mode can be an int, "6", or a label like "🔴 Swing".
-        is_mode6 = False
-        try:
-            _m_raw = row.get("Mode", row.get("mode", None))
-            if _m_raw is not None:
-                if isinstance(_m_raw, (int, float)):
-                    is_mode6 = int(_m_raw) == 6
-                else:
-                    _m_s = str(_m_raw).strip().lower()
-                    is_mode6 = (_m_s == "6") or ("swing" in _m_s) or ("m6" in _m_s) or ("mode 6" in _m_s)
-        except Exception:
-            is_mode6 = False
+        mode_id = resolve_mode_id(row, resolve_mode_id(row.get("Mode", row.get("mode", None))))
+        is_mode6 = mode_id == 6
+        is_mode7 = mode_id == 7
 
         sq = str(row.get("Setup Quality", "MEDIUM") or "MEDIUM").strip().upper()
         vt = str(row.get("Volume Trend",  "NORMAL") or "NORMAL").strip().upper()
@@ -275,7 +267,14 @@ def _prediction_score(
 
         # Soft stock-specific timing / participation (Prediction Score only)
         rsi = _safe_float(row.get("RSI", 50), 50.0)
-        if is_mode6:
+        if is_mode7:
+            if rsi > 76:
+                pred -= 7.0
+            elif rsi > 70:
+                pred -= 2.0
+            elif 55 <= rsi <= 67:
+                pred += 1.5
+        elif is_mode6:
             # Swing trends tolerate higher RSI; penalize only extreme extension
             if rsi > 85:
                 pred -= 4.0
@@ -288,7 +287,14 @@ def _prediction_score(
                 pred -= 3
 
         vol = _safe_float(row.get("Vol / Avg", 1), 1.0)
-        if is_mode6:
+        if is_mode7:
+            if 1.4 <= vol <= 2.8:
+                pred += 2.0
+            elif vol < 1.0:
+                pred -= 4.0
+            elif vol > 4.0:
+                pred -= 3.0
+        elif is_mode6:
             # Early swing accumulation can be quieter
             if vol < 0.7:
                 pred -= 1.5
@@ -301,6 +307,8 @@ def _prediction_score(
         # Mode 6: dampen macro noise in prediction rank
         if is_mode6:
             cf *= 0.6
+        if is_mode7:
+            cf *= 0.75
         if bias_token == "Bearish":
             pred -= 3.5 * cf
         elif bias_token == "Bullish":
@@ -334,6 +342,28 @@ def _prediction_score(
                                 break
                 if price > ema20 > 0 and slope_ok:
                     pred += 3.0
+            except Exception:
+                pass
+
+        # Optional Mode 7 structure bonus/penalty. These columns are added by
+        # enhanced_logic_engine and are ignored safely when absent.
+        if is_mode7:
+            try:
+                bq = str(row.get("Breakout Quality", "MEDIUM") or "MEDIUM").strip().upper()
+                ss = str(row.get("Support Strength", "MEDIUM") or "MEDIUM").strip().upper()
+                rd = str(row.get("Resistance Distance", "MEDIUM") or "MEDIUM").strip().upper()
+                vc = str(row.get("Volume Confirmation", "MEDIUM") or "MEDIUM").strip().upper()
+                tp = str(row.get("Trap Probability", "LOW") or "LOW").strip().upper()
+                mc = str(row.get("Momentum Continuation", "MEDIUM") or "MEDIUM").strip().upper()
+                stq = str(row.get("Structure Quality", "MEDIUM") or "MEDIUM").strip().upper()
+
+                pred += {"HIGH": 2.0, "MEDIUM": 0.5, "LOW": -3.5}.get(bq, 0.0)
+                pred += {"HIGH": 1.5, "MEDIUM": 0.5, "LOW": -2.0}.get(ss, 0.0)
+                pred += {"HIGH": 1.5, "MEDIUM": 0.0, "LOW": -2.5}.get(rd, 0.0)
+                pred += {"HIGH": 2.0, "MEDIUM": 0.5, "LOW": -4.0}.get(vc, 0.0)
+                pred += {"HIGH": 2.0, "MEDIUM": 0.5, "LOW": -3.0}.get(mc, 0.0)
+                pred += {"HIGH": 3.0, "MEDIUM": 0.0, "LOW": -6.0}.get(stq, 0.0)
+                pred += {"HIGH": -8.0, "MEDIUM": -3.0, "LOW": 1.0}.get(tp, 0.0)
             except Exception:
                 pass
 

@@ -22,7 +22,7 @@ Design rules
 • Never filters / removes rows.
 • Never modifies or renames existing columns.
 • Never crashes — full try/except wrapping at every level.
-• Works for ALL scan modes (1-6) and CSV mode.
+• Works for ALL scan modes and CSV mode.
 • All column access is safe (no KeyError possible).
 • Market bias bearish adjusts score (via grading); Final Signal uses
   the score. No additional hard downgrade here.
@@ -46,6 +46,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from strategy_engines.mode_helpers import resolve_mode_id
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -105,6 +107,15 @@ def _string_series(df: pd.DataFrame, key: str, default: str = "") -> pd.Series:
     if key not in df.columns:
         return pd.Series(default, index=df.index, dtype=object)
     return df[key].where(df[key].notna(), default).astype(str).str.strip().replace("", default)
+
+
+def _mode_id_series(df: pd.DataFrame) -> pd.Series:
+    """Resolve strategy mode id once per dataframe."""
+    if "Mode ID" in df.columns:
+        return pd.to_numeric(df["Mode ID"], errors="coerce").fillna(-1).astype(int)
+    if "Mode" in df.columns:
+        return df["Mode"].apply(lambda value: resolve_mode_id(value, -1)).fillna(-1).astype(int)
+    return pd.Series(-1, index=df.index, dtype=int)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -232,6 +243,132 @@ def _final_signal(
     return "AVOID"
 
 
+def _setup_type_mode7(
+    high_dist: float,
+    vol: float,
+    delta_ema20: float,
+    rsi: float,
+    ret_5d: float,
+    ret_20d: float,
+    trap_risk: str,
+) -> str:
+    """Mode 7 setup labels: structure-first momentum language."""
+    trap = str(trap_risk or "LOW").strip().upper()
+    if trap == "HIGH" or (high_dist > 1.5 and vol < 1.2):
+        return "FAKE BREAKOUT RISK"
+    if delta_ema20 > 7.0 or rsi > 74.0 or ret_5d > 14.0:
+        return "OVEREXTENDED"
+    if -2.0 <= high_dist <= 0.5 and vol >= 1.3 and 52.0 <= rsi <= 70.0:
+        return "BREAKOUT READY"
+    if 0.5 < high_dist <= 2.0 and vol >= 1.4 and delta_ema20 <= 6.0 and 52.0 <= rsi <= 70.0:
+        return "EARLY BREAKOUT"
+    if -6.0 <= high_dist < -2.0 and vol >= 1.1 and delta_ema20 <= 4.5 and 50.0 <= rsi <= 67.0:
+        return "RESISTANCE COMPRESSION"
+    if abs(delta_ema20) <= 3.0 and -2.0 <= ret_5d <= 7.0 and ret_20d > 3.0 and 50.0 <= rsi <= 64.0:
+        return "SUPPORT BOUNCE"
+    if 2.0 <= ret_5d <= 9.0 and 5.0 <= ret_20d <= 18.0 and vol >= 1.2 and 52.0 <= rsi <= 70.0:
+        return "MOMENTUM CONTINUATION"
+    return "MOMENTUM CONTINUATION"
+
+
+def _reason_mode7(
+    setup_type: str,
+    vol: float,
+    rsi: float,
+    high_dist: float,
+    delta_ema20: float,
+    ret_5d: float,
+    ret_20d: float,
+) -> str:
+    parts: list[str] = []
+    if setup_type == "BREAKOUT READY":
+        parts.append("Clean resistance breakout zone")
+    elif setup_type == "SUPPORT BOUNCE":
+        parts.append("Pullback holding EMA20 support")
+    elif setup_type == "RESISTANCE COMPRESSION":
+        parts.append("Price compressing below resistance")
+    elif setup_type == "EARLY BREAKOUT":
+        parts.append("Fresh breakout with controlled extension")
+    elif setup_type == "FAKE BREAKOUT RISK":
+        parts.append("Breakout lacks clean confirmation")
+    elif setup_type == "OVEREXTENDED":
+        parts.append("Late-stage or stretched momentum")
+    else:
+        parts.append("Trend continuation structure")
+
+    if 1.4 <= vol <= 2.8:
+        parts.append("institutional volume confirmed")
+    elif vol < 1.0:
+        parts.append("weak volume")
+    if 55.0 <= rsi <= 67.0:
+        parts.append("controlled RSI")
+    elif rsi > 74.0:
+        parts.append("RSI exhaustion risk")
+    if -2.0 <= high_dist <= 1.5:
+        parts.append("near resistance zone")
+    if delta_ema20 <= 5.0:
+        parts.append("not overextended")
+    if 2.0 <= ret_5d <= 9.0 and 5.0 <= ret_20d <= 18.0:
+        parts.append("measured 5D/20D momentum")
+    return ", ".join(parts)
+
+
+def _risk_score_mode7(
+    delta_ema20: float,
+    rsi: float,
+    vol: float,
+    high_dist: float,
+    ret_5d: float,
+    trap_risk: str,
+) -> float:
+    risk = 0.0
+    risk += max(0.0, delta_ema20 - 4.0) * 4.0
+    risk += max(0.0, rsi - 68.0) * 2.0
+    risk += max(0.0, 1.2 - vol) * 18.0
+    risk += max(0.0, high_dist - 2.0) * 5.0
+    risk += max(0.0, ret_5d - 9.0) * 3.0
+    if str(trap_risk or "").strip().upper() == "HIGH":
+        risk += 35.0
+    elif str(trap_risk or "").strip().upper() == "MEDIUM":
+        risk += 12.0
+    return float(np.clip(risk, 0.0, 100.0))
+
+
+def _final_signal_mode7(
+    setup_type: str,
+    trap_risk: str,
+    setup_quality: str,
+    volume_trend: str,
+    structure_quality: str,
+) -> str:
+    setup = str(setup_type or "").strip().upper()
+    trap = str(trap_risk or "LOW").strip().upper()
+    quality = str(setup_quality or "MEDIUM").strip().upper()
+    volume = str(volume_trend or "NORMAL").strip().upper()
+    structure = str(structure_quality or "MEDIUM").strip().upper()
+
+    if trap == "HIGH" or setup == "FAKE BREAKOUT RISK":
+        return "TRAP"
+    if setup == "OVEREXTENDED":
+        return "AVOID" if quality == "LOW" or trap == "MEDIUM" else "WATCH"
+    if (
+        setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "EARLY BREAKOUT")
+        and quality == "HIGH"
+        and structure == "HIGH"
+        and volume == "STRONG"
+        and trap == "LOW"
+    ):
+        return "STRONG BUY"
+    if (
+        setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "MOMENTUM CONTINUATION", "RESISTANCE COMPRESSION", "EARLY BREAKOUT")
+        and quality in ("HIGH", "MEDIUM")
+        and structure in ("HIGH", "MEDIUM")
+        and volume != "WEAK"
+    ):
+        return "BUY" if quality == "HIGH" or setup in ("BREAKOUT READY", "SUPPORT BOUNCE") else "WATCH"
+    return "WATCH" if structure == "MEDIUM" else "AVOID"
+
+
 def _parse_bias(market_bias: dict | None) -> str:
     """
     Normalise market_bias dict → "Bullish" / "Bearish" / "Sideways".
@@ -307,81 +444,59 @@ def apply_phase4_logic(
         vol = _numeric_series(out, ["Vol / Avg"], 1.0)
         delta_ema20 = _numeric_series(out, ["Δ vs EMA20 (%)"], 0.0)
         high_dist = _numeric_series(out, ["Δ vs 20D High (%)", "Near High (%)"], -5.0)
+        ret_5d = _numeric_series(out, ["5D Return (%)"], 0.0)
+        ret_20d = _numeric_series(out, ["20D Return (%)"], 0.0)
         trap_risk = _string_series(out, "Trap Risk", "LOW").str.upper()
         setup_qual = _string_series(out, "Setup Quality", "MEDIUM").str.upper()
         entry_timing = _string_series(out, "Entry Timing", "NEUTRAL").str.upper()
         vol_trend = _string_series(out, "Volume Trend", "NORMAL").str.upper()
+        mode_ids = _mode_id_series(out)
+        structure_qual = _string_series(out, "Structure Quality", "MEDIUM").str.upper()
 
-        out["Setup Type"] = [
+        setup_types = [
             _setup_type(h, v, d, r)
             for h, v, d, r in zip(high_dist, vol, delta_ema20, rsi)
         ]
-        out["Reason"] = [
+        reasons = [
             _reason(v, r, h, d)
             for v, r, h, d in zip(vol, rsi, high_dist, delta_ema20)
         ]
-        out["Risk Score"] = [
+        risk_scores = [
             round(_risk_score(d, r, v), 2)
             for d, r, v in zip(delta_ema20, rsi, vol)
         ]
-        out["Final Signal"] = [
+        final_signals = [
             _final_signal(tr, sq, et, vt)
             for tr, sq, et, vt in zip(trap_risk, setup_qual, entry_timing, vol_trend)
         ]
-        return out
 
-        setup_types:   list[str]   = []
-        reasons:       list[str]   = []
-        risk_scores:   list[float] = []
-        final_signals: list[str]   = []
+        for i, (m, h, v, d, r, r5, r20, tr, sq, vt, stq) in enumerate(
+            zip(
+                mode_ids,
+                high_dist,
+                vol,
+                delta_ema20,
+                rsi,
+                ret_5d,
+                ret_20d,
+                trap_risk,
+                setup_qual,
+                vol_trend,
+                structure_qual,
+            )
+        ):
+            if int(m) != 7:
+                continue
+            setup7 = _setup_type_mode7(h, v, d, r, r5, r20, tr)
+            setup_types[i] = setup7
+            reasons[i] = _reason_mode7(setup7, v, r, h, d, r5, r20)
+            risk_scores[i] = round(_risk_score_mode7(d, r, v, h, r5, tr), 2)
+            final_signals[i] = _final_signal_mode7(setup7, tr, sq, vt, stq)
 
-        for idx in ():
-            try:
-                row = out.loc[idx]
-
-                # ── Safe source-column reads ───────────────────────────
-                rsi         = get_safe(row, ["RSI"],                           50.0)
-                vol         = get_safe(row, ["Vol / Avg"],                      1.0)
-                delta_ema20 = get_safe(row, ["Δ vs EMA20 (%)"],                 0.0)
-                ret_5d      = get_safe(row, ["5D Return (%)"],                  0.0)  # noqa: F841
-                high_dist   = get_safe(row, ["Δ vs 20D High (%)", "Near High (%)"], -5.0)
-
-                # ── Phase 3 classification columns (safe string read) ──
-                trap_risk    = get_str_safe(row, "Trap Risk",    "LOW")
-                setup_qual   = get_str_safe(row, "Setup Quality", "MEDIUM")
-                entry_timing = get_str_safe(row, "Entry Timing",  "NEUTRAL")
-                vol_trend    = get_str_safe(row, "Volume Trend",  "NORMAL")
-
-                # ── 1. Setup Type ──────────────────────────────────────
-                st_val = _setup_type(high_dist, vol, delta_ema20, rsi)
-
-                # ── 2. Reason ──────────────────────────────────────────
-                rs_val = _reason(vol, rsi, high_dist, delta_ema20)
-
-                # ── 3. Risk Score ──────────────────────────────────────
-                rk_val = _risk_score(delta_ema20, rsi, vol)
-
-                # ── 4. Final Signal (no additional market downgrade) ───
-                fs_val = _final_signal(trap_risk, setup_qual, entry_timing, vol_trend)
-
-            except Exception:
-                # Row-level fail-safe — never crash the whole loop
-                st_val = "Weak Setup"
-                rs_val = "Weak setup or missing confirmation"
-                rk_val = 50.0
-                fs_val = "AVOID"
-
-            setup_types.append(st_val)
-            reasons.append(rs_val)
-            risk_scores.append(round(rk_val, 2))
-            final_signals.append(fs_val)
-
-        # ── Assign columns (no existing column touched) ────────────────
-        out["Setup Type"]   = setup_types
-        out["Reason"]       = reasons
-        out["Risk Score"]   = risk_scores
+        out["Setup Type"] = setup_types
+        out["Reason"] = reasons
+        out["Risk Score"] = risk_scores
         out["Final Signal"] = final_signals
-
         return out
 
     except Exception:
@@ -408,6 +523,25 @@ def _advanced_trap(high_dist: float, vol: float, rsi: float) -> str:
     if rsi > 70.0 and vol < 1.0:
         return "EXHAUSTION"
     if vol < 0.9:
+        return "WEAK VOLUME"
+    return "NONE"
+
+
+def _advanced_trap_mode7(
+    high_dist: float,
+    vol: float,
+    rsi: float,
+    delta_ema20: float,
+    ret_5d: float,
+    setup_type: str,
+) -> str:
+    """Mode 7 fake-breakout/exhaustion detection."""
+    setup = str(setup_type or "").strip().upper()
+    if setup == "FAKE BREAKOUT RISK" or (high_dist > 1.5 and vol < 1.2):
+        return "FAKE BREAKOUT"
+    if setup == "OVEREXTENDED" or rsi > 76.0 or delta_ema20 > 8.0 or ret_5d > 14.0:
+        return "EXHAUSTION"
+    if vol < 1.0:
         return "WEAK VOLUME"
     return "NONE"
 
@@ -515,13 +649,22 @@ def apply_phase42_logic(df: pd.DataFrame) -> pd.DataFrame:
         rsi = _numeric_series(out, ["RSI"], 50.0)
         vol = _numeric_series(out, ["Vol / Avg"], 1.0)
         high_dist = _numeric_series(out, ["Δ vs 20D High (%)", "Near High (%)"], -5.0)
+        delta_ema20 = _numeric_series(out, ["Δ vs EMA20 (%)"], 0.0)
+        ret_5d = _numeric_series(out, ["5D Return (%)"], 0.0)
         final_sig = _string_series(out, "Final Signal", "AVOID").str.upper()
         risk_score = _numeric_series(out, ["Risk Score"], 50.0)
+        setup_type = _string_series(out, "Setup Type", "").str.upper()
+        mode_ids = _mode_id_series(out)
 
         adv_traps = [
             _advanced_trap(h, v, r)
             for h, v, r in zip(high_dist, vol, rsi)
         ]
+        for i, (m, h, v, r, d, r5, st) in enumerate(
+            zip(mode_ids, high_dist, vol, rsi, delta_ema20, ret_5d, setup_type)
+        ):
+            if int(m) == 7:
+                adv_traps[i] = _advanced_trap_mode7(h, v, r, d, r5, st)
         out["Advanced Trap"] = adv_traps
         out["Expected Move"] = [
             _expected_move(v, r)
@@ -531,53 +674,6 @@ def apply_phase42_logic(df: pd.DataFrame) -> pd.DataFrame:
             _adjusted_signal(fs, rs, at)
             for fs, rs, at in zip(final_sig, risk_score, adv_traps)
         ]
-        return out
-
-        adv_traps:   list[str] = []
-        exp_moves:   list[str] = []
-        adj_signals: list[str] = []
-
-        for idx in ():
-            try:
-                row = out.loc[idx]
-
-                # ── Safe source-column reads ───────────────────────────
-                rsi       = get_safe(row, ["RSI"],            50.0)
-                vol       = get_safe(row, ["Vol / Avg"],       1.0)
-                high_dist = get_safe(
-                    row,
-                    ["Δ vs 20D High (%)", "Near High (%)"],
-                    -5.0,
-                )
-
-                # Phase 4.1 outputs (safe string/float read)
-                final_sig  = get_str_safe(row, "Final Signal", "AVOID")
-                risk_score = get_safe(row, ["Risk Score"],     50.0)
-
-                # ── 1. Advanced Trap ───────────────────────────────────
-                at_val = _advanced_trap(high_dist, vol, rsi)
-
-                # ── 2. Expected Move ───────────────────────────────────
-                em_val = _expected_move(vol, rsi)
-
-                # ── 3. Adjusted Signal (softened logic) ────────────────
-                as_val = _adjusted_signal(final_sig, risk_score, at_val)
-
-            except Exception:
-                # Row-level fail-safe
-                at_val = "NONE"
-                em_val = "Uncertain"
-                as_val = "AVOID"
-
-            adv_traps.append(at_val)
-            exp_moves.append(em_val)
-            adj_signals.append(as_val)
-
-        # ── Assign columns (no existing column touched) ────────────────
-        out["Advanced Trap"]   = adv_traps
-        out["Expected Move"]   = exp_moves
-        out["Adjusted Signal"] = adj_signals
-
         return out
 
     except Exception:

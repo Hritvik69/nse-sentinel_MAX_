@@ -15,6 +15,8 @@ from datetime import date, datetime, time as dtime, timedelta
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from strategy_engines.constants import MODE7_ID, MODE_ID_COLUMN
+from strategy_engines.mode_helpers import resolve_mode_id
 try:
     import data_session_manager as _dsm
 except Exception:
@@ -1151,6 +1153,14 @@ def add_rank_score_columns(df: pd.DataFrame) -> pd.DataFrame:
         out["rsi_score"] = 0.0
         out["rank_score"] = 0.0
 
+        try:
+            mode_ids = _mode_id_series(out)
+            if "Mode7 Rank Score" in out.columns and mode_ids.eq(MODE7_ID).any():
+                out["rank_score"] = pd.to_numeric(out["Mode7 Rank Score"], errors="coerce").fillna(0.0).round(2)
+                return out
+        except Exception:
+            pass
+
         # Cache per symbol to avoid duplicate downloads.
         _df_cache: dict[str, pd.DataFrame | None] = {}
 
@@ -1278,6 +1288,14 @@ def _first_text_series(df: pd.DataFrame, *cols: str) -> pd.Series:
     return pd.Series("", index=df.index, dtype="object")
 
 
+def _mode_id_series(df: pd.DataFrame) -> pd.Series:
+    if MODE_ID_COLUMN in df.columns:
+        return pd.to_numeric(df[MODE_ID_COLUMN], errors="coerce").fillna(-1).astype(int)
+    if "Mode" in df.columns:
+        return df["Mode"].apply(lambda value: resolve_mode_id(value, -1)).fillna(-1).astype(int)
+    return pd.Series(-1, index=df.index, dtype="int64")
+
+
 def _has_flag(text: object) -> bool:
     raw = str(text or "").strip().lower()
     if raw in {"", "-", "nan", "none", "null", "0", "false", "no"}:
@@ -1287,11 +1305,31 @@ def _has_flag(text: object) -> bool:
     return True
 
 
+def _quality_points(series: pd.Series, default: str = "MEDIUM") -> pd.Series:
+    values = series.fillna(default).astype(str).str.upper().str.strip()
+    return values.map({"HIGH": 100.0, "MEDIUM": 62.0, "LOW": 24.0}).fillna(62.0).astype(float)
+
+
+def _trap_points(series: pd.Series) -> pd.Series:
+    values = series.fillna("LOW").astype(str).str.upper().str.strip()
+    return values.map({"LOW": 100.0, "MEDIUM": 48.0, "HIGH": 0.0}).fillna(70.0).astype(float)
+
+
 def _pick_reason_main(row: pd.Series) -> str:
     return (
         f"Final {safe(row.get('Final Score', 0.0)):.1f} | "
         f"Pred {safe(row.get('Prediction Score', row.get('ML %', 0.0))):.1f} | "
         f"{str(row.get('Next-Day Signal', row.get('Adjusted Signal', '-'))) or '-'}"
+    )
+
+
+def _pick_reason_mode7(row: pd.Series) -> str:
+    setup = str(row.get("Setup Type", row.get("Mode7 Verdict", "-")) or "-")
+    trap = str(row.get("Trap Probability", row.get("Trap Risk", "LOW")) or "LOW")
+    structure = str(row.get("Structure Quality", "-") or "-")
+    return (
+        f"{setup} | Structure {structure} | Trap {trap} | "
+        f"Score {safe(row.get('Tomorrow Pick Score', row.get('Final Score', 0.0))):.1f}"
     )
 
 
@@ -1452,107 +1490,199 @@ def get_tomorrow_top_picks(
             + action.fillna("")
         ).str.lower()
 
-        signal_bonus = np.select(
-            [
-                signal_text.str.contains("strong green|strong buy|high probability", regex=True, na=False),
-                signal_text.str.contains("possible up|buy ready|buyable|green", regex=True, na=False),
-                signal_text.str.contains("risky|late entry|watch", regex=True, na=False),
-                signal_text.str.contains("weak|avoid|trap|sell", regex=True, na=False),
-            ],
-            [12.0, 7.0, -3.0, -15.0],
-            default=2.0,
+        setup_type = _first_text_series(out, "Setup Type", "Mode7 Verdict").str.upper().str.strip()
+        mode_ids = _mode_id_series(out)
+        is_mode7 = (
+            mode_ids.eq(MODE7_ID)
+            | setup_type.isin([
+                "BREAKOUT READY",
+                "SUPPORT BOUNCE",
+                "MOMENTUM CONTINUATION",
+                "RESISTANCE COMPRESSION",
+                "EARLY BREAKOUT",
+                "FAKE BREAKOUT RISK",
+                "OVEREXTENDED",
+                "STRONG BREAKOUT",
+                "CLEAN SUPPORT BOUNCE",
+            ])
+            | ("Structure Quality" in out.columns and "Breakout Quality" in out.columns and "Trap Probability" in out.columns)
         )
-        grade_bonus = np.select(
-            [
-                grade.eq("A+"),
-                grade.eq("A"),
-                grade.eq("B"),
-                grade.eq("C"),
-                grade.eq("D"),
-            ],
-            [8.0, 6.0, 3.0, -1.0, -6.0],
-            default=0.0,
-        )
-        conviction_bonus = np.select(
-            [
-                conviction.eq("HIGH"),
-                conviction.eq("MEDIUM"),
-                conviction.eq("LOW"),
-            ],
-            [5.0, 1.0, -5.0],
-            default=0.0,
-        )
-        setup_bonus = np.select(
-            [
-                setup.eq("HIGH"),
-                setup.eq("MEDIUM"),
-                setup.eq("LOW"),
-            ],
-            [5.0, 1.5, -6.0],
-            default=0.0,
-        )
-        entry_bonus = np.select(
-            [
-                entry.eq("EARLY"),
-                entry.eq("GOOD"),
-                entry.eq("NEUTRAL"),
-                entry.eq("LATE"),
-            ],
-            [3.0, 1.0, 0.0, -5.0],
-            default=0.0,
-        )
-        action_bonus = np.select(
-            [
-                action.str.contains("BUY TOMORROW", regex=False, na=False),
-                action.str.contains("WATCH", regex=False, na=False),
-                action.str.contains("WAIT", regex=False, na=False),
-                action.str.contains("AVOID", regex=False, na=False),
-            ],
-            [10.0, 2.0, -4.0, -14.0],
-            default=0.0,
-        )
-        trap_penalty = pd.Series(
-            np.select(
-                [
-                    trap_text.str.contains("high|trap|risky|yes", regex=True, na=False),
-                    trap_text.str.contains("medium|caution", regex=True, na=False),
-                    trap_text.str.contains("low|safe|clean|no trap", regex=True, na=False),
-                ],
-                [18.0, 8.0, 0.0],
-                default=np.where(trap_text.eq(""), 0.0, 10.0),
-            ),
-            index=out.index,
-            dtype="float64",
-        )
-        out["Tomorrow Pick Score"] = (
-            0.38 * final
-            + 0.24 * pred
-            + 0.16 * backtest
-            + 0.12 * ml
-            + signal_bonus
-            + grade_bonus
-            + conviction_bonus
-            + setup_bonus
-            + entry_bonus
-            + action_bonus
-            - trap_penalty
-        ).clip(0.0, 100.0).round(1)
 
-        strict_mask = (
-            action.str.contains("BUY TOMORROW", regex=False, na=False)
-            & ~signal_text.str.contains("weak|avoid|trap|sell|late entry|risky", regex=True, na=False)
-            & trap_penalty.le(0.0)
-            & ~conviction.eq("LOW")
-            & ~setup.eq("LOW")
-            & ~grade.eq("D")
-        )
-        soft_mask = (
-            ~action.str.contains("AVOID", regex=False, na=False)
-            & ~signal_text.str.contains("weak|avoid|trap|sell", regex=True, na=False)
-            & trap_penalty.le(8.0)
-        )
-        sort_cols = ["Tomorrow Pick Score", "Final Score", "Prediction Score", "Backtest %", "ML %"]
-        reason_fn = _pick_reason_main
+        if bool(is_mode7.any()):
+            structure = _quality_points(_first_text_series(out, "Structure Quality"), "MEDIUM")
+            breakout = _quality_points(_first_text_series(out, "Breakout Quality"), "MEDIUM")
+            support = _quality_points(_first_text_series(out, "Support Strength"), "MEDIUM")
+            volume_q = _quality_points(_first_text_series(out, "Volume Confirmation"), "MEDIUM")
+            continuation = _quality_points(_first_text_series(out, "Momentum Continuation"), "MEDIUM")
+            trap_q = _trap_points(_first_text_series(out, "Trap Probability"))
+            sr = _series_num(out, "S&R Structure Score", 50.0)
+
+            setup_bonus = pd.Series(
+                np.select(
+                    [
+                        setup_type.isin(["BREAKOUT READY", "SUPPORT BOUNCE"]),
+                        setup_type.isin(["EARLY BREAKOUT", "MOMENTUM CONTINUATION"]),
+                        setup_type.eq("RESISTANCE COMPRESSION"),
+                        setup_type.isin(["FAKE BREAKOUT RISK", "OVEREXTENDED"]),
+                    ],
+                    [9.0, 6.0, 3.0, -18.0],
+                    default=0.0,
+                ),
+                index=out.index,
+                dtype="float64",
+            )
+            mode7_trap_penalty = pd.Series(
+                np.select(
+                    [
+                        _first_text_series(out, "Trap Probability").str.upper().eq("HIGH")
+                        | trap_text.str.contains("high|trap|risky|yes", regex=True, na=False),
+                        _first_text_series(out, "Trap Probability").str.upper().eq("MEDIUM")
+                        | trap_text.str.contains("medium|caution", regex=True, na=False),
+                    ],
+                    [28.0, 10.0],
+                    default=0.0,
+                ),
+                index=out.index,
+                dtype="float64",
+            )
+            out["Tomorrow Pick Score"] = (
+                0.24 * structure
+                + 0.19 * breakout
+                + 0.15 * support
+                + 0.14 * volume_q
+                + 0.10 * continuation
+                + 0.08 * trap_q
+                + 0.05 * sr
+                + 0.03 * final
+                + 0.02 * pred
+                + setup_bonus
+                - mode7_trap_penalty
+            ).clip(0.0, 100.0).round(1)
+
+            strict_mask = (
+                setup_type.isin(["BREAKOUT READY", "SUPPORT BOUNCE", "EARLY BREAKOUT", "MOMENTUM CONTINUATION"])
+                & structure.ge(62.0)
+                & breakout.ge(62.0)
+                & volume_q.ge(62.0)
+                & trap_q.ge(100.0)
+                & ~signal_text.str.contains("weak|avoid|trap|sell|late entry|risky|fake|overextended", regex=True, na=False)
+            )
+            soft_mask = (
+                setup_type.isin([
+                    "BREAKOUT READY",
+                    "SUPPORT BOUNCE",
+                    "EARLY BREAKOUT",
+                    "MOMENTUM CONTINUATION",
+                    "RESISTANCE COMPRESSION",
+                ])
+                & structure.ge(62.0)
+                & trap_q.ge(48.0)
+                & ~signal_text.str.contains("avoid|trap|sell|fake|overextended", regex=True, na=False)
+            )
+            sort_cols = ["Tomorrow Pick Score", "Mode7 Rank Score", "Final Score", "Prediction Score"]
+            reason_fn = _pick_reason_mode7
+        else:
+            signal_bonus = np.select(
+                [
+                    signal_text.str.contains("strong green|strong buy|high probability", regex=True, na=False),
+                    signal_text.str.contains("possible up|buy ready|buyable|green", regex=True, na=False),
+                    signal_text.str.contains("risky|late entry|watch", regex=True, na=False),
+                    signal_text.str.contains("weak|avoid|trap|sell", regex=True, na=False),
+                ],
+                [12.0, 7.0, -3.0, -15.0],
+                default=2.0,
+            )
+            grade_bonus = np.select(
+                [
+                    grade.eq("A+"),
+                    grade.eq("A"),
+                    grade.eq("B"),
+                    grade.eq("C"),
+                    grade.eq("D"),
+                ],
+                [8.0, 6.0, 3.0, -1.0, -6.0],
+                default=0.0,
+            )
+            conviction_bonus = np.select(
+                [
+                    conviction.eq("HIGH"),
+                    conviction.eq("MEDIUM"),
+                    conviction.eq("LOW"),
+                ],
+                [5.0, 1.0, -5.0],
+                default=0.0,
+            )
+            setup_bonus = np.select(
+                [
+                    setup.eq("HIGH"),
+                    setup.eq("MEDIUM"),
+                    setup.eq("LOW"),
+                ],
+                [5.0, 1.5, -6.0],
+                default=0.0,
+            )
+            entry_bonus = np.select(
+                [
+                    entry.eq("EARLY"),
+                    entry.eq("GOOD"),
+                    entry.eq("NEUTRAL"),
+                    entry.eq("LATE"),
+                ],
+                [3.0, 1.0, 0.0, -5.0],
+                default=0.0,
+            )
+            action_bonus = np.select(
+                [
+                    action.str.contains("BUY TOMORROW", regex=False, na=False),
+                    action.str.contains("WATCH", regex=False, na=False),
+                    action.str.contains("WAIT", regex=False, na=False),
+                    action.str.contains("AVOID", regex=False, na=False),
+                ],
+                [10.0, 2.0, -4.0, -14.0],
+                default=0.0,
+            )
+            trap_penalty = pd.Series(
+                np.select(
+                    [
+                        trap_text.str.contains("high|trap|risky|yes", regex=True, na=False),
+                        trap_text.str.contains("medium|caution", regex=True, na=False),
+                        trap_text.str.contains("low|safe|clean|no trap", regex=True, na=False),
+                    ],
+                    [18.0, 8.0, 0.0],
+                    default=np.where(trap_text.eq(""), 0.0, 10.0),
+                ),
+                index=out.index,
+                dtype="float64",
+            )
+            out["Tomorrow Pick Score"] = (
+                0.38 * final
+                + 0.24 * pred
+                + 0.16 * backtest
+                + 0.12 * ml
+                + signal_bonus
+                + grade_bonus
+                + conviction_bonus
+                + setup_bonus
+                + entry_bonus
+                + action_bonus
+                - trap_penalty
+            ).clip(0.0, 100.0).round(1)
+
+            strict_mask = (
+                action.str.contains("BUY TOMORROW", regex=False, na=False)
+                & ~signal_text.str.contains("weak|avoid|trap|sell|late entry|risky", regex=True, na=False)
+                & trap_penalty.le(0.0)
+                & ~conviction.eq("LOW")
+                & ~setup.eq("LOW")
+                & ~grade.eq("D")
+            )
+            soft_mask = (
+                ~action.str.contains("AVOID", regex=False, na=False)
+                & ~signal_text.str.contains("weak|avoid|trap|sell", regex=True, na=False)
+                & trap_penalty.le(8.0)
+            )
+            sort_cols = ["Tomorrow Pick Score", "Final Score", "Prediction Score", "Backtest %", "ML %"]
+            reason_fn = _pick_reason_main
 
     if strict_mask.sum() >= top_n:
         picks = out.loc[strict_mask].copy()

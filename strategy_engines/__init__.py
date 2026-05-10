@@ -1,7 +1,7 @@
 """
 strategy_engines/__init__.py
 ─────────────────────────────
-Dispatcher for the 6 independent strategy engines.
+Dispatcher for the independent strategy engines.
 `get_engine_functions(mode)` returns a 4-tuple of callables:
     (compute_score_fn, backtest_fn, predict_ml_fn, check_bull_trap_fn)
 
@@ -79,6 +79,13 @@ def get_engine_functions(mode: int) -> tuple[
             predict_ml_mode6      as ml_fn,
             check_bull_trap_mode6 as trap_fn,
         )
+    elif mode == 7:
+        from strategy_engines.mode7_engine import (
+            compute_score_mode7   as score_fn,
+            backtest_mode7        as bt_fn,
+            predict_ml_mode7      as ml_fn,
+            check_bull_trap_mode7 as trap_fn,
+        )
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
@@ -95,6 +102,7 @@ def get_train_function(mode: int) -> Callable:
         4: "strategy_engines.mode4_engine.train_model_mode4",
         5: "strategy_engines.mode5_engine.train_model_mode5",
         6: "strategy_engines.mode6_engine.train_model_mode6",
+        7: "strategy_engines.mode7_engine.train_model_mode7",
     }
     module_path, fn_name = _MAP[mode].rsplit(".", 1)
     import importlib
@@ -113,3 +121,56 @@ def backtest_with_preloaded(mode: int, row: dict, ticker: str) -> float:
         return _bt_with_preloaded(mode, row, ticker)
     except Exception:
         return 50.0
+
+
+_MODE7_EXPORTS = {
+    "compute_score_mode7",
+    "backtest_mode7",
+    "predict_ml_mode7",
+    "check_bull_trap_mode7",
+}
+_MODE7_RANKING_EXPORTS = {
+    "final_score_mode7",
+    "ranking_priority_mode7",
+    "apply_mode7_ranking",
+}
+_MODE7_STRUCTURE_EXPORTS = {"analyze_mode7_structure"}
+
+
+def __getattr__(name: str):
+    """Lazy direct exports for Mode 7 without loading every engine at import."""
+    if name in _MODE7_EXPORTS:
+        import importlib
+
+        mod = importlib.import_module("strategy_engines.mode7_engine")
+        return getattr(mod, name)
+    if name in _MODE7_RANKING_EXPORTS:
+        import importlib
+
+        mod = importlib.import_module("strategy_engines.mode7_ranking")
+        return getattr(mod, name)
+    if name in _MODE7_STRUCTURE_EXPORTS:
+        import importlib
+
+        mod = importlib.import_module("strategy_engines.mode7_structure")
+        return getattr(mod, name)
+    raise AttributeError(f"module 'strategy_engines' has no attribute {name!r}")
+
+
+__all__ = [
+    "ALL_DATA",
+    "preload_all",
+    "get_df_for_ticker",
+    "preload_history_batch",
+    "get_engine_functions",
+    "get_train_function",
+    "backtest_with_preloaded",
+    "compute_score_mode7",
+    "backtest_mode7",
+    "predict_ml_mode7",
+    "check_bull_trap_mode7",
+    "final_score_mode7",
+    "ranking_priority_mode7",
+    "apply_mode7_ranking",
+    "analyze_mode7_structure",
+]

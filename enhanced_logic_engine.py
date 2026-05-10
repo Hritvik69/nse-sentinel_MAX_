@@ -3,13 +3,15 @@ enhanced_logic_engine.py
 ─────────────────────────
 Phase 3 intelligence layer for NSE Sentinel.
 
-Adds FOUR classification columns to any scan DataFrame that has already
+Adds classification columns to any scan DataFrame that has already
 passed through enhance_results().
 
     "Volume Trend"   –  STRONG / BUILDING / NORMAL / WEAK
     "Setup Quality"  –  HIGH / MEDIUM / LOW
     "Entry Timing"   –  EARLY / GOOD / LATE
     "Trap Risk"      –  HIGH / MEDIUM / LOW
+    "Breakout Quality" / "Support Strength" / "Resistance Distance" /
+    "Structure Quality" plus Mode 7 momentum quality helpers
 
 Design principles
 ─────────────────
@@ -18,7 +20,7 @@ Design principles
 • Never filters / removes rows — DO NOT drop any row.
 • Never modifies existing columns.
 • Never crashes — every path returns df unchanged on any error.
-• Works after any mode (1-6) without mode-specific branching.
+• Works after any mode without mode-specific branching.
 
 Trap Risk clarification
 ───────────────────────
@@ -75,6 +77,12 @@ def _numeric_series(df: pd.DataFrame, name: str, default: float) -> pd.Series:
         .str.replace(r"[%xX×,]", "", regex=True)
     )
     return pd.to_numeric(cleaned, errors="coerce").fillna(default).astype(float)
+
+
+def _text_series(df: pd.DataFrame, name: str, default: str = "") -> pd.Series:
+    if name not in df.columns:
+        return pd.Series(default, index=df.index, dtype=object)
+    return df[name].where(df[name].notna(), default).astype(str).str.strip().str.upper()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -276,6 +284,104 @@ def apply_enhanced_logic(df: pd.DataFrame) -> pd.DataFrame:
         out["Setup Quality"] = setup_quality
         out["Entry Timing"] = entry_timing
         out["Trap Risk"] = trap_risk
+
+        high_dist = _numeric_series(out, "Δ vs 20D High (%)", -5.0)
+        price = _numeric_series(out, "Price (₹)", 0.0)
+        ema20 = _numeric_series(out, "EMA 20", 0.0)
+        ema50 = _numeric_series(out, "EMA 50", 0.0)
+        ret_20d = _numeric_series(out, "20D Return (%)", 0.0)
+        support_touches = _numeric_series(out, "Support Touches", 0.0)
+        resistance_touches = _numeric_series(out, "Resistance Touches", 0.0)
+        resistance_rejections = _numeric_series(out, "Resistance Rejections", 0.0)
+        base_tightness = _numeric_series(out, "Base Tightness (%)", 99.0)
+        sr_score = _numeric_series(out, "S&R Structure Score", 50.0)
+        pivot_support = _text_series(out, "Pivot Support Quality", "LOW")
+        pivot_resistance = _text_series(out, "Pivot Resistance Quality", "LOW")
+        atr_contraction = _text_series(out, "ATR Contraction", "NO").eq("YES")
+        breakout_retest = _text_series(out, "Breakout Retest", "NO").eq("YES")
+        liquidity_sweep = _text_series(out, "Liquidity Sweep", "NO").eq("YES")
+        wick_rejection = _text_series(out, "Wick Rejection", "MEDIUM")
+
+        ema_stack = (price > ema20) & (ema20 > ema50) & (ema50 > 0)
+        ideal_resistance = (high_dist >= -2.0) & (high_dist <= 1.5)
+        medium_resistance = (
+            ((high_dist >= -5.0) & (high_dist < -2.0))
+            | ((high_dist > 1.5) & (high_dist <= 3.0))
+        )
+        real_support = (support_touches >= 2) | pivot_support.isin(["HIGH", "MEDIUM"]) | breakout_retest | liquidity_sweep
+        real_resistance = (resistance_touches >= 2) | pivot_resistance.isin(["HIGH", "MEDIUM"])
+        tight_base = base_tightness <= 8.0
+
+        resistance_distance = np.select(
+            [ideal_resistance & (real_resistance | tight_base), ideal_resistance | medium_resistance],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        volume_confirmation = np.select(
+            [(vol_avg >= 1.4) & (vol_avg <= 2.8), (vol_avg >= 1.1) & (vol_avg <= 4.0)],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        support_strength = np.select(
+            [ema_stack & (delta_ema20 >= -1.0) & (delta_ema20 <= 3.0) & real_support,
+             (price > ema20) & (delta_ema20.abs() <= 5.0) & (ema20 > 0) & (real_support | (support_touches >= 1))],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        breakout_quality = np.select(
+            [ideal_resistance & (vol_avg >= 1.3) & (vol_avg <= 3.2) & (rsi >= 52.0) & (rsi <= 70.0) & (delta_ema20 <= 7.0) & (real_resistance | tight_base | atr_contraction),
+             (ideal_resistance | medium_resistance) & (vol_avg >= 1.1) & (rsi >= 50.0) & (rsi <= 72.0) & (delta_ema20 <= 8.0)],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        momentum_continuation = np.select(
+            [(ret_5d >= 2.0) & (ret_5d <= 9.0) & (ret_20d >= 5.0) & (ret_20d <= 18.0) & (rsi >= 52.0) & (rsi <= 70.0) & (delta_ema20 <= 7.0),
+             (ret_5d > 0.0) & (ret_20d > 0.0) & (rsi >= 48.0) & (rsi <= 74.0) & (delta_ema20 <= 9.0)],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        mode7_trap_count = (
+            (rsi > 76.0).astype(int)
+            + (vol_avg < 1.0).astype(int)
+            + (delta_ema20 > 8.0).astype(int)
+            + (ret_5d > 12.0).astype(int)
+            + ((high_dist > 1.5) & (vol_avg < 1.2)).astype(int)
+            + ((resistance_rejections >= 2) & (vol_avg < 1.25)).astype(int)
+            + (wick_rejection.eq("LOW") & (high_dist > -1.0)).astype(int)
+        )
+        trap_probability = np.select(
+            [mode7_trap_count >= 3, mode7_trap_count >= 1],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        structure_quality = np.select(
+            [
+                ema_stack
+                & (breakout_quality != "LOW")
+                & (support_strength != "LOW")
+                & (volume_confirmation != "LOW")
+                & (momentum_continuation != "LOW")
+                & (trap_probability == "LOW"),
+                (ema_stack & (trap_probability != "HIGH") & (delta_ema20 <= 8.0))
+                | ((sr_score >= 62.0) & (trap_probability != "HIGH")),
+            ],
+            ["HIGH", "MEDIUM"],
+            default="LOW",
+        )
+
+        out["Breakout Quality"] = breakout_quality
+        out["Support Strength"] = support_strength
+        out["Resistance Distance"] = resistance_distance
+        out["Structure Quality"] = structure_quality
+        out["Volume Confirmation"] = volume_confirmation
+        out["Trap Probability"] = trap_probability
+        out["Momentum Continuation"] = momentum_continuation
 
         # Preserve existing sort order (Final Score desc if present)
         if "Final Score" in out.columns:
