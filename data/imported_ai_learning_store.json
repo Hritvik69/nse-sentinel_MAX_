@@ -1319,7 +1319,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-10T04:21:11",
+      "last_imported_at": "2026-05-10T04:21:34",
       "snapshot": {
         "Symbol": "VENUSREM",
         "Price (₹)": 1006.75,
@@ -1393,7 +1393,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-10T04:21:11",
+      "last_imported_at": "2026-05-10T04:21:34",
       "snapshot": {
         "Symbol": "TIMKEN",
         "Price (₹)": 3595.0,
@@ -1467,7 +1467,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-10T04:21:11",
+      "last_imported_at": "2026-05-10T04:21:34",
       "snapshot": {
         "Symbol": "SKFINDIA",
         "Price (₹)": 1764.9,
@@ -1531,5 +1531,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-10T04:21:11"
+  "updated_at": "2026-05-10T04:21:34"
 }
