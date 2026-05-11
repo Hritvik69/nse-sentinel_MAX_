@@ -5116,7 +5116,7 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
         accent = str(meta.get("accent", "#00d4a8") or "#00d4a8")
         bucket_symbols = list(sections.get(bucket, []))
         if bucket_symbols:
-            visible_symbols = bucket_symbols[:4]
+            visible_symbols = bucket_symbols if embedded else bucket_symbols[:4]
             hidden_count = max(0, len(bucket_symbols) - len(visible_symbols))
             items_html = "".join(
                 (
@@ -5143,6 +5143,12 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
             )
         )
 
+    strip_copy = (
+        "Full 5-lane chart view: Relax, Swing, Intraday, Momentum, Breakout."
+        if embedded
+        else "Compact 5-lane view: Relax, Swing, Intraday, Momentum, Breakout."
+    )
+
     st.markdown(
         (
             '<details class="tmr-board-shell">'
@@ -5154,7 +5160,7 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
             '</span>'
             '</summary>'
             '<div class="tmr-board-body">'
-            '<div class="tmr-board-copy">Compact 5-lane view: Relax, Swing, Intraday, Momentum, Breakout.</div>'
+            f'<div class="tmr-board-copy">{strip_copy}</div>'
             + "".join(rows_html)
             + '</div>'
             + '</details>'
