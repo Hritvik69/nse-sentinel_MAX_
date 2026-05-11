@@ -84,14 +84,11 @@ def _linreg_slope_intercept(x: np.ndarray, y: np.ndarray):
 
 def _is_higher_sequence(values: np.ndarray, min_count: int = 2) -> tuple[bool, int]:
     """Return (is_higher, count_of_consecutive_highs/lows)."""
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
     if len(values) < min_count:
         return False, 0
-    count = 0
-    for i in range(1, len(values)):
-        if values[i] > values[i - 1]:
-            count += 1
-        else:
-            break
+    count = int(np.sum(np.diff(values) > 0))
     return count >= min_count - 1, count
 
 
@@ -103,7 +100,7 @@ def detect_ascending_channel(
     df: pd.DataFrame | None,
     *,
     lookback: int = 60,
-    near_support_pct: float = 0.30,   # within bottom 30% of channel = entry zone
+    near_support_pct: float = 0.40,   # within bottom 40% of channel = entry zone
 ) -> ChannelResult:
     """
     Detect ascending channel from OHLCV data.
@@ -209,7 +206,7 @@ def detect_ascending_channel(
 
         # ── Entry zone check ─────────────────────────────────────────
         entry_zone = (
-            0.0 <= position <= near_support_pct          # near support
+            -0.10 <= position <= near_support_pct        # near support
             and sup_slope > 0                             # support rising
             and res_slope > 0                             # resistance rising
             and last_close > sup_now - atr_now * 0.4     # not broken below support

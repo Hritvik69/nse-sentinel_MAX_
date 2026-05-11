@@ -283,6 +283,8 @@ def _reason_mode7(
     parts: list[str] = []
     if setup_type == "BREAKOUT READY":
         parts.append("Clean resistance breakout zone")
+    elif setup_type == "ASCENDING CHANNEL":
+        parts.append("Rising channel support bounce")
     elif setup_type == "SUPPORT BOUNCE":
         parts.append("Pullback holding EMA20 support")
     elif setup_type == "RESISTANCE COMPRESSION":
@@ -352,7 +354,7 @@ def _final_signal_mode7(
     if setup == "OVEREXTENDED":
         return "AVOID" if quality == "LOW" or trap == "MEDIUM" else "WATCH"
     if (
-        setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "EARLY BREAKOUT")
+        setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "EARLY BREAKOUT", "ASCENDING CHANNEL")
         and quality == "HIGH"
         and structure == "HIGH"
         and volume == "STRONG"
@@ -360,12 +362,12 @@ def _final_signal_mode7(
     ):
         return "STRONG BUY"
     if (
-        setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "MOMENTUM CONTINUATION", "RESISTANCE COMPRESSION", "EARLY BREAKOUT")
+        setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "MOMENTUM CONTINUATION", "RESISTANCE COMPRESSION", "EARLY BREAKOUT", "ASCENDING CHANNEL")
         and quality in ("HIGH", "MEDIUM")
         and structure in ("HIGH", "MEDIUM")
         and volume != "WEAK"
     ):
-        return "BUY" if quality == "HIGH" or setup in ("BREAKOUT READY", "SUPPORT BOUNCE") else "WATCH"
+        return "BUY" if quality == "HIGH" or setup in ("BREAKOUT READY", "SUPPORT BOUNCE", "ASCENDING CHANNEL") else "WATCH"
     return "WATCH" if structure == "MEDIUM" else "AVOID"
 
 
@@ -452,6 +454,7 @@ def apply_phase4_logic(
         vol_trend = _string_series(out, "Volume Trend", "NORMAL").str.upper()
         mode_ids = _mode_id_series(out)
         structure_qual = _string_series(out, "Structure Quality", "MEDIUM").str.upper()
+        channel_entry = _string_series(out, "Channel Entry Zone", "NO").str.upper()
 
         setup_types = [
             _setup_type(h, v, d, r)
@@ -470,7 +473,7 @@ def apply_phase4_logic(
             for tr, sq, et, vt in zip(trap_risk, setup_qual, entry_timing, vol_trend)
         ]
 
-        for i, (m, h, v, d, r, r5, r20, tr, sq, vt, stq) in enumerate(
+        for i, (m, h, v, d, r, r5, r20, tr, sq, vt, stq, ch_entry) in enumerate(
             zip(
                 mode_ids,
                 high_dist,
@@ -483,11 +486,14 @@ def apply_phase4_logic(
                 setup_qual,
                 vol_trend,
                 structure_qual,
+                channel_entry,
             )
         ):
             if int(m) != 7:
                 continue
             setup7 = _setup_type_mode7(h, v, d, r, r5, r20, tr)
+            if str(ch_entry or "").strip().upper() == "YES":
+                setup7 = "ASCENDING CHANNEL"
             setup_types[i] = setup7
             reasons[i] = _reason_mode7(setup7, v, r, h, d, r5, r20)
             risk_scores[i] = round(_risk_score_mode7(d, r, v, h, r5, tr), 2)
