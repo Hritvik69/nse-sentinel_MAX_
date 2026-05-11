@@ -940,6 +940,9 @@ _CSS = """
     background:#1a1508; border:1.5px solid #f0b429; border-radius:12px;
     padding:18px 22px;
 }
+div[data-testid="stButton"] button p {
+    white-space:nowrap;
+}
 </style>
 """
 
@@ -1671,7 +1674,7 @@ def render_prediction_chart_section(
         if len(imported_symbols) > len(visible_imports):
             st.caption(f"Showing {len(visible_imports)} of {len(imported_symbols)} imported symbols.")
 
-    c_sel, c_btn = st.columns([4, 1])
+    c_sel, c_btn = st.columns([3, 1.35])
     with c_sel:
         widget_key = "pc_stock_select"
         current_selected = _normalize_prediction_chart_symbol(st.session_state.get(widget_key, ""))

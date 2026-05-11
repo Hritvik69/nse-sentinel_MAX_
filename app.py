@@ -6005,6 +6005,45 @@ def _load_local_ticker_master() -> list[str]:
         return []
 
 
+def _load_repo_ticker_master() -> list[str]:
+    try:
+        f = Path(__file__).with_name("nse_tickers.txt")
+        if not f.exists():
+            return []
+        return _sanitize_ticker_list(
+            [
+                line.strip()
+                for line in f.read_text(
+                    encoding="utf-8", errors="ignore"
+                ).splitlines()
+                if line.strip()
+            ]
+        )
+    except Exception:
+        return []
+
+
+def _stable_ticker_floor(*extra_sources) -> list[str]:
+    return _merge_ticker_lists(
+        _load_local_ticker_master(),
+        _load_repo_ticker_master(),
+        st.session_state.get("_ticker_master_list", []),
+        *extra_sources,
+        _HARDCODED_TICKER_FALLBACK,
+    )
+
+
+def _cache_ui_tickers(tickers: list[str]) -> list[str]:
+    stable = _stable_ticker_floor(tickers)
+    if stable:
+        st.session_state["_ui_all_tickers"] = list(stable)
+        st.session_state["_ticker_master_list"] = list(stable)
+        st.session_state["_ticker_universe_degraded"] = len(stable) < _TICKER_GOOD_COUNT
+        if len(stable) >= _TICKER_GOOD_COUNT:
+            _save_local_ticker_master(stable)
+    return list(stable)
+
+
 def _save_local_ticker_master(tickers: list[str]) -> bool:
     normalized = _sanitize_ticker_list(tickers)
     if not normalized:
@@ -6073,10 +6112,7 @@ class _DegradedTickerUniverse(Exception):
 def _fetch_nse_tickers_uncached() -> tuple[list[str], bool]:
     # Keep the biggest known universe instead of letting a later
     # partial fetch shrink the scan list after cache/session expiry.
-    best_known = _merge_ticker_lists(
-        _load_local_ticker_master(),
-        st.session_state.get("_ticker_master_list", []),
-    )
+    best_known = _stable_ticker_floor()
 
     # ── LAYER 1: Google Sheets backup (optional permanent storage) ────
     try:
@@ -6124,16 +6160,7 @@ def _fetch_nse_tickers_uncached() -> tuple[list[str], bool]:
 
     # ── LAYER 3: nse_tickers.txt in repo ──────────────────────────────
     try:
-        f = Path(__file__).with_name("nse_tickers.txt")
-        if f.exists():
-            repo_symbols = [
-                f"{line.strip().upper().replace('.NS', '')}.NS"
-                for line in f.read_text(
-                    encoding="utf-8", errors="ignore"
-                ).splitlines()
-                if line.strip()
-            ]
-            best_known = _merge_ticker_lists(best_known, repo_symbols)
+        best_known = _merge_ticker_lists(best_known, _load_repo_ticker_master())
     except Exception:
         pass
 
@@ -6171,14 +6198,15 @@ def fetch_nse_tickers() -> list[str]:
     try:
         tickers = _fetch_authoritative_nse_tickers()
         st.session_state["_ticker_universe_degraded"] = False
-        return tickers
+        return _cache_ui_tickers(tickers)
     except _DegradedTickerUniverse:
         tickers, degraded = _fetch_nse_tickers_uncached()
         st.session_state["_ticker_universe_degraded"] = degraded
-        return tickers
+        return _cache_ui_tickers(tickers)
     except Exception:
-        st.session_state["_ticker_universe_degraded"] = True
-        return []
+        fallback = _stable_ticker_floor()
+        st.session_state["_ticker_universe_degraded"] = len(fallback) < _TICKER_GOOD_COUNT
+        return _cache_ui_tickers(fallback)
 
 
 def _get_cached_nse_tickers(*, show_spinner: bool = False, force_refresh: bool = False) -> list[str]:
@@ -6201,7 +6229,9 @@ def _get_cached_nse_tickers(*, show_spinner: bool = False, force_refresh: bool =
             st.session_state.pop("_ticker_master_list", None)
         cached = st.session_state.get("_ui_all_tickers", [])
         if isinstance(cached, list) and cached:
-            return list(cached)
+            stable_cached = _cache_ui_tickers(cached)
+            if len(stable_cached) >= _TICKER_GOOD_COUNT:
+                return stable_cached
     except Exception:
         pass
 
@@ -6215,11 +6245,10 @@ def _get_cached_nse_tickers(*, show_spinner: bool = False, force_refresh: bool =
         tickers = []
 
     try:
-        if isinstance(tickers, list) and tickers:
-            st.session_state["_ui_all_tickers"] = list(tickers)
+        stable = _cache_ui_tickers(tickers if isinstance(tickers, list) else [])
     except Exception:
-        pass
-    return list(tickers or [])
+        stable = list(tickers or [])
+    return stable
 
 
 def _invalidate_sidebar_data_status_cache() -> None:
@@ -8727,13 +8756,13 @@ if _show_home_scanner:
         unsafe_allow_html=True)
     st.caption(_dashboard_status_label)
 
-_ui_cached_tickers = st.session_state.get("_ui_all_tickers", [])
-if isinstance(_ui_cached_tickers, list) and _ui_cached_tickers:
+_ui_cached_tickers = _cache_ui_tickers(st.session_state.get("_ui_all_tickers", []))
+if len(_ui_cached_tickers) >= _TICKER_GOOD_COUNT:
     all_tickers = list(_ui_cached_tickers)
 else:
     with st.spinner("Loading NSE ticker list..."):
         all_tickers = _get_cached_nse_tickers(show_spinner=True)
-    st.session_state["_ui_all_tickers"] = list(all_tickers)
+    all_tickers = _cache_ui_tickers(all_tickers)
 n = len(all_tickers)
 
 with st.sidebar:
