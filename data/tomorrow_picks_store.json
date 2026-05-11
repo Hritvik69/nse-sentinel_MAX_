@@ -2,7 +2,10 @@
   "picks": [
     "FORTIS",
     "TIIL",
-    "BOSCH-HCIL"
+    "BOSCH-HCIL",
+    "SONACOMS",
+    "SWANDEF",
+    "APLLTD"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +14,11 @@
       "TIIL",
       "BOSCH-HCIL"
     ],
-    "swing": [],
+    "swing": [
+      "SONACOMS",
+      "SWANDEF",
+      "APLLTD"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
