@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "FORTIS",
+    "TIIL",
+    "BOSCH-HCIL"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "FORTIS",
+      "TIIL",
+      "BOSCH-HCIL"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
