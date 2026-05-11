@@ -301,6 +301,9 @@ def apply_enhanced_logic(df: pd.DataFrame) -> pd.DataFrame:
         breakout_retest = _text_series(out, "Breakout Retest", "NO").eq("YES")
         liquidity_sweep = _text_series(out, "Liquidity Sweep", "NO").eq("YES")
         wick_rejection = _text_series(out, "Wick Rejection", "MEDIUM")
+        channel_detected = _text_series(out, "Ascending Channel", "NO").eq("YES")
+        channel_entry = _text_series(out, "Channel Entry Zone", "NO").eq("YES")
+        channel_score = _numeric_series(out, "Channel Score", 0.0)
 
         ema_stack = (price > ema20) & (ema20 > ema50) & (ema50 > 0)
         ideal_resistance = (high_dist >= -2.0) & (high_dist <= 1.5)
@@ -308,13 +311,13 @@ def apply_enhanced_logic(df: pd.DataFrame) -> pd.DataFrame:
             ((high_dist >= -5.0) & (high_dist < -2.0))
             | ((high_dist > 1.5) & (high_dist <= 3.0))
         )
-        real_support = (support_touches >= 2) | pivot_support.isin(["HIGH", "MEDIUM"]) | breakout_retest | liquidity_sweep
-        real_resistance = (resistance_touches >= 2) | pivot_resistance.isin(["HIGH", "MEDIUM"])
+        real_support = (support_touches >= 2) | pivot_support.isin(["HIGH", "MEDIUM"]) | breakout_retest | liquidity_sweep | channel_entry
+        real_resistance = (resistance_touches >= 2) | pivot_resistance.isin(["HIGH", "MEDIUM"]) | channel_detected
         tight_base = base_tightness <= 8.0
 
         resistance_distance = np.select(
-            [ideal_resistance & (real_resistance | tight_base), ideal_resistance | medium_resistance],
-            ["HIGH", "MEDIUM"],
+            [channel_entry & channel_score.ge(60.0), ideal_resistance & (real_resistance | tight_base), ideal_resistance | medium_resistance],
+            ["HIGH", "HIGH", "MEDIUM"],
             default="LOW",
         )
 
@@ -325,9 +328,10 @@ def apply_enhanced_logic(df: pd.DataFrame) -> pd.DataFrame:
         )
 
         support_strength = np.select(
-            [ema_stack & (delta_ema20 >= -1.0) & (delta_ema20 <= 3.0) & real_support,
+            [channel_entry & channel_score.ge(60.0),
+             ema_stack & (delta_ema20 >= -1.0) & (delta_ema20 <= 3.0) & real_support,
              (price > ema20) & (delta_ema20.abs() <= 5.0) & (ema20 > 0) & (real_support | (support_touches >= 1))],
-            ["HIGH", "MEDIUM"],
+            ["HIGH", "HIGH", "MEDIUM"],
             default="LOW",
         )
 
@@ -362,16 +366,22 @@ def apply_enhanced_logic(df: pd.DataFrame) -> pd.DataFrame:
 
         structure_quality = np.select(
             [
+                channel_entry
+                & channel_score.ge(70.0)
+                & (trap_probability == "LOW"),
                 ema_stack
                 & (breakout_quality != "LOW")
                 & (support_strength != "LOW")
                 & (volume_confirmation != "LOW")
                 & (momentum_continuation != "LOW")
                 & (trap_probability == "LOW"),
+                channel_detected
+                & channel_score.ge(50.0)
+                & (trap_probability != "HIGH"),
                 (ema_stack & (trap_probability != "HIGH") & (delta_ema20 <= 8.0))
                 | ((sr_score >= 62.0) & (trap_probability != "HIGH")),
             ],
-            ["HIGH", "MEDIUM"],
+            ["HIGH", "HIGH", "MEDIUM", "MEDIUM"],
             default="LOW",
         )
 

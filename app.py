@@ -6822,6 +6822,9 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
         # SPEED FIX — mktcap only fetched for modes that actually use it (1 & 2).
         # Modes 3-7 never reference mktcap_cr so skipping saves ~1000 API calls/scan.
         ok = False
+        _mode7_channel_result = None
+        _mode7_channel_score = 0.0
+        _mode7_channel_entry = False
         if mode == 1:
             mktcap_cr = get_mktcap_cr(ticker)
             h10 = float(close.iloc[-11:-1].max()) if len(close) >= 11 else float(close.max())
@@ -6913,9 +6916,36 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
                 and 50 <= ri <= 67 and ret20d_mode7 > 2.0
                 and d_ema20_mode7 <= 4.5 and clean_candle
             )
+            try:
+                from mode7_ascending_channel import detect_ascending_channel, score_channel_entry
+
+                _mode7_channel_result = detect_ascending_channel(
+                    df,
+                    lookback=70,
+                    near_support_pct=0.45,
+                )
+                _mode7_channel_score = score_channel_entry(_mode7_channel_result)
+                _mode7_channel_entry = bool(
+                    _mode7_channel_result.detected
+                    and _mode7_channel_result.entry_zone
+                    and _mode7_channel_result.higher_lows >= 1
+                    and _mode7_channel_result.higher_highs >= 1
+                    and _mode7_channel_result.risk_reward >= 0.8
+                    and 48 <= ri <= 70
+                    and clean_candle
+                    and vol_ratio >= 0.85
+                )
+            except Exception:
+                _mode7_channel_result = None
+                _mode7_channel_score = 0.0
+                _mode7_channel_entry = False
+
+            classic_mode7_setup = (
+                volume_ok and (breakout_ready or support_bounce or resistance_compression)
+            )
             ok = (
-                lc > 40 and trend_ok and volume_ok and not_overextended
-                and (breakout_ready or support_bounce or resistance_compression)
+                lc > 40 and trend_ok and not_overextended
+                and (classic_mode7_setup or _mode7_channel_entry)
             )
 
         if ok:
@@ -6951,7 +6981,20 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
             }
             if _mode7_structure:
                 _scan_row.update(_mode7_structure)
+            if mode == 7 and _mode7_channel_result is not None:
+                _scan_row.update({
+                    "Ascending Channel": "YES" if _mode7_channel_result.detected else "NO",
+                    "Channel Entry Zone": "YES" if _mode7_channel_result.entry_zone else "NO",
+                    "Channel Quality": _mode7_channel_result.quality,
+                    "Channel Score": round(float(_mode7_channel_score), 1),
+                    "Channel Position %": round(float(_mode7_channel_result.position_in_channel) * 100.0, 1),
+                    "Channel Support": _mode7_channel_result.support_price,
+                    "Channel Resistance": _mode7_channel_result.resistance_price,
+                    "Channel RR": _mode7_channel_result.risk_reward,
+                    "Channel Note": _mode7_channel_result.note,
+                })
             return _scan_row
+        _scan_diag.record_failure(ticker_ns, "SCAN_FILTER")
         return None
     except MemoryError:
         _scan_diag.record_failure(ticker_ns, "EXCEPTION")
@@ -8241,6 +8284,9 @@ def get_mode_display_columns(mode_value: int, base_cols: list[str]) -> list[str]
             "Volume Confirmation",
             "Trap Probability",
             "Momentum Continuation",
+            "Channel Score",
+            "Channel Entry Zone",
+            "Channel RR",
             "Mode7 Verdict",
         ]
         insert_at = cols.index("Trap Check") if "Trap Check" in cols else len(cols)
@@ -9627,6 +9673,9 @@ if _show_home_scanner and "results" in st.session_state:
                 "Volume Confirmation": st.column_config.TextColumn("Volume Confirm"),
                 "Trap Probability": st.column_config.TextColumn("Trap Prob"),
                 "Momentum Continuation": st.column_config.TextColumn("Continuation"),
+                "Channel Score": st.column_config.NumberColumn("Channel", format="%.1f"),
+                "Channel Entry Zone": st.column_config.TextColumn("Channel Entry"),
+                "Channel RR": st.column_config.NumberColumn("Channel RR", format="%.2f"),
                 "Mode7 Verdict": st.column_config.TextColumn("M7 Verdict", width="medium"),
                 "Trap Check": st.column_config.TextColumn("Trap Check"),
                 "Next-Day Signal": st.column_config.TextColumn("Signal"),
@@ -9677,6 +9726,12 @@ if _show_home_scanner and "results" in st.session_state:
                         m72.metric("Support", str(row.get("Support Strength", "—")))
                         m73.metric("Resistance", str(row.get("Resistance Distance", "—")))
                         m74.metric("Structure", str(row.get("Structure Quality", "—")))
+                        if "Channel Score" in row.index:
+                            c71, c72, c73, c74 = st.columns(4)
+                            c71.metric("Channel", str(row.get("Channel Quality", "—")))
+                            c72.metric("Entry Zone", str(row.get("Channel Entry Zone", "—")))
+                            c73.metric("Channel RR", f"{float(row.get('Channel RR', 0) or 0):.2f}")
+                            c74.metric("Position", f"{float(row.get('Channel Position %', 0) or 0):.1f}%")
 
         # ── NEW: Clean Export Helper ──────────────────────────────────
         def get_clean_export_df(df):
@@ -9692,7 +9747,7 @@ if _show_home_scanner and "results" in st.session_state:
                 "Prediction Score", "Conviction Tier", "Trap Check", "Next-Day Signal",
                 "Breakout Quality", "Support Strength", "Resistance Distance",
                 "Structure Quality", "Volume Confirmation", "Trap Probability",
-                "Momentum Continuation",
+                "Momentum Continuation", "Channel Score", "Channel Entry Zone", "Channel RR",
             ]
 
             def _strip_emoji(val):

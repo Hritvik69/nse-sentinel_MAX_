@@ -104,6 +104,9 @@ def final_score_mode7(row: pd.Series, market_bias: dict | None = None) -> float:
         bt = _num(row, "Backtest %", 50.0)
         ml = _num(row, "ML %", 50.0)
         sr = _num(row, "S&R Structure Score", 50.0)
+        channel_score = _num(row, "Channel Score", 0.0)
+        channel_entry = _text(row, "Channel Entry Zone", "NO") == "YES"
+        channel_detected = _text(row, "Ascending Channel", "NO") == "YES"
 
         structure = (
             0.22 * _q(row, "Structure Quality")
@@ -125,6 +128,10 @@ def final_score_mode7(row: pd.Series, market_bias: dict | None = None) -> float:
             + 0.03 * ml
         )
         blended += _regime_adjustment(market_bias, row)
+        if channel_entry:
+            blended += min(max(channel_score * 0.10, 4.0), 10.0)
+        elif channel_detected:
+            blended += min(channel_score * 0.04, 4.0)
 
         setup = _text(row, "Setup Type", "")
         trap_prob = _text(row, "Trap Probability", "LOW")
@@ -187,6 +194,9 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
         momentum_q = _quality_series(out, "Momentum Continuation")
         resistance_q = _quality_series(out, "Resistance Distance")
         trap_q = _trap_series(out, "Trap Probability")
+        channel_score = _num_series(out, "Channel Score", 0.0)
+        channel_entry = _text_series(out, "Channel Entry Zone", "NO").eq("YES")
+        channel_detected = _text_series(out, "Ascending Channel", "NO").eq("YES")
 
         structure = (
             0.22 * structure_q
@@ -207,6 +217,16 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
             + 0.04 * bt
             + 0.03 * ml
         )
+        channel_bonus = pd.Series(0.0, index=out.index, dtype="float64")
+        channel_bonus = channel_bonus.mask(
+            channel_entry,
+            (channel_score * 0.10).clip(lower=4.0, upper=10.0),
+        )
+        channel_bonus = channel_bonus.mask(
+            ~channel_entry & channel_detected,
+            (channel_score * 0.04).clip(lower=0.0, upper=4.0),
+        )
+        mode7_final += channel_bonus
 
         setup = _text_series(out, "Setup Type", "")
         trap_prob = _text_series(out, "Trap Probability", "LOW")
@@ -275,6 +295,7 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
         verdict = verdict.mask(~high_trap & setup.eq("OVEREXTENDED"), "OVEREXTENDED")
         strong_mask = mode7_final.ge(78.0) & _text_series(out, "Structure Quality", "MEDIUM").eq("HIGH") & ~_text_series(out, "Volume Confirmation", "MEDIUM").eq("LOW")
         verdict = verdict.mask(strong_mask & setup.eq("SUPPORT BOUNCE"), "CLEAN SUPPORT BOUNCE")
+        verdict = verdict.mask(strong_mask & setup.eq("ASCENDING CHANNEL"), "ASCENDING CHANNEL BUY")
         verdict = verdict.mask(strong_mask & setup.isin(["BREAKOUT READY", "EARLY BREAKOUT"]), "STRONG BREAKOUT")
         verdict = verdict.mask(strong_mask & setup.eq("MOMENTUM CONTINUATION"), "MOMENTUM CONTINUATION")
         valid_mid = (
@@ -286,7 +307,18 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
             & ~_text_series(out, "Support Strength", "MEDIUM").eq("LOW")
         )
         verdict = verdict.mask(valid_mid & setup.isin(MODE7_POSITIVE_SETUPS), setup)
-        verdict = verdict.mask(~high_trap & ~negative_setup & _text_series(out, "Volume Confirmation", "MEDIUM").eq("LOW"), "WEAK VOLUME BREAKOUT")
+        verdict = verdict.mask(
+            ~high_trap & ~negative_setup & setup.eq("ASCENDING CHANNEL") & channel_entry,
+            "ASCENDING CHANNEL",
+        )
+        verdict = verdict.mask(strong_mask & setup.eq("ASCENDING CHANNEL"), "ASCENDING CHANNEL BUY")
+        verdict = verdict.mask(
+            ~high_trap
+            & ~negative_setup
+            & ~setup.eq("ASCENDING CHANNEL")
+            & _text_series(out, "Volume Confirmation", "MEDIUM").eq("LOW"),
+            "WEAK VOLUME BREAKOUT",
+        )
         verdict = verdict.mask(~high_trap & ~negative_setup & _text_series(out, "Structure Quality", "MEDIUM").eq("LOW"), "STRUCTURE FAILURE")
 
         out["Prediction Score"] = pred

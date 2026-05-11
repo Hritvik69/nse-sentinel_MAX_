@@ -39,7 +39,10 @@ _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else None
 # ── Central data store (zero-API scan) ───────────────────────────────
 ALL_DATA: dict[str, pd.DataFrame | None] = {}
 _ALL_DATA_LOCK = threading.Lock()
-_ALL_DATA_MAX_ENTRIES = 1500
+# Full NSE live scans are currently ~2.4k symbols, and the offline universe can
+# be close to 3k. Keep enough frames so preload does not evict tickers before
+# the strategy scan has a chance to inspect them.
+_ALL_DATA_MAX_ENTRIES = 5000
 _NO_DATA_TICKERS: dict[str, dict[str, object]] = {}
 _NO_DATA_LOCK = threading.Lock()
 _NO_DATA_TTL_SEC = 15 * 60
