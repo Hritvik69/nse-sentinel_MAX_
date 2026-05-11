@@ -5,7 +5,8 @@
     "BOSCH-HCIL",
     "SONACOMS",
     "SWANDEF",
-    "APLLTD"
+    "APLLTD",
+    "ANURAS"
   ],
   "notes": "",
   "sections": {
@@ -15,11 +16,13 @@
       "BOSCH-HCIL"
     ],
     "swing": [
-      "SONACOMS",
-      "SWANDEF",
-      "APLLTD"
+      "SONACOMS"
     ],
-    "intraday": [],
+    "intraday": [
+      "SWANDEF",
+      "APLLTD",
+      "ANURAS"
+    ],
     "momentum": [],
     "breakout": []
   }
