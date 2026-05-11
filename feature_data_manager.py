@@ -553,9 +553,18 @@ class FeatureDataManager:
         market_date = _frame_market_date(df)
         if market_date is None:
             return df is not None and not df.empty
+        if market_date == cache_day:
+            return True
         if window in {"SIMULATED", "PRE_MARKET", "WEEKEND"}:
             return market_date <= cache_day
-        return market_date in _acceptable_market_dates()
+
+        recent_days: list[date] = []
+        cur = cache_day
+        while len(recent_days) < 3:
+            if cur.weekday() < 5:
+                recent_days.append(cur)
+            cur -= timedelta(days=1)
+        return market_date in set(recent_days)
 
     def _lookup_all_data(
         self,
@@ -608,12 +617,6 @@ class FeatureDataManager:
     def _resolve_snapshot_path(self, symbol: str, cache_day: date) -> tuple[Path | None, date | None]:
         candidates = [cache_day] + [cache_day - timedelta(days=offset) for offset in range(1, 8)]
         for day in candidates:
-            if _dsm is not None and hasattr(_dsm, "snapshot_exists"):
-                try:
-                    if not bool(_dsm.snapshot_exists(day)):
-                        continue
-                except Exception:
-                    continue
             csv_path = _SCANNER_SNAPSHOT_ROOT / day.isoformat() / f"{symbol}.csv"
             if csv_path.exists():
                 return csv_path, day
@@ -862,6 +865,17 @@ class FeatureDataManager:
                         saved_at=saved_at,
                     )
                     return df_snapshot
+
+        snapshot_dir = _SCANNER_SNAPSHOT_ROOT / cache_day.isoformat()
+        if window == "CLOSED" and snapshot_dir.exists():
+            self._make_status(
+                key=status_key,
+                source_kind="SNAPSHOT",
+                source="locked_snapshot",
+                market_date=cache_day,
+                note="Selected stock is not available in the locked market snapshot.",
+            )
+            return None
 
         if window in {"PRE_MARKET", "WEEKEND"}:
             df_cache, payload = cached_fallback

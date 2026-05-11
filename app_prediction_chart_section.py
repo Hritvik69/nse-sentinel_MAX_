@@ -38,6 +38,8 @@ import pandas as pd
 import streamlit as st
 
 _TOMORROW_STORE_PATH = Path(__file__).resolve().parent / "data" / "tomorrow_picks_store.json"
+_TICKER_MASTER_PATH = Path(__file__).resolve().parent / "data" / "ticker_master_list.json"
+_NSE_TICKERS_PATH = Path(__file__).resolve().parent / "nse_tickers.txt"
 _TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "momentum", "breakout")
 _TOMORROW_SECTION_META = {
     "relax": ("Relax", "#22c55e"),
@@ -235,6 +237,9 @@ def fetch_stock_data(
                 return shared
         except Exception:
             pass
+
+    if str(_get_feature_window() or "").upper() != "LIVE" and _get_feature_tt_date() is None:
+        return None
 
     if not _YF_OK:
         return None
@@ -951,6 +956,66 @@ def _normalize_prediction_chart_symbol(value: object) -> str:
         return ""
 
 
+def _extend_prediction_chart_tickers(target: list[str], seen: set[str], values: object) -> None:
+    try:
+        raw_values = list(values or [])
+    except Exception:
+        raw_values = []
+    for raw in raw_values:
+        symbol = _normalize_prediction_chart_symbol(raw)
+        if not symbol or symbol in seen:
+            continue
+        target.append(symbol)
+        seen.add(symbol)
+
+
+def _load_prediction_chart_master_tickers() -> list[str]:
+    tickers: list[str] = []
+    seen: set[str] = set()
+    try:
+        if _TICKER_MASTER_PATH.exists():
+            payload = json.loads(_TICKER_MASTER_PATH.read_text(encoding="utf-8"))
+            values = payload.get("tickers", []) if isinstance(payload, dict) else payload
+            _extend_prediction_chart_tickers(tickers, seen, values)
+    except Exception:
+        pass
+    try:
+        if _NSE_TICKERS_PATH.exists():
+            _extend_prediction_chart_tickers(
+                tickers,
+                seen,
+                _NSE_TICKERS_PATH.read_text(encoding="utf-8", errors="ignore").splitlines(),
+            )
+    except Exception:
+        pass
+    return tickers
+
+
+def _build_prediction_chart_tickers(ticker_list: list[str] | None) -> list[str]:
+    tickers: list[str] = []
+    seen: set[str] = set()
+    _extend_prediction_chart_tickers(tickers, seen, ticker_list or [])
+    _extend_prediction_chart_tickers(tickers, seen, _load_prediction_chart_master_tickers())
+    if not tickers:
+        _extend_prediction_chart_tickers(
+            tickers,
+            seen,
+            [
+                "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR",
+                "SBIN","BHARTIARTL","ITC","KOTAKBANK","LT","AXISBANK",
+                "ASIANPAINT","MARUTI","BAJFINANCE","HCLTECH","SUNPHARMA",
+                "TITAN","ULTRACEMCO","ONGC","NESTLEIND","WIPRO","POWERGRID",
+                "NTPC","TECHM","INDUSINDBK","ADANIPORTS","TATAMOTORS",
+                "JSWSTEEL","BAJAJFINSV","HINDALCO","GRASIM","DIVISLAB",
+                "CIPLA","DRREDDY","BPCL","EICHERMOT","APOLLOHOSP",
+                "TATACONSUM","BRITANNIA","COALINDIA","HEROMOTOCO","SHREECEM",
+                "SBILIFE","HDFCLIFE","ADANIENT","BAJAJ-AUTO","TATASTEEL",
+                "UPL","M&M",
+            ],
+        )
+    return sorted(tickers)
+
+
 def _normalize_prediction_chart_imports(values: object, limit: int = 20) -> list[str]:
     symbols: list[str] = []
     seen: set[str] = set()
@@ -1486,27 +1551,7 @@ def render_prediction_chart_section(
         _render_tomorrow_picks_chart_strip()
 
     # ── Fallback ticker list ──────────────────────────────────────────
-    if not ticker_list:
-        ticker_list = [
-            "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR",
-            "SBIN","BHARTIARTL","ITC","KOTAKBANK","LT","AXISBANK",
-            "ASIANPAINT","MARUTI","BAJFINANCE","HCLTECH","SUNPHARMA",
-            "TITAN","ULTRACEMCO","ONGC","NESTLEIND","WIPRO","POWERGRID",
-            "NTPC","TECHM","INDUSINDBK","ADANIPORTS","TATAMOTORS",
-            "JSWSTEEL","BAJAJFINSV","HINDALCO","GRASIM","DIVISLAB",
-            "CIPLA","DRREDDY","BPCL","EICHERMOT","APOLLOHOSP",
-            "TATACONSUM","BRITANNIA","COALINDIA","HEROMOTOCO","SHREECEM",
-            "SBILIFE","HDFCLIFE","ADANIENT","BAJAJ-AUTO","TATASTEEL",
-            "UPL","M&M",
-        ]
-
-    display_tickers = sorted(
-        {
-            _normalize_prediction_chart_symbol(t)
-            for t in ticker_list
-            if _normalize_prediction_chart_symbol(t)
-        }
-    )
+    display_tickers = _build_prediction_chart_tickers(ticker_list)
     tomorrow_symbols = _flatten_tomorrow_strip_symbols(limit=20)
     if tomorrow_symbols:
         display_tickers = tomorrow_symbols + [
@@ -1726,17 +1771,35 @@ def render_prediction_chart_section(
             time_context_key=tt_key,
             force_refresh=force_refresh,
         )
-    _render_data_status_badge(_get_chart_status(symbol_ns), label=trigger_symbol)
+    chart_status = _get_chart_status(symbol_ns)
+    _render_data_status_badge(chart_status, label=trigger_symbol)
 
     # PART 9: styled error cards
     if df is None:
+        status_note = ""
+        status_source = ""
+        try:
+            status_note = str((chart_status or {}).get("note", "") or "").strip()
+            status_source = str((chart_status or {}).get("source", "") or "").strip()
+        except Exception:
+            status_note = ""
+            status_source = ""
+        detail_text = (
+            status_note
+            if status_note
+            else "No chart data was returned for this symbol in the current data session."
+        )
+        if status_source == "locked_snapshot":
+            detail_text = (
+                f"{detail_text} Refresh the local data cache after market close "
+                "to add this symbol to the locked snapshot."
+            )
         st.markdown(
             f"""
             <div class="pc-error">
               <b style="color:#ff3b5c;">⚠ Could not load data for {trigger_symbol}</b><br>
               <span style="color:#8ab4d8;font-size:12px;">
-                Possible causes: symbol not found on NSE · no internet connection ·
-                yfinance API timeout.  Try a different stock or refresh the page.
+                {_html.escape(detail_text)}
               </span>
             </div>
             """,

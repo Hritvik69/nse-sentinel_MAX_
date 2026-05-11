@@ -586,17 +586,9 @@ def _snapshot_exists_cached(day_iso: str) -> bool:
                 return False
             if len(files) < saved:
                 return False
-            checksums = meta.get("checksums", {})
-            if isinstance(checksums, dict) and checksums:
-                for name, digest in checksums.items():
-                    path = snap_dir / str(name)
-                    if not path.exists():
-                        return False
-                    try:
-                        if _file_sha256(path) != str(digest):
-                            return False
-                    except Exception:
-                        return False
+            # Keep this existence check light. Chart/detail panels validate the
+            # specific CSV they load, so re-hashing every snapshot file here
+            # makes single-stock chart loads look blank for too long.
             return True
         return len(list(snap_dir.glob("*.csv"))) >= 100
     except Exception:
