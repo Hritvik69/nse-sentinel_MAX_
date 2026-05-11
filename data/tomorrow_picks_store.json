@@ -1,51 +1,11 @@
 {
-  "picks": [
-    "GILLETTE",
-    "FDC",
-    "EPL",
-    "MARKOLINES",
-    "APLLTD",
-    "CAMPUS",
-    "VENUSREM",
-    "TIMKEN",
-    "SKFINDIA",
-    "DBSTOCKBRO",
-    "3PLAND",
-    "DOLATALGO",
-    "FIEMIND",
-    "CHAMBLFERT",
-    "GMRAIRPORT",
-    "TBZ",
-    "SUPRAJIT"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "GILLETTE",
-      "FDC",
-      "EPL",
-      "MARKOLINES",
-      "APLLTD",
-      "CAMPUS"
-    ],
-    "swing": [
-      "VENUSREM",
-      "TIMKEN",
-      "SKFINDIA"
-    ],
-    "intraday": [
-      "DBSTOCKBRO",
-      "3PLAND",
-      "DOLATALGO"
-    ],
-    "momentum": [
-      "FIEMIND",
-      "CHAMBLFERT",
-      "GMRAIRPORT"
-    ],
-    "breakout": [
-      "TBZ",
-      "SUPRAJIT"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
