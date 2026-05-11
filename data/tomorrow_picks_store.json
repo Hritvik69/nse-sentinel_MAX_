@@ -8,7 +8,9 @@
     "ANURAS",
     "TIMKEN",
     "AGARWALEYE",
-    "TIIL"
+    "MORARJEE",
+    "TIIL",
+    "NH"
   ],
   "notes": "",
   "sections": {
@@ -26,9 +28,12 @@
     ],
     "momentum": [
       "TIMKEN",
-      "AGARWALEYE",
-      "TIIL"
+      "AGARWALEYE"
     ],
-    "breakout": []
+    "breakout": [
+      "MORARJEE",
+      "TIIL",
+      "NH"
+    ]
   }
 }
