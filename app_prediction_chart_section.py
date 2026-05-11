@@ -38,11 +38,12 @@ import pandas as pd
 import streamlit as st
 
 _TOMORROW_STORE_PATH = Path(__file__).resolve().parent / "data" / "tomorrow_picks_store.json"
-_TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "breakout")
+_TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "momentum", "breakout")
 _TOMORROW_SECTION_META = {
     "relax": ("Relax", "#22c55e"),
     "swing": ("Swing", "#f0b429"),
     "intraday": ("Intraday", "#00d4a8"),
+    "momentum": ("Momentum", "#b08cff"),
     "breakout": ("Breakout", "#ff6b6b"),
 }
 
@@ -1236,6 +1237,25 @@ def _load_tomorrow_strip_sections() -> dict[str, list[str]]:
         return sections
 
 
+def _flatten_tomorrow_strip_symbols(
+    sections: dict[str, list[str]] | None = None,
+    *,
+    limit: int = 20,
+) -> list[str]:
+    symbols: list[str] = []
+    seen: set[str] = set()
+    bucket_map = sections if isinstance(sections, dict) else _load_tomorrow_strip_sections()
+    for bucket in _TOMORROW_SECTION_ORDER:
+        for raw in list(bucket_map.get(bucket, [])):
+            symbol = _normalize_tomorrow_strip_symbol(raw)
+            if symbol and symbol not in seen:
+                symbols.append(symbol)
+                seen.add(symbol)
+            if len(symbols) >= limit:
+                return symbols
+    return symbols
+
+
 def _render_tomorrow_picks_chart_strip() -> None:
     sections = _load_tomorrow_strip_sections()
     rows_html: list[str] = []
@@ -1243,7 +1263,7 @@ def _render_tomorrow_picks_chart_strip() -> None:
         label, accent = _TOMORROW_SECTION_META[bucket]
         bucket_symbols = sections.get(bucket, [])
         if bucket_symbols:
-            visible_symbols = bucket_symbols[:4]
+            visible_symbols = bucket_symbols
             hidden_count = max(0, len(bucket_symbols) - len(visible_symbols))
             items_html = "".join(
                 (
@@ -1434,7 +1454,7 @@ def _render_tomorrow_picks_chart_strip() -> None:
             '</span>'
             '</summary>'
             '<div class="pc-tmr-body">'
-            '<div class="pc-tmr-copy">Compact 4-lane view: Relax, Swing, Intraday, Breakout.</div>'
+            '<div class="pc-tmr-copy">Full 5-lane chart view: Relax, Swing, Intraday, Momentum, Breakout.</div>'
             + "".join(rows_html)
             + '</div>'
             + '</details>'
@@ -1487,6 +1507,11 @@ def render_prediction_chart_section(
             if _normalize_prediction_chart_symbol(t)
         }
     )
+    tomorrow_symbols = _flatten_tomorrow_strip_symbols(limit=20)
+    if tomorrow_symbols:
+        display_tickers = tomorrow_symbols + [
+            ticker for ticker in display_tickers if ticker not in tomorrow_symbols
+        ]
     imported_symbols = _normalize_prediction_chart_imports(
         st.session_state.get("prediction_chart_imported_symbols", []),
         limit=20,
@@ -1507,6 +1532,8 @@ def render_prediction_chart_section(
             if loaded_symbol in display_tickers
             else imported_symbols[0]
             if imported_symbols
+            else tomorrow_symbols[0]
+            if tomorrow_symbols
             else "RELIANCE"
             if "RELIANCE" in display_tickers
             else display_tickers[0]
