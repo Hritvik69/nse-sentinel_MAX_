@@ -30,6 +30,7 @@ from __future__ import annotations
 import math
 import html as _html
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
@@ -192,6 +193,77 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def _clamp(v: float, lo: float = -1.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
+
+
+def _safe_mapping(value: Any) -> dict:
+    if isinstance(value, Mapping):
+        return dict(value)
+    try:
+        converted = value.to_dict() if hasattr(value, "to_dict") else None
+        if isinstance(converted, Mapping):
+            return dict(converted)
+    except Exception:
+        pass
+    return {}
+
+
+def _normalise_prediction_direction(value: Any) -> str:
+    key = str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+    if key in {"bullish", "bull", "buy", "long", "up", "upside", "positive"}:
+        return "Bullish"
+    if key in {"bearish", "bear", "sell", "short", "down", "downside", "negative"}:
+        return "Bearish"
+    return "Sideways"
+
+
+def _safe_regime_from_prediction(prediction: dict) -> dict:
+    regime = _safe_mapping(prediction.get("regime_snapshot"))
+    if not regime:
+        regime = _safe_mapping(prediction.get("regime"))
+    if not regime:
+        regime = _safe_mapping(_build_unified_regime_pill(prediction))
+    if not regime:
+        regime_name = str(
+            prediction.get("regime_snapshot") or prediction.get("regime") or "Unknown"
+        ).strip()
+        regime = {
+            "regime": regime_name.replace("_", " ").title() if regime_name else "Unknown",
+            "description": "Cached prediction regime",
+            "color": SIDE,
+            "emoji": "",
+            "ema_aligned": False,
+        }
+    regime.setdefault("regime", "Unknown")
+    regime.setdefault("description", "")
+    regime.setdefault("color", SIDE)
+    regime.setdefault("emoji", "")
+    regime.setdefault("ema_aligned", False)
+    return regime
+
+
+def _normalise_cached_prediction(prediction: dict, df: pd.DataFrame) -> dict:
+    source = _safe_mapping(prediction)
+    if not source:
+        return {}
+
+    atr_default = float((df["High"] - df["Low"]).tail(14).mean())
+    confidence = _sf(source.get("confidence"), _sf(source.get("score"), 48.0))
+    if 0.0 < confidence <= 1.0:
+        confidence *= 100.0
+
+    return {
+        "direction": _normalise_prediction_direction(
+            source.get("direction", source.get("action", "Sideways"))
+        ),
+        "confidence": max(0.0, min(100.0, confidence)),
+        "signals": _safe_mapping(source.get("signals")),
+        "atr": _sf(source.get("atr"), atr_default),
+        "regime": _safe_regime_from_prediction(source),
+        "label_tag": str(source.get("label_tag", source.get("tag", "")) or ""),
+        "weights": _safe_mapping(source.get("weights")),
+        "score": _sf(source.get("score"), confidence),
+        "key_signal": str(source.get("key_signal", "") or ""),
+    }
 
 
 def _conf_bar_html(value: float, color: str = "#4da3ff") -> str:
@@ -1851,17 +1923,9 @@ def render_prediction_chart_section(
     if not prediction:
         prediction = compute_prediction(df)
     else:
-        prediction = {
-            "direction": prediction.get("direction", "Sideways"),
-            "confidence": _sf(prediction.get("confidence"), 48.0),
-            "signals": dict(prediction.get("signals") or {}),
-            "atr": _sf(prediction.get("atr"), float((df["High"] - df["Low"]).tail(14).mean())),
-            "regime": dict(prediction.get("regime_snapshot") or _build_unified_regime_pill(prediction)),
-            "label_tag": str(prediction.get("label_tag", "") or ""),
-            "weights": dict(prediction.get("weights") or {}),
-            "score": _sf(prediction.get("score"), 50.0),
-            "key_signal": str(prediction.get("key_signal", "") or ""),
-        }
+        prediction = _normalise_cached_prediction(prediction, df)
+        if not prediction:
+            prediction = compute_prediction(df)
     pred_candle = build_predicted_candle(df, prediction)
     regime      = prediction.get("regime", {})
 
@@ -1873,7 +1937,7 @@ def render_prediction_chart_section(
 
     p_color = {"Bullish": BULL, "Bearish": BEAR}.get(direction, SIDE)
     p_bg    = {"Bullish": "#091a10", "Bearish": "#1a0b10"}.get(direction, "#0b1220")
-    p_icon  = {"Bullish": "🟢", "Bearish": "🔴", "Sideways": "🟡"}[direction]
+    p_icon  = {"Bullish": "🟢", "Bearish": "🔴", "Sideways": "🟡"}.get(direction, "🟡")
 
     # ── Chart ──────────────────────────────────────────────────────────
     with st.spinner("Building chart…"):
