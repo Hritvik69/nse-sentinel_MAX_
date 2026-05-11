@@ -1,18 +1,19 @@
 {
   "picks": [
     "FORTIS",
-    "TIIL",
     "BOSCH-HCIL",
     "SONACOMS",
     "SWANDEF",
     "APLLTD",
-    "ANURAS"
+    "ANURAS",
+    "TIMKEN",
+    "AGARWALEYE",
+    "TIIL"
   ],
   "notes": "",
   "sections": {
     "relax": [
       "FORTIS",
-      "TIIL",
       "BOSCH-HCIL"
     ],
     "swing": [
@@ -23,7 +24,11 @@
       "APLLTD",
       "ANURAS"
     ],
-    "momentum": [],
+    "momentum": [
+      "TIMKEN",
+      "AGARWALEYE",
+      "TIIL"
+    ],
     "breakout": []
   }
 }
