@@ -1598,6 +1598,10 @@ def get_tomorrow_top_picks(
     out = df.copy()
     src = str(source or "main").strip().lower()
     top_n = max(1, int(top_n))
+    if "Gate Blocked" in out.columns:
+        out = out.loc[~out["Gate Blocked"].fillna(False).astype(bool)].copy()
+        if out.empty:
+            return pd.DataFrame()
 
     if src == "csv":
         prob = _series_num(out, "Next Day Prob")

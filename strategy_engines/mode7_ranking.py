@@ -140,6 +140,7 @@ def final_score_mode7(row: pd.Series, market_bias: dict | None = None) -> float:
         vol = _num(row, "Vol / Avg", 1.0)
         de20 = _num(row, "Δ vs EMA20 (%)", _num(row, "Delta vs EMA20 (%)", 0.0))
         rsi = _num(row, "RSI", 50.0)
+        higher_lows = max(_num(row, "Higher Lows", 0.0), _num(row, "Channel Higher Lows", 0.0))
 
         if trap_prob == "HIGH" or trap_risk == "HIGH" or "FAKE" in advanced:
             blended -= 24.0
@@ -148,6 +149,9 @@ def final_score_mode7(row: pd.Series, market_bias: dict | None = None) -> float:
             blended -= 8.0
         if setup in MODE7_NEGATIVE_SETUPS:
             blended -= 18.0
+            blended = min(blended, 62.0)
+        if setup == "SUPPORT BOUNCE" and higher_lows < 2:
+            blended -= 12.0
             blended = min(blended, 62.0)
         if vol < MODE7_VOL_WEAK:
             blended -= 9.0
@@ -235,6 +239,10 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
         vol = _num_series(out, "Vol / Avg", 1.0)
         de20 = _num_series(out, "Δ vs EMA20 (%)", _num_series(out, "Delta vs EMA20 (%)", 0.0))
         rsi = _num_series(out, "RSI", 50.0)
+        higher_lows = np.maximum(
+            _num_series(out, "Higher Lows", 0.0),
+            _num_series(out, "Channel Higher Lows", 0.0),
+        )
 
         try:
             if isinstance(market_bias, dict):
@@ -275,10 +283,12 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
         high_trap = trap_prob.eq("HIGH") | trap_risk.eq("HIGH") | advanced.str.contains("FAKE", regex=False, na=False)
         med_trap = trap_prob.eq("MEDIUM") | trap_risk.eq("MEDIUM")
         negative_setup = setup.isin(MODE7_NEGATIVE_SETUPS)
+        weak_support_bounce = setup.eq("SUPPORT BOUNCE") & higher_lows.lt(2.0)
 
         mode7_final = mode7_final.mask(high_trap, np.minimum(mode7_final - 24.0, 58.0))
         mode7_final = mode7_final.mask(~high_trap & med_trap, mode7_final - 8.0)
         mode7_final = mode7_final.mask(negative_setup, np.minimum(mode7_final - 18.0, 62.0))
+        mode7_final = mode7_final.mask(weak_support_bounce, np.minimum(mode7_final - 12.0, 62.0))
         mode7_final = mode7_final.mask(vol.lt(MODE7_VOL_WEAK), mode7_final - 9.0)
         mode7_final = mode7_final.mask(de20.gt(MODE7_EMA_EXTENSION_HARD) | rsi.gt(MODE7_RSI_EXHAUSTION), mode7_final - 10.0)
         mode7_final = mode7_final.clip(0.0, 100.0).round(2)
@@ -294,7 +304,7 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
         verdict = verdict.mask(high_trap | setup.eq("FAKE BREAKOUT RISK"), "FAKE BREAKOUT RISK")
         verdict = verdict.mask(~high_trap & setup.eq("OVEREXTENDED"), "OVEREXTENDED")
         strong_mask = mode7_final.ge(78.0) & _text_series(out, "Structure Quality", "MEDIUM").eq("HIGH") & ~_text_series(out, "Volume Confirmation", "MEDIUM").eq("LOW")
-        verdict = verdict.mask(strong_mask & setup.eq("SUPPORT BOUNCE"), "CLEAN SUPPORT BOUNCE")
+        verdict = verdict.mask(strong_mask & setup.eq("SUPPORT BOUNCE") & ~weak_support_bounce, "CLEAN SUPPORT BOUNCE")
         verdict = verdict.mask(strong_mask & setup.eq("ASCENDING CHANNEL"), "ASCENDING CHANNEL BUY")
         verdict = verdict.mask(strong_mask & setup.isin(["BREAKOUT READY", "EARLY BREAKOUT"]), "STRONG BREAKOUT")
         verdict = verdict.mask(strong_mask & setup.eq("MOMENTUM CONTINUATION"), "MOMENTUM CONTINUATION")
@@ -306,7 +316,7 @@ def apply_mode7_ranking(df: pd.DataFrame, market_bias: dict | None = None) -> pd
             & ~_text_series(out, "Breakout Quality", "MEDIUM").eq("LOW")
             & ~_text_series(out, "Support Strength", "MEDIUM").eq("LOW")
         )
-        verdict = verdict.mask(valid_mid & setup.isin(MODE7_POSITIVE_SETUPS), setup)
+        verdict = verdict.mask(valid_mid & setup.isin(MODE7_POSITIVE_SETUPS) & ~weak_support_bounce, setup)
         verdict = verdict.mask(
             ~high_trap & ~negative_setup & setup.eq("ASCENDING CHANNEL") & channel_entry,
             "ASCENDING CHANNEL",

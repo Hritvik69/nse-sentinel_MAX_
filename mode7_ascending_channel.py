@@ -347,7 +347,7 @@ def apply_channel_filter(
     min_quality: str = "MEDIUM",          # "HIGH" | "MEDIUM" | "LOW"
     require_entry_zone: bool = True,
     min_rr: float = 1.0,
-    min_higher_lows: int = 1,
+    min_higher_lows: int = 2,
     add_score_column: bool = True,
 ) -> pd.DataFrame:
     """

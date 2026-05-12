@@ -45,6 +45,7 @@ def analyze_mode7_structure(df: pd.DataFrame | None) -> dict[str, object]:
         "Support Touches": 0,
         "Resistance Touches": 0,
         "Resistance Rejections": 0,
+        "Higher Lows": 0,
         "Base Tightness (%)": np.nan,
         "ATR Contraction": "NO",
         "Liquidity Sweep": "NO",
@@ -95,6 +96,10 @@ def analyze_mode7_structure(df: pd.DataFrame | None) -> dict[str, object]:
         pivot_low = (low.shift(1) > low) & (low.shift(-1) > low)
         recent_highs = high[pivot_high].tail(10)
         recent_lows = low[pivot_low].tail(10)
+        higher_lows = 0
+        if len(recent_lows) >= 2:
+            lows_for_sequence = recent_lows.tail(6).astype(float).to_numpy()
+            higher_lows = int(np.sum(np.diff(lows_for_sequence) > 0))
 
         below_supports = recent_lows[recent_lows <= last_close * 1.03]
         above_resistances = recent_highs[recent_highs >= last_close * 0.97]
@@ -166,6 +171,7 @@ def analyze_mode7_structure(df: pd.DataFrame | None) -> dict[str, object]:
             "Support Touches": int(support_touches),
             "Resistance Touches": int(resistance_touches),
             "Resistance Rejections": int(rejection_count),
+            "Higher Lows": int(higher_lows),
             "Base Tightness (%)": round(float(base_tightness), 2) if np.isfinite(base_tightness) else np.nan,
             "ATR Contraction": "YES" if atr_contraction else "NO",
             "Liquidity Sweep": "YES" if liquidity_sweep else "NO",
