@@ -1081,6 +1081,22 @@ try:
 except Exception:
     _engine_utils = None  # type: ignore[assignment]
 
+try:
+    from pre_scan_quality_gate import (
+        apply_gate_to_scan_df,
+        patch_tomorrow_score,
+        validate_tomorrow_picks,
+    )
+except Exception:
+    def apply_gate_to_scan_df(df, *_args, **_kwargs):  # type: ignore[misc]
+        return df
+
+    def patch_tomorrow_score(df, *_args, **_kwargs):  # type: ignore[misc]
+        return df
+
+    def validate_tomorrow_picks(df, *_args, **_kwargs):  # type: ignore[misc]
+        return df
+
 
 def _fallback_is_fresh_enough(df, strict: bool = False) -> bool:
     if df is None or getattr(df, "empty", True):
@@ -6963,7 +6979,7 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
                 _mode7_channel_entry = bool(
                     _mode7_channel_result.detected
                     and _mode7_channel_result.entry_zone
-                    and _mode7_channel_result.higher_lows >= 1
+                    and _mode7_channel_result.higher_lows >= 2
                     and _mode7_channel_result.higher_highs >= 1
                     and _mode7_channel_result.risk_reward >= 0.8
                     and 48 <= ri <= 70
@@ -7026,6 +7042,8 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
                     "Channel Support": _mode7_channel_result.support_price,
                     "Channel Resistance": _mode7_channel_result.resistance_price,
                     "Channel RR": _mode7_channel_result.risk_reward,
+                    "Channel Higher Lows": int(_mode7_channel_result.higher_lows),
+                    "Channel Higher Highs": int(_mode7_channel_result.higher_highs),
                     "Channel Note": _mode7_channel_result.note,
                 })
             return _scan_row
@@ -9515,8 +9533,52 @@ if _show_home_scanner and "results" in st.session_state:
             except Exception:
                 pass
 
+            try:
+                _gate_all_data = _engine_utils.ALL_DATA if _engine_utils is not None else {}
+                _gate_before = len(df)
+                df = apply_gate_to_scan_df(
+                    df,
+                    _gate_all_data,
+                    mode=stored_mode,
+                    score_col="Final Score",
+                    tomorrow_col="Tomorrow Pick Score",
+                    ai_conf_col="AI Confidence",
+                )
+                _gate_summary = getattr(df, "attrs", {}).get("quality_gate", {}) if isinstance(df, pd.DataFrame) else {}
+                if isinstance(_gate_summary, dict) and _gate_summary:
+                    st.session_state["_quality_gate_summary"] = _gate_summary
+                elif _gate_before and isinstance(df, pd.DataFrame):
+                    st.session_state["_quality_gate_summary"] = {
+                        "before": int(_gate_before),
+                        "blocked": max(int(_gate_before) - int(len(df)), 0),
+                        "after": int(len(df)),
+                    }
+            except Exception:
+                pass
+
             st.session_state["last_scan_df"] = df.copy()
             st.session_state["_last_scan_df_sig"] = _scan_df_sig
+
+        if "Gate Passed" not in df.columns:
+            try:
+                _gate_all_data = _engine_utils.ALL_DATA if _engine_utils is not None else {}
+                _gate_before = len(df)
+                df = apply_gate_to_scan_df(
+                    df,
+                    _gate_all_data,
+                    mode=stored_mode,
+                    score_col="Final Score",
+                    tomorrow_col="Tomorrow Pick Score",
+                    ai_conf_col="AI Confidence",
+                )
+                st.session_state["_quality_gate_summary"] = {
+                    "before": int(_gate_before),
+                    "blocked": max(int(_gate_before) - int(len(df)), 0),
+                    "after": int(len(df)),
+                }
+                st.session_state["last_scan_df"] = df.copy()
+            except Exception:
+                pass
 
         _did_log_predictions = False
         _fs = {}
@@ -9581,6 +9643,13 @@ if _show_home_scanner and "results" in st.session_state:
                 ).format(sg=sg, pu=pu, ri=ri, we=we)
                 st.markdown(_nd_summary, unsafe_allow_html=True)
 
+        _gate_summary = st.session_state.get("_quality_gate_summary", {})
+        if isinstance(_gate_summary, dict) and int(_gate_summary.get("blocked", 0) or 0) > 0:
+            st.caption(
+                f"Quality gate blocked {int(_gate_summary.get('blocked', 0) or 0)} "
+                f"of {int(_gate_summary.get('before', 0) or 0)} scan candidate(s) before ranking."
+            )
+
         # ── TASK 4: Section Headers & Spacing ─────────────────────────
         st.write("")
         st.header("🔥 Top Picks")
@@ -9588,7 +9657,11 @@ if _show_home_scanner and "results" in st.session_state:
 
         # ── TASK 1: Top Picks Cards ───────────────────────────────────
         top_n = min(5, len(df))
-        cols = st.columns(top_n)
+        if top_n <= 0:
+            st.info("Only 0 stocks met quality criteria today.")
+            cols = []
+        else:
+            cols = st.columns(top_n)
         for i, (col, (_, row)) in enumerate(zip(cols, df.head(top_n).iterrows())):
             sym = row.get("Symbol", "—")
             fin   = row.get("Final Score", 0)
@@ -9943,6 +10016,35 @@ if _show_home_scanner and "results" in st.session_state:
                     """,
                     unsafe_allow_html=True,
                 )
+
+            try:
+                _tomorrow_before_quality = len(_tomorrow_df)
+                _tomorrow_df = patch_tomorrow_score(
+                    _tomorrow_df,
+                    mode=stored_mode,
+                    score_col="Final Score",
+                    tomorrow_col="Tomorrow Pick Score",
+                    ai_conf_col="AI Confidence",
+                )
+                _gate_signal_warning = getattr(_tomorrow_df, "attrs", {}).get("quality_gate_signal_warning", "")
+                _tomorrow_df = validate_tomorrow_picks(
+                    _tomorrow_df,
+                    min_score=60.0,
+                    score_col="Tomorrow Pick Score",
+                    ai_conf_col="AI Confidence",
+                    max_picks=3,
+                )
+                _tomorrow_symbols = [
+                    _normalize_tomorrow_symbol(symbol)
+                    for symbol in _tomorrow_df.get("Symbol", pd.Series(dtype=object)).tolist()
+                    if _normalize_tomorrow_symbol(symbol)
+                ]
+                if _gate_signal_warning:
+                    st.warning(str(_gate_signal_warning))
+                if len(_tomorrow_df) < min(3, _tomorrow_before_quality):
+                    st.info(f"Only {len(_tomorrow_df)} stocks met quality criteria today.")
+            except Exception:
+                pass
 
             _tomorrow_cols = [
                 "Symbol", "Tomorrow Pick Score", "AI Confidence", "AI Direction",
