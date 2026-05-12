@@ -1,39 +1,11 @@
 {
-  "picks": [
-    "FORTIS",
-    "BOSCH-HCIL",
-    "SONACOMS",
-    "SWANDEF",
-    "APLLTD",
-    "ANURAS",
-    "TIMKEN",
-    "AGARWALEYE",
-    "MORARJEE",
-    "TIIL",
-    "NH"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "FORTIS",
-      "BOSCH-HCIL"
-    ],
-    "swing": [
-      "SONACOMS"
-    ],
-    "intraday": [
-      "SWANDEF",
-      "APLLTD",
-      "ANURAS"
-    ],
-    "momentum": [
-      "TIMKEN",
-      "AGARWALEYE"
-    ],
-    "breakout": [
-      "MORARJEE",
-      "TIIL",
-      "NH"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
