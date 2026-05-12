@@ -12,6 +12,11 @@ import pandas as pd
 from atomic_io import atomic_write_json
 
 try:
+    import streamlit as st
+except Exception:
+    st = None  # type: ignore[assignment]
+
+try:
     import yfinance as yf
 except Exception:
     yf = None  # type: ignore[assignment]
@@ -264,7 +269,8 @@ class FeatureDataManager:
     1. ALL_DATA
     2. feature_cache JSON
     3. existing scanner snapshot CSV
-    4. yfinance (LIVE / CLOSED, plus simulated historical fetches)
+    4. legacy data/*.csv cache
+    5. yfinance (LIVE / CLOSED, plus simulated historical fetches)
     """
 
     def __init__(self, cache_root: Path | None = None) -> None:
@@ -663,6 +669,34 @@ class FeatureDataManager:
             df.attrs["_nse_captured_at"] = saved_at
         return df, saved_at
 
+    def _load_legacy_csv_cache(self, symbol: str, min_rows: int = 5) -> tuple[pd.DataFrame | None, str]:
+        try:
+            import data_downloader
+
+            df = data_downloader.load_csv(symbol)
+            df = self._coerce_frame(df, min_rows=min_rows)
+            if df is None:
+                return None, ""
+
+            saved_at = ""
+            try:
+                safe = symbol.replace(":", "_").replace("/", "_")
+                csv_path = data_downloader.DATA_DIR / f"{safe}.csv"
+                if csv_path.exists():
+                    saved_at = datetime.fromtimestamp(csv_path.stat().st_mtime, _IST_TZ).isoformat()
+            except Exception:
+                saved_at = ""
+
+            market_date = _frame_market_date(df)
+            df.attrs["_nse_data_source"] = "csv_cache"
+            df.attrs["_nse_market_date"] = (market_date or self._cache_day()).isoformat()
+            df.attrs["_nse_window"] = get_current_window()
+            if saved_at:
+                df.attrs["_nse_captured_at"] = saved_at
+            return df, saved_at
+        except Exception:
+            return None, ""
+
     def _save_stock_cache(
         self,
         symbol: str,
@@ -866,16 +900,34 @@ class FeatureDataManager:
                     )
                     return df_snapshot
 
+            df_csv, csv_saved_at = self._load_legacy_csv_cache(normalized, min_rows=min_rows)
+            df_csv = self._apply_time_travel_cutoff(df_csv, cutoff=tt_cutoff, min_rows=min_rows)
+            if df_csv is not None and self._is_acceptable_frame(df_csv, window=window, cache_day=cache_day):
+                self._write_all_data(normalized, df_csv)
+                self._save_stock_cache(
+                    normalized,
+                    df_csv,
+                    period=period,
+                    interval=interval,
+                    source="csv_cache",
+                    cache_day=cache_day,
+                )
+                self._make_status(
+                    key=status_key,
+                    source_kind=_source_kind_for_frame("csv_cache", window),
+                    source="csv_cache",
+                    market_date=_frame_market_date(df_csv) or cache_day,
+                    saved_at=csv_saved_at,
+                )
+                return df_csv
+
         snapshot_dir = _SCANNER_SNAPSHOT_ROOT / cache_day.isoformat()
+        missing_snapshot_note = ""
         if window == "CLOSED" and snapshot_dir.exists():
-            self._make_status(
-                key=status_key,
-                source_kind="SNAPSHOT",
-                source="locked_snapshot",
-                market_date=cache_day,
-                note="Selected stock is not available in the locked market snapshot.",
+            missing_snapshot_note = (
+                "Selected stock is not available in the locked market snapshot; "
+                "using the final chart-data fallback."
             )
-            return None
 
         if window in {"PRE_MARKET", "WEEKEND"}:
             df_cache, payload = cached_fallback
@@ -919,6 +971,7 @@ class FeatureDataManager:
                 source=source,
                 market_date=market_date,
                 saved_at=str(df_live.attrs.get("_nse_captured_at", "") or ""),
+                note=missing_snapshot_note,
             )
             return df_live
 
@@ -940,7 +993,10 @@ class FeatureDataManager:
             source_kind="MISSING",
             source="missing",
             market_date=cache_day,
-            note="No data available from ALL_DATA, feature cache, snapshot, or yfinance.",
+            note=(
+                f"{missing_snapshot_note} No data available from ALL_DATA, feature cache, "
+                "snapshot, legacy CSV, or yfinance."
+            ).strip(),
         )
         return None
 
