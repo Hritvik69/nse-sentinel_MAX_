@@ -1774,6 +1774,7 @@ def render_prediction_chart_section(
         if widget_key not in st.session_state:
             selectbox_kwargs["index"] = display_tickers.index(initial_symbol)
         selected_bare = st.selectbox(**selectbox_kwargs)
+        selected_symbol = _normalize_prediction_chart_symbol(selected_bare)
     with c_btn:
         load_btn = st.button(
             "Load Chart",
@@ -1784,20 +1785,21 @@ def render_prediction_chart_section(
 
     st.markdown(
         '<div style="font-size:11px;color:#2a5080;margin-bottom:14px;">'
-        "Select any NSE stock · Load Chart fetches real data and generates prediction"
+        "Select any NSE stock · Chart loads automatically; Load Chart refreshes the selected stock"
         "</div>",
         unsafe_allow_html=True,
     )
 
     # ── Symbol tracking ───────────────────────────────────────────────
     st.caption("Shared flow: ALL_DATA first, feature cache second, yfinance last.")
-    trigger_symbol = _normalize_prediction_chart_symbol(st.session_state.get("pc_loaded_symbol", ""))
-    if load_btn:
+    loaded_symbol = _normalize_prediction_chart_symbol(st.session_state.get("pc_loaded_symbol", ""))
+    trigger_symbol = loaded_symbol
+    if selected_symbol and (load_btn or selected_symbol != loaded_symbol):
         try:
-            fetch_stock_data.clear()
+            if load_btn:
+                fetch_stock_data.clear()
         except Exception:
             pass
-        selected_symbol = _normalize_prediction_chart_symbol(selected_bare)
         st.session_state["pc_loaded_symbol"] = selected_symbol
         trigger_symbol = selected_symbol
 

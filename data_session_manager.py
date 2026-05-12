@@ -32,6 +32,8 @@ _FRAME_WINDOW_ATTR = "_nse_window"
 _FRAME_CAPTURED_AT_ATTR = "_nse_captured_at"
 _LOG = logging.getLogger(__name__)
 _SNAPSHOT_SAVE_LOCK = threading.RLock()
+_SNAPSHOT_RESTORE_LOCK = threading.Lock()
+_SNAPSHOT_RESTORE_SIG: tuple[int, int] | None = None
 
 
 def _invalidate_snapshot_caches() -> None:
@@ -45,9 +47,25 @@ def _invalidate_snapshot_caches() -> None:
 
 
 def _restore_snapshot_archive_if_available() -> None:
+    global _SNAPSHOT_RESTORE_SIG
     try:
         if not _SNAPSHOT_ARCHIVE.exists():
             return
+        archive_stat = _SNAPSHOT_ARCHIVE.stat()
+        archive_sig = (int(archive_stat.st_mtime_ns), int(archive_stat.st_size))
+        if _SNAPSHOT_RESTORE_SIG == archive_sig:
+            return
+        with _SNAPSHOT_RESTORE_LOCK:
+            if _SNAPSHOT_RESTORE_SIG == archive_sig:
+                return
+            _restore_snapshot_archive_unlocked()
+            _SNAPSHOT_RESTORE_SIG = archive_sig
+    except Exception:
+        pass
+
+
+def _restore_snapshot_archive_unlocked() -> None:
+    try:
         _SNAPSHOT_ROOT.mkdir(parents=True, exist_ok=True)
         root_resolved = _SNAPSHOT_ROOT.resolve()
         with zipfile.ZipFile(_SNAPSHOT_ARCHIVE, "r") as archive:

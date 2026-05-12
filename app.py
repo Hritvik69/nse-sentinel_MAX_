@@ -1341,8 +1341,12 @@ def render_prediction_chart_section(*args, **kwargs):
 
         _prediction_chart_renderer = _render_prediction_chart_section
         return _prediction_chart_renderer(*args, **kwargs)
-    except Exception:
+    except Exception as exc:
         _prediction_chart_renderer = None
+        try:
+            st.error(f"Prediction Chart failed to load: {exc}")
+        except Exception:
+            pass
         return None
 
 # AFTER the csv_next_day import block, add:
@@ -8679,7 +8683,11 @@ with st.sidebar:
 # MAIN PAGE
 # ─────────────────────────────────────────────────────────────────────
 learning_status, signal_weight_status = _bootstrap_learning_status()
-_post_close_outcome_status = _run_post_close_outcome_refresh()
+_defer_post_close_outcome_refresh = bool(st.session_state.get("pred_chart_show_panel", False))
+if _defer_post_close_outcome_refresh:
+    _post_close_outcome_status = st.session_state.get("_post_close_outcome_status", {})
+else:
+    _post_close_outcome_status = _run_post_close_outcome_refresh()
 if isinstance(_post_close_outcome_status, dict) and (
     int(_post_close_outcome_status.get("filled_stock", 0) or 0)
     + int(_post_close_outcome_status.get("filled_sector", 0) or 0)
