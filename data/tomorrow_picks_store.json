@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "ASHIANA",
+    "EUROBOND",
+    "BALRAMCHIN"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "ASHIANA",
+      "EUROBOND",
+      "BALRAMCHIN"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
