@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "BLAL",
+    "MEDANTA",
+    "STEELCAS"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "BLAL",
+      "MEDANTA",
+      "STEELCAS"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
