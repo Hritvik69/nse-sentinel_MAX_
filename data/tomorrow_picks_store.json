@@ -3,9 +3,10 @@
     "ASHIANA",
     "EUROBOND",
     "BALRAMCHIN",
+    "NIACL",
+    "ANURAS",
     "TATASTEEL",
-    "UFO",
-    "NIACL"
+    "UFO"
   ],
   "notes": "",
   "sections": {
@@ -15,11 +16,13 @@
       "BALRAMCHIN"
     ],
     "swing": [
-      "TATASTEEL",
-      "UFO",
       "NIACL"
     ],
-    "intraday": [],
+    "intraday": [
+      "ANURAS",
+      "TATASTEEL",
+      "UFO"
+    ],
     "momentum": [],
     "breakout": []
   }
