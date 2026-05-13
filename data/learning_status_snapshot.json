@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-13T09:29:18",
+  "saved_at": "2026-05-13T09:32:29",
   "signature": [
     "2026-05-13",
     1778664374.519,
@@ -13,7 +13,7 @@
     "accuracy_pct": 64.46,
     "validation_accuracy_pct": 64.46,
     "training_accuracy_pct": 64.61,
-    "last_trained": "2026-05-13T09:26",
+    "last_trained": "2026-05-13T09:29",
     "source": "stock_feedback",
     "message": "Model trained on 1990 samples.",
     "regime_encoder": {
@@ -42,7 +42,7 @@
       "REALTY": 16,
       "TELECOM": 17
     },
-    "validated_today": 216,
+    "validated_today": 0,
     "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 2162,
@@ -54,14 +54,14 @@
       "false_bearish_pct": 39.09
     },
     "brain_status": {
-      "started_at": "2026-05-13T09:26:07",
-      "completed_at": "2026-05-13T09:29:17",
+      "started_at": "2026-05-13T09:29:19",
+      "completed_at": "2026-05-13T09:32:28",
       "feedback": {
-        "filled_stock": 216,
+        "filled_stock": 0,
         "filled_sector": 0,
-        "pending_stock": 388,
+        "pending_stock": 172,
         "pending_sector": 6,
-        "message": "\u2705 Closed feedback loop: 216 outcomes filled"
+        "message": "\u2705 Closed feedback loop: 0 outcomes filled"
       },
       "feedback_summary": {
         "total_logged": 2162,
@@ -80,7 +80,7 @@
         "accuracy_pct": 64.46,
         "validation_accuracy_pct": 64.46,
         "training_accuracy_pct": 64.61,
-        "last_trained": "2026-05-13T09:26",
+        "last_trained": "2026-05-13T09:29",
         "source": "stock_feedback",
         "message": "Model trained on 1990 samples.",
         "regime_encoder": {
@@ -423,7 +423,7 @@
               "EMA50": 119.92,
               "Close": 119.7
             },
-            "computed_at": "2026-05-13T09:26:40"
+            "computed_at": "2026-05-13T09:29:49"
           },
           {
             "ticker": "INNOVISION",
@@ -490,7 +490,7 @@
               "EMA50": 339.86,
               "Close": 312.0
             },
-            "computed_at": "2026-05-13T09:27:36"
+            "computed_at": "2026-05-13T09:30:43"
           },
           {
             "ticker": "TRANSWIND",
@@ -557,7 +557,7 @@
               "EMA50": 18.54,
               "Close": 14.5
             },
-            "computed_at": "2026-05-13T09:29:05"
+            "computed_at": "2026-05-13T09:32:16"
           },
           {
             "ticker": "ABCOTS",
@@ -624,7 +624,7 @@
               "EMA50": 331.29,
               "Close": 225.0
             },
-            "computed_at": "2026-05-13T09:26:25"
+            "computed_at": "2026-05-13T09:29:34"
           },
           {
             "ticker": "OMKARCHEM",
@@ -691,7 +691,7 @@
               "EMA50": 3.99,
               "Close": 3.41
             },
-            "computed_at": "2026-05-13T09:28:13"
+            "computed_at": "2026-05-13T09:31:21"
           },
           {
             "ticker": "SRTL",
@@ -758,7 +758,7 @@
               "EMA50": 51.75,
               "Close": 45.99
             },
-            "computed_at": "2026-05-13T09:28:49"
+            "computed_at": "2026-05-13T09:31:59"
           },
           {
             "ticker": "AARNAV",
@@ -825,7 +825,7 @@
               "EMA50": 24.23,
               "Close": 21.86
             },
-            "computed_at": "2026-05-13T09:26:24"
+            "computed_at": "2026-05-13T09:29:33"
           },
           {
             "ticker": "RNBDENIMS",
@@ -892,7 +892,7 @@
               "EMA50": 23.42,
               "Close": 12.37
             },
-            "computed_at": "2026-05-13T09:28:27"
+            "computed_at": "2026-05-13T09:31:36"
           },
           {
             "ticker": "HCLTECH",
@@ -959,7 +959,7 @@
               "EMA50": 1311.35,
               "Close": 1143.1
             },
-            "computed_at": "2026-05-13T09:27:30"
+            "computed_at": "2026-05-13T09:30:38"
           },
           {
             "ticker": "HERCULES",
@@ -1026,7 +1026,7 @@
               "EMA50": 159.44,
               "Close": 159.32
             },
-            "computed_at": "2026-05-13T09:27:31"
+            "computed_at": "2026-05-13T09:30:39"
           },
           {
             "ticker": "LANDSMILL",
@@ -1093,7 +1093,7 @@
               "EMA50": 0.99,
               "Close": 0.92
             },
-            "computed_at": "2026-05-13T09:27:51"
+            "computed_at": "2026-05-13T09:30:58"
           },
           {
             "ticker": "BLUECHIP",
@@ -1160,7 +1160,7 @@
               "EMA50": 2.25,
               "Close": 1.89
             },
-            "computed_at": "2026-05-13T09:26:48"
+            "computed_at": "2026-05-13T09:29:56"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2276 tickers computed"
