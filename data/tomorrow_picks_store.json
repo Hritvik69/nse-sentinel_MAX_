@@ -5,11 +5,13 @@
     "BALRAMCHIN",
     "NIACL",
     "ANURAS",
-    "TATASTEEL",
     "UFO",
     "CONSOFINVT",
     "MEDPLUS",
-    "WELSPUNLIV"
+    "WELSPUNLIV",
+    "ASIANPAINT",
+    "BAIDFIN",
+    "TATASTEEL"
   ],
   "notes": "",
   "sections": {
@@ -23,7 +25,6 @@
     ],
     "intraday": [
       "ANURAS",
-      "TATASTEEL",
       "UFO"
     ],
     "momentum": [
@@ -31,6 +32,10 @@
       "MEDPLUS",
       "WELSPUNLIV"
     ],
-    "breakout": []
+    "breakout": [
+      "ASIANPAINT",
+      "BAIDFIN",
+      "TATASTEEL"
+    ]
   }
 }
