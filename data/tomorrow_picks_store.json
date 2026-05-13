@@ -2,14 +2,20 @@
   "picks": [
     "BLAL",
     "MEDANTA",
-    "STEELCAS"
+    "STEELCAS",
+    "ASHIANA",
+    "EUROBOND",
+    "BALRAMCHIN"
   ],
   "notes": "",
   "sections": {
     "relax": [
       "BLAL",
       "MEDANTA",
-      "STEELCAS"
+      "STEELCAS",
+      "ASHIANA",
+      "EUROBOND",
+      "BALRAMCHIN"
     ],
     "swing": [],
     "intraday": [],
