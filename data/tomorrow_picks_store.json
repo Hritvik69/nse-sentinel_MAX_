@@ -2,7 +2,10 @@
   "picks": [
     "ASHIANA",
     "EUROBOND",
-    "BALRAMCHIN"
+    "BALRAMCHIN",
+    "TATASTEEL",
+    "UFO",
+    "NIACL"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +14,11 @@
       "EUROBOND",
       "BALRAMCHIN"
     ],
-    "swing": [],
+    "swing": [
+      "TATASTEEL",
+      "UFO",
+      "NIACL"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
