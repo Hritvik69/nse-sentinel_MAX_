@@ -921,7 +921,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-13T15:16:15",
+      "last_imported_at": "2026-05-13T15:16:27",
       "snapshot": {
         "Symbol": "CONSOFINVT",
         "Price (\u20b9)": 229.08,
@@ -1041,7 +1041,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-13T15:16:15",
+      "last_imported_at": "2026-05-13T15:16:27",
       "snapshot": {
         "Symbol": "MEDPLUS",
         "Price (\u20b9)": 889.6,
@@ -1161,7 +1161,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-13T15:16:15",
+      "last_imported_at": "2026-05-13T15:16:27",
       "snapshot": {
         "Symbol": "WELSPUNLIV",
         "Price (\u20b9)": 133.83,
@@ -1271,5 +1271,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-13T15:16:15"
+  "updated_at": "2026-05-13T15:16:27"
 }
