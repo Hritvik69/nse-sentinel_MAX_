@@ -129,6 +129,23 @@ class PreScanQualityGateTests(unittest.TestCase):
         self.assertEqual(valid["Symbol"].tolist(), ["GOOD"])
         self.assertLessEqual(float(valid.loc[0, "Tomorrow Pick Score"]), 90.0)
 
+    def test_validation_does_not_drop_clean_pick_when_ai_columns_are_missing(self) -> None:
+        from pre_scan_quality_gate import validate_tomorrow_picks
+
+        picks = pd.DataFrame(
+            [
+                {
+                    "Symbol": "NOAI",
+                    "Tomorrow Pick Score": 72.0,
+                    "Trap Check": "Clean",
+                    "Gate Buy Valid": True,
+                }
+            ]
+        )
+
+        valid = validate_tomorrow_picks(picks)
+        self.assertEqual(valid["Symbol"].tolist(), ["NOAI"])
+
 
 if __name__ == "__main__":
     unittest.main()

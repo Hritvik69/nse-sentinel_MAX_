@@ -550,6 +550,7 @@ def validate_tomorrow_picks(
     ai_conf = pd.to_numeric(out.get(ai_conf_col, pd.Series(np.nan, index=out.index)), errors="coerce")
     ai_action = out.get("AI Action", pd.Series("", index=out.index)).fillna("").astype(str).str.upper()
     trap = out.get("Trap Check", out.get("Trap Risk", pd.Series("", index=out.index))).fillna("").astype(str).str.upper()
+    has_ai_guidance = bool(ai_conf.notna().any() or ai_action.str.strip().ne("").any())
 
     mask = score.ge(float(min_score))
     if "Gate Blocked" in out.columns:
@@ -557,7 +558,8 @@ def validate_tomorrow_picks(
     if "Gate Buy Valid" in out.columns:
         known_gate = out["Gate Buy Valid"].notna()
         mask &= (~known_gate) | out["Gate Buy Valid"].astype(bool)
-    mask &= ai_action.str.contains("BUY TOMORROW", regex=False, na=False) | ai_conf.ge(55.0)
+    if has_ai_guidance:
+        mask &= ai_action.str.contains("BUY TOMORROW", regex=False, na=False) | ai_conf.ge(55.0)
     mask &= (
         trap.str.contains("CLEAN", regex=False, na=False)
         | trap.str.contains("LOW", regex=False, na=False)

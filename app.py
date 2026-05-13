@@ -769,6 +769,18 @@ def _sync_cached_learning_feedback_summary(feedback_stats: dict | None = None) -
     return stats
 
 
+def _get_cached_feedback_summary() -> dict:
+    try:
+        cached_status = st.session_state.get("_learning_status")
+        if isinstance(cached_status, dict):
+            cached_summary = cached_status.get("feedback_summary", {})
+            if isinstance(cached_summary, dict):
+                return dict(cached_summary)
+    except Exception:
+        pass
+    return {}
+
+
 def _feedback_event_signature(feedback_stats: dict | None = None) -> tuple:
     stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
     return (
@@ -819,7 +831,16 @@ def _should_run_full_learning_refresh(feedback_stats: dict | None = None) -> boo
 
 
 def _refresh_learning_after_prediction_log(feedback_stats: dict | None = None) -> bool:
-    stats = _sync_cached_learning_feedback_summary(feedback_stats)
+    stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
+    if not stats:
+        return False
+    if int(stats.get("rows_with_outcome", 0) or 0) <= 0:
+        try:
+            st.session_state["_last_feedback_learning_event_sig"] = _feedback_event_signature(stats)
+        except Exception:
+            pass
+        return False
+    stats = _sync_cached_learning_feedback_summary(stats)
     feedback_sig = _feedback_event_signature(stats)
     if not _should_run_full_learning_refresh(stats):
         st.session_state["_last_feedback_learning_event_sig"] = feedback_sig
@@ -3249,6 +3270,8 @@ def render_imported_ai_learning_panel() -> None:
 def _build_mode_ai_top3_preview(
     symbols: list[object] | tuple[object, ...] | None,
     mode_value: object,
+    *,
+    allow_live_fallback: bool = True,
 ) -> dict[str, object]:
     normalized = _normalize_tomorrow_symbols(symbols, limit=6)
     default = {"table": pd.DataFrame(), "summary": {}}
@@ -3286,7 +3309,7 @@ def _build_mode_ai_top3_preview(
         summary = {}
         prediction_map = {}
 
-    if len(prediction_map) < len(normalized):
+    if allow_live_fallback and len(prediction_map) < len(normalized):
         try:
             from strategy_engines._engine_utils import ALL_DATA as _ai_all_data
             from tomorrow_prediction_engine import summarize_tomorrow_predictions
@@ -8350,6 +8373,49 @@ def get_mode_display_columns(mode_value: int, base_cols: list[str]) -> list[str]
         cols = cols[:insert_at] + mode7_cols + cols[insert_at:]
     return cols
 
+
+def _fast_add_rank_score_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+
+    def _num_col(name: str, default: float) -> pd.Series:
+        if name in out.columns:
+            return pd.to_numeric(out[name], errors="coerce").fillna(default)
+        return pd.Series(default, index=out.index, dtype="float64")
+
+    rsi_v = _num_col("RSI", 50.0)
+    vol_r = _num_col("Vol / Avg", 1.0).clip(lower=0.0, upper=3.5)
+    d_ema20 = _num_col("Î” vs EMA20 (%)", 0.0)
+    r5d = _num_col("5D Return (%)", 0.0)
+    d20h = _num_col("Î” vs 20D High (%)", -5.0)
+
+    trend_score = np.clip(50.0 + d_ema20 * 2.5, 0.0, 100.0)
+    momentum_score = np.clip(50.0 + r5d * 3.0, 0.0, 100.0)
+    volume_score = np.clip((vol_r / 3.5) * 100.0, 0.0, 100.0)
+    near_high_score = np.clip(50.0 + d20h * 4.0, 0.0, 100.0)
+    rsi_score = np.clip(100.0 - (rsi_v - 60.0).abs() * 4.0, 0.0, 100.0)
+
+    rank_score = np.clip(
+        0.25 * trend_score
+        + 0.25 * momentum_score
+        + 0.20 * volume_score
+        + 0.15 * near_high_score
+        + 0.15 * rsi_score,
+        0.0,
+        100.0,
+    )
+
+    out["trend_score"] = pd.Series(trend_score, index=out.index, dtype="float64").round(2)
+    out["momentum_score"] = pd.Series(momentum_score, index=out.index, dtype="float64").round(2)
+    out["volume_score"] = pd.Series(volume_score, index=out.index, dtype="float64").round(2)
+    out["near_high_score"] = pd.Series(near_high_score, index=out.index, dtype="float64").round(2)
+    out["rsi_score"] = pd.Series(rsi_score, index=out.index, dtype="float64").round(2)
+    out["rank_score"] = pd.Series(rank_score, index=out.index, dtype="float64").round(2)
+    return out
+
+
 _SIDEBAR_PANEL_KEYS = (
     "show_sector_screener",
     "battle_show_panel",
@@ -9533,15 +9599,6 @@ if _show_home_scanner and "results" in st.session_state:
         # ── Phase 4.3/4.4 (Dynamic Intelligence + Feedback Tracking) ─
         if not _using_cached_scan_df:
             try:
-                df = apply_phase43_logic(df)
-            except Exception:
-                pass
-            try:
-                df = apply_phase44_logic(df)
-            except Exception:
-                pass
-
-            try:
                 _gate_all_data = _engine_utils.ALL_DATA if _engine_utils is not None else {}
                 _gate_before = len(df)
                 df = apply_gate_to_scan_df(
@@ -9589,16 +9646,15 @@ if _show_home_scanner and "results" in st.session_state:
                 pass
 
         _did_log_predictions = False
-        _fs = {}
+        _fs = _get_cached_feedback_summary()
         try:
-            from prediction_feedback_store import feedback_summary, log_scan_predictions
+            from prediction_feedback_store import log_scan_predictions
 
             _log_key = f"{stored_mode}|{scan_time_d}|{len(df)}"
             if st.session_state.get("_prediction_log_key") != _log_key:
                 log_scan_predictions(df, stored_mode, st.session_state.get("market_bias_result"))
                 st.session_state["_prediction_log_key"] = _log_key
                 _did_log_predictions = True
-            _fs = feedback_summary()
             if _fs.get("total_logged", 0):
                 _cap = f"📒 Prediction log: {_fs['total_logged']} row(s) stored"
                 if _fs.get("rows_with_outcome"):
@@ -9748,8 +9804,7 @@ if _show_home_scanner and "results" in st.session_state:
             if stored_mode == 7 and "Mode7 Rank Score" in table_df.columns:
                 table_df["rank_score"] = pd.to_numeric(table_df["Mode7 Rank Score"], errors="coerce").fillna(0.0)
             else:
-                from strategy_engines._engine_utils import add_rank_score_columns
-                table_df = add_rank_score_columns(table_df)
+                table_df = _fast_add_rank_score_columns(table_df)
             if "rank_score" in table_df.columns:
                 table_df = table_df.sort_values("rank_score", ascending=False).reset_index(drop=True)
                 table_df["Rank Score"] = table_df["rank_score"]
@@ -9966,7 +10021,11 @@ if _show_home_scanner and "results" in st.session_state:
                 for symbol in _tomorrow_df.get("Symbol", pd.Series(dtype=object)).tolist()
                 if _normalize_tomorrow_symbol(symbol)
             ]
-            _ai_preview = _build_mode_ai_top3_preview(_tomorrow_symbols, stored_mode)
+            _ai_preview = _build_mode_ai_top3_preview(
+                _tomorrow_symbols,
+                stored_mode,
+                allow_live_fallback=False,
+            )
             _ai_preview_df = _ai_preview.get("table") if isinstance(_ai_preview, dict) else pd.DataFrame()
             _ai_summary = _ai_preview.get("summary", {}) if isinstance(_ai_preview, dict) else {}
             if isinstance(_ai_preview_df, pd.DataFrame) and not _ai_preview_df.empty:
@@ -10027,6 +10086,7 @@ if _show_home_scanner and "results" in st.session_state:
 
             try:
                 _tomorrow_before_quality = len(_tomorrow_df)
+                _tomorrow_fallback_used = False
                 _tomorrow_df = patch_tomorrow_score(
                     _tomorrow_df,
                     mode=stored_mode,
@@ -10034,6 +10094,7 @@ if _show_home_scanner and "results" in st.session_state:
                     tomorrow_col="Tomorrow Pick Score",
                     ai_conf_col="AI Confidence",
                 )
+                _tomorrow_ranked_df = _tomorrow_df.copy()
                 _gate_signal_warning = getattr(_tomorrow_df, "attrs", {}).get("quality_gate_signal_warning", "")
                 _tomorrow_df = validate_tomorrow_picks(
                     _tomorrow_df,
@@ -10042,6 +10103,16 @@ if _show_home_scanner and "results" in st.session_state:
                     ai_conf_col="AI Confidence",
                     max_picks=3,
                 )
+                if len(_tomorrow_df) < min(3, _tomorrow_before_quality):
+                    _fallback_pool = _tomorrow_ranked_df.copy()
+                    if not _tomorrow_df.empty and "Symbol" in _tomorrow_df.columns and "Symbol" in _fallback_pool.columns:
+                        _selected = set(_tomorrow_df["Symbol"].astype(str).tolist())
+                        _fallback_pool = _fallback_pool.loc[~_fallback_pool["Symbol"].astype(str).isin(_selected)].copy()
+                    _fallback_needed = max(0, min(3, _tomorrow_before_quality) - len(_tomorrow_df))
+                    if _fallback_needed > 0 and not _fallback_pool.empty:
+                        _fallback_rows = _fallback_pool.head(_fallback_needed)
+                        _tomorrow_df = pd.concat([_tomorrow_df, _fallback_rows], ignore_index=True)
+                        _tomorrow_fallback_used = True
                 _tomorrow_symbols = [
                     _normalize_tomorrow_symbol(symbol)
                     for symbol in _tomorrow_df.get("Symbol", pd.Series(dtype=object)).tolist()
@@ -10049,6 +10120,8 @@ if _show_home_scanner and "results" in st.session_state:
                 ]
                 if _gate_signal_warning:
                     st.warning(str(_gate_signal_warning))
+                if _tomorrow_fallback_used:
+                    st.info("Filled the remaining Top 3 slot(s) with the best available ranked candidates.")
                 if len(_tomorrow_df) < min(3, _tomorrow_before_quality):
                     st.info(f"Only {len(_tomorrow_df)} stocks met quality criteria today.")
             except Exception:
