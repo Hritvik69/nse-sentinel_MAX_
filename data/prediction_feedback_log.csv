@@ -2300,3 +2300,6 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-13T20:41:33+05:30,2026-05-13,1291a8167983c1622f875410,ANTELOPUS,,6,,,Bearish,stock_next_session_v2,14.3900,12.8000,AVOID,Low,Bearish bias,Trending Down,67.4000,1.1800,,HIGH,0,,,
 2026-05-13T20:41:33+05:30,2026-05-13,cb6549cd5b5d173ee472cc85,PANACHE,,6,,,Bearish,stock_next_session_v2,17.7700,12.3000,AVOID,Low,Bearish bias,Trending Down,66.1800,1.5700,,HIGH,0,,,
 2026-05-13T20:41:33+05:30,2026-05-13,e60f13fa15503ca98a62a98e,BALRAMCHIN,PSU,6,,,Bearish,stock_next_session_v2,26.4500,11.3200,AVOID,Low,Bearish bias,Trending Down,67.4000,2.2000,,LOW,0,,,
+2026-05-13T15:13:18+05:30,2026-05-13,e7e42f68a749a57395a7b28e,UFO,,6,Mode 2 Top 3,Swing,Bearish,stock_next_session_v2,53.3000,47.3200,WATCH,Medium,Bearish bias,Trending Down,60.8100,1.3000,,LOW,0,,,
+2026-05-13T15:13:18+05:30,2026-05-13,007da2f34eed1b59f0f63d79,TATASTEEL,METAL,6,Mode 2 Top 3,Swing,Bearish,stock_next_session_v2,50.1200,41.5600,WATCH,Medium,Bearish bias,Trending Down,64.6500,2.0000,,LOW,0,,,
+2026-05-13T15:13:18+05:30,2026-05-13,67efe6af0d8739a812e3305b,NIACL,,6,Mode 2 Top 3,Swing,Bearish,stock_next_session_v2,51.5400,37.7200,WATCH,Medium,Bearish bias,Trending Down,64.3200,1.5800,,LOW,0,,,
