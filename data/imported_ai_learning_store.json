@@ -557,7 +557,7 @@
         5,
         0
       ],
-      "last_imported_at": "2026-05-13T15:17:28",
+      "last_imported_at": "2026-05-13T15:17:45",
       "snapshot": {
         "Symbol": "TATASTEEL",
         "Price (\u20b9)": 219.62,
@@ -1225,7 +1225,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-13T15:17:28",
+      "last_imported_at": "2026-05-13T15:17:45",
       "snapshot": {
         "Symbol": "ASIANPAINT",
         "Price (\u20b9)": 2617.6,
@@ -1257,7 +1257,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-13T15:17:28",
+      "last_imported_at": "2026-05-13T15:17:45",
       "snapshot": {
         "Symbol": "BAIDFIN",
         "Price (\u20b9)": 11.67,
@@ -1279,5 +1279,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-13T15:17:28"
+  "updated_at": "2026-05-13T15:17:45"
 }
