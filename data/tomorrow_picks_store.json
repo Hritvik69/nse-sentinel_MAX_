@@ -6,7 +6,10 @@
     "NIACL",
     "ANURAS",
     "TATASTEEL",
-    "UFO"
+    "UFO",
+    "CONSOFINVT",
+    "MEDPLUS",
+    "WELSPUNLIV"
   ],
   "notes": "",
   "sections": {
@@ -23,7 +26,11 @@
       "TATASTEEL",
       "UFO"
     ],
-    "momentum": [],
+    "momentum": [
+      "CONSOFINVT",
+      "MEDPLUS",
+      "WELSPUNLIV"
+    ],
     "breakout": []
   }
 }
