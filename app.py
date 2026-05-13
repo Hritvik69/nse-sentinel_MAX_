@@ -2998,13 +2998,13 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
     records = list(panel.get("records", []) or [])
     source_df = _build_imported_ai_top3_source_rows(records)
 
-    with st.expander("NSE Sentinel Top 3 Picker", expanded=not source_df.empty):
+    with st.expander("NSE Sentinel Tomorrow Accuracy Picker", expanded=not source_df.empty):
         st.caption(
-            "Uses the master prompt formula locally on the saved Imported AI rows. "
+            "Uses the tomorrow-accuracy prompt formula locally on the saved Imported AI rows. "
             "No new market data is fetched here."
         )
         tab_output, tab_prompt, tab_reality = st.tabs(
-            ["Top 3 Output", "Master Prompt", "Self Improve Reality"]
+            ["Tomorrow Top 3", "Tomorrow Prompt", "Self Improve Reality"]
         )
 
         with tab_output:
@@ -3024,13 +3024,13 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
                     st.download_button(
                         "Download Top 3 Output",
                         data=output_text.encode("utf-8-sig"),
-                        file_name=f"nse_sentinel_top3_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        file_name=f"nse_tomorrow_top3_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
                         mime="text/plain",
                         key="imported_ai_top3_output_download",
                         width="stretch",
                     )
                 except Exception as exc:
-                    st.warning(f"Top 3 picker could not run right now: {exc}")
+                    st.warning(f"Tomorrow accuracy picker could not run right now: {exc}")
 
         with tab_prompt:
             try:
@@ -3038,17 +3038,17 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
 
                 prompt_text = load_top3_prompt_text()
             except Exception:
-                prompt_text = "NSE Sentinel Top 3 prompt is unavailable."
+                prompt_text = "NSE Sentinel tomorrow accuracy prompt is unavailable."
             st.download_button(
-                "Download Master Prompt",
+                "Download Tomorrow Prompt",
                 data=prompt_text.encode("utf-8-sig"),
-                file_name="nse_sentinel_top3_prompt.txt",
+                file_name="nse_tomorrow_accuracy_prompt.txt",
                 mime="text/plain",
                 key="imported_ai_top3_prompt_download",
                 width="stretch",
             )
             st.text_area(
-                "Reusable prompt",
+                "Tomorrow accuracy prompt",
                 value=prompt_text,
                 height=360,
                 key="imported_ai_top3_prompt_text",
