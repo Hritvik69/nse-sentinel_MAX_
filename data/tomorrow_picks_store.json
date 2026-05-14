@@ -2,7 +2,10 @@
   "picks": [
     "NSLNISP",
     "NMDC",
-    "HUBTOWN"
+    "HUBTOWN",
+    "JSWSTEEL",
+    "FORTIS",
+    "ONGC"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +14,11 @@
       "NMDC",
       "HUBTOWN"
     ],
-    "swing": [],
+    "swing": [
+      "JSWSTEEL",
+      "FORTIS",
+      "ONGC"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
