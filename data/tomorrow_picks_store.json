@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "NSLNISP",
+    "NMDC",
+    "HUBTOWN"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "NSLNISP",
+      "NMDC",
+      "HUBTOWN"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
