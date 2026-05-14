@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-14T15:18:52",
+  "saved_at": "2026-05-14T15:19:17",
   "signature": [
     "2026-05-14",
     1778771913.536,
@@ -13,7 +13,7 @@
     "accuracy_pct": 64.38,
     "validation_accuracy_pct": 64.38,
     "training_accuracy_pct": 63.43,
-    "last_trained": "2026-05-14T15:18",
+    "last_trained": "2026-05-14T15:19",
     "source": "stock_feedback",
     "message": "Model trained on 2392 samples.",
     "regime_encoder": {
@@ -54,8 +54,8 @@
       "false_bearish_pct": 40.44
     },
     "brain_status": {
-      "started_at": "2026-05-14T15:18:11",
-      "completed_at": "2026-05-14T15:18:52",
+      "started_at": "2026-05-14T15:18:53",
+      "completed_at": "2026-05-14T15:19:17",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -80,7 +80,7 @@
         "accuracy_pct": 64.38,
         "validation_accuracy_pct": 64.38,
         "training_accuracy_pct": 63.43,
-        "last_trained": "2026-05-14T15:18",
+        "last_trained": "2026-05-14T15:19",
         "source": "stock_feedback",
         "message": "Model trained on 2392 samples.",
         "regime_encoder": {
@@ -423,7 +423,7 @@
               "EMA50": 152.0,
               "Close": 191.99
             },
-            "computed_at": "2026-05-14T15:18:50"
+            "computed_at": "2026-05-14T15:19:14"
           },
           {
             "ticker": "JAYAGROGN",
@@ -490,7 +490,7 @@
               "EMA50": 194.6,
               "Close": 234.77
             },
-            "computed_at": "2026-05-14T15:18:41"
+            "computed_at": "2026-05-14T15:19:11"
           },
           {
             "ticker": "MTARTECH",
@@ -557,7 +557,7 @@
               "EMA50": 4983.42,
               "Close": 7588.0
             },
-            "computed_at": "2026-05-14T15:18:38"
+            "computed_at": "2026-05-14T15:19:10"
           },
           {
             "ticker": "AMBICAAGAR",
@@ -624,7 +624,7 @@
               "EMA50": 23.81,
               "Close": 23.5
             },
-            "computed_at": "2026-05-14T15:18:44"
+            "computed_at": "2026-05-14T15:19:12"
           },
           {
             "ticker": "FIBERWEB",
@@ -691,7 +691,7 @@
               "EMA50": 37.52,
               "Close": 36.52
             },
-            "computed_at": "2026-05-14T15:18:47"
+            "computed_at": "2026-05-14T15:19:13"
           },
           {
             "ticker": "ORBTEXP",
@@ -758,7 +758,7 @@
               "EMA50": 164.46,
               "Close": 161.72
             },
-            "computed_at": "2026-05-14T15:18:52"
+            "computed_at": "2026-05-14T15:19:16"
           },
           {
             "ticker": "RACE",
@@ -825,7 +825,7 @@
               "EMA50": 121.91,
               "Close": 122.22
             },
-            "computed_at": "2026-05-14T15:18:36"
+            "computed_at": "2026-05-14T15:19:09"
           },
           {
             "ticker": "RITCO",
@@ -892,7 +892,7 @@
               "EMA50": 221.46,
               "Close": 276.28
             },
-            "computed_at": "2026-05-14T15:18:41"
+            "computed_at": "2026-05-14T15:19:11"
           },
           {
             "ticker": "LOTUSDEV",
@@ -959,7 +959,7 @@
               "EMA50": 138.87,
               "Close": 140.1
             },
-            "computed_at": "2026-05-14T15:18:36"
+            "computed_at": "2026-05-14T15:19:09"
           },
           {
             "ticker": "RELIGARE",
@@ -1026,7 +1026,7 @@
               "EMA50": 224.02,
               "Close": 222.21
             },
-            "computed_at": "2026-05-14T15:18:44"
+            "computed_at": "2026-05-14T15:19:12"
           },
           {
             "ticker": "RHL",
@@ -1093,7 +1093,7 @@
               "EMA50": 183.32,
               "Close": 181.68
             },
-            "computed_at": "2026-05-14T15:18:46"
+            "computed_at": "2026-05-14T15:19:12"
           },
           {
             "ticker": "MODTHREAD",
@@ -1160,7 +1160,7 @@
               "EMA50": 46.32,
               "Close": 46.17
             },
-            "computed_at": "2026-05-14T15:18:34"
+            "computed_at": "2026-05-14T15:19:08"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 237 tickers computed"
