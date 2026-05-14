@@ -1559,7 +1559,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-14T15:44:39",
+      "last_imported_at": "2026-05-14T15:44:59",
       "snapshot": {
         "Symbol": "JSWSTEEL",
         "Price (\u20b9)": 1296.9,
@@ -1650,7 +1650,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-14T15:44:39",
+      "last_imported_at": "2026-05-14T15:44:59",
       "snapshot": {
         "Symbol": "FORTIS",
         "Price (\u20b9)": 970.65,
@@ -1741,7 +1741,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-14T15:44:39",
+      "last_imported_at": "2026-05-14T15:44:59",
       "snapshot": {
         "Symbol": "ONGC",
         "Price (\u20b9)": 300.9,
@@ -1822,5 +1822,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-14T15:44:39"
+  "updated_at": "2026-05-14T15:44:59"
 }
