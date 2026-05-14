@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-14T15:31:02",
+  "saved_at": "2026-05-14T15:34:02",
   "signature": [
     "2026-05-14",
     1778772483.306,
@@ -13,7 +13,7 @@
     "accuracy_pct": 65.06,
     "validation_accuracy_pct": 65.06,
     "training_accuracy_pct": 62.34,
-    "last_trained": "2026-05-14T15:28",
+    "last_trained": "2026-05-14T15:31",
     "source": "stock_feedback",
     "message": "Model trained on 2404 samples.",
     "regime_encoder": {
@@ -54,8 +54,8 @@
       "false_bearish_pct": 40.54
     },
     "brain_status": {
-      "started_at": "2026-05-14T15:28:05",
-      "completed_at": "2026-05-14T15:31:01",
+      "started_at": "2026-05-14T15:31:03",
+      "completed_at": "2026-05-14T15:34:01",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -80,7 +80,7 @@
         "accuracy_pct": 65.06,
         "validation_accuracy_pct": 65.06,
         "training_accuracy_pct": 62.34,
-        "last_trained": "2026-05-14T15:28",
+        "last_trained": "2026-05-14T15:31",
         "source": "stock_feedback",
         "message": "Model trained on 2404 samples.",
         "regime_encoder": {
@@ -423,7 +423,7 @@
               "EMA50": 119.91,
               "Close": 119.7
             },
-            "computed_at": "2026-05-14T15:28:50"
+            "computed_at": "2026-05-14T15:31:48"
           },
           {
             "ticker": "OSIAHYPER",
@@ -490,7 +490,7 @@
               "EMA50": 6.56,
               "Close": 4.98
             },
-            "computed_at": "2026-05-14T15:30:09"
+            "computed_at": "2026-05-14T15:33:08"
           },
           {
             "ticker": "EIMCOELECO",
@@ -557,7 +557,7 @@
               "EMA50": 1602.36,
               "Close": 1582.6
             },
-            "computed_at": "2026-05-14T15:29:20"
+            "computed_at": "2026-05-14T15:32:19"
           },
           {
             "ticker": "APOLSINHOT",
@@ -624,7 +624,7 @@
               "EMA50": 1141.43,
               "Close": 1115.2
             },
-            "computed_at": "2026-05-14T15:28:42"
+            "computed_at": "2026-05-14T15:31:41"
           },
           {
             "ticker": "AMBICAAGAR",
@@ -691,7 +691,7 @@
               "EMA50": 23.81,
               "Close": 23.5
             },
-            "computed_at": "2026-05-14T15:28:28"
+            "computed_at": "2026-05-14T15:31:26"
           },
           {
             "ticker": "RHL",
@@ -758,7 +758,7 @@
               "EMA50": 183.32,
               "Close": 181.68
             },
-            "computed_at": "2026-05-14T15:28:29"
+            "computed_at": "2026-05-14T15:31:27"
           },
           {
             "ticker": "SHIVAUM",
@@ -825,7 +825,7 @@
               "EMA50": 330.29,
               "Close": 325.0
             },
-            "computed_at": "2026-05-14T15:30:31"
+            "computed_at": "2026-05-14T15:33:30"
           },
           {
             "ticker": "HERCULES",
@@ -892,7 +892,7 @@
               "EMA50": 159.43,
               "Close": 159.32
             },
-            "computed_at": "2026-05-14T15:29:26"
+            "computed_at": "2026-05-14T15:32:25"
           },
           {
             "ticker": "UTIAMC",
@@ -959,7 +959,7 @@
               "EMA50": 985.67,
               "Close": 973.3
             },
-            "computed_at": "2026-05-14T15:30:52"
+            "computed_at": "2026-05-14T15:33:52"
           },
           {
             "ticker": "ABCOTS",
@@ -1026,7 +1026,7 @@
               "EMA50": 326.84,
               "Close": 217.35
             },
-            "computed_at": "2026-05-14T15:28:37"
+            "computed_at": "2026-05-14T15:31:35"
           },
           {
             "ticker": "AHIMSA",
@@ -1093,7 +1093,7 @@
               "EMA50": 24.74,
               "Close": 24.7
             },
-            "computed_at": "2026-05-14T15:28:40"
+            "computed_at": "2026-05-14T15:31:38"
           },
           {
             "ticker": "UTTAMSUGAR",
@@ -1160,7 +1160,7 @@
               "EMA50": 241.55,
               "Close": 240.55
             },
-            "computed_at": "2026-05-14T15:30:52"
+            "computed_at": "2026-05-14T15:33:52"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2275 tickers computed"
