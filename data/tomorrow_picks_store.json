@@ -5,7 +5,10 @@
     "HUBTOWN",
     "JSWSTEEL",
     "FORTIS",
-    "ONGC"
+    "ONGC",
+    "DIAMINESQ",
+    "GOKUL",
+    "GMRP&UI"
   ],
   "notes": "",
   "sections": {
@@ -19,7 +22,11 @@
       "FORTIS",
       "ONGC"
     ],
-    "intraday": [],
+    "intraday": [
+      "DIAMINESQ",
+      "GOKUL",
+      "GMRP&UI"
+    ],
     "momentum": [],
     "breakout": []
   }
