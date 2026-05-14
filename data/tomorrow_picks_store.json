@@ -5,10 +5,12 @@
     "ONGC",
     "DIAMINESQ",
     "GOKUL",
-    "GMRP&UI",
     "JSWSTEEL",
     "FORTIS",
-    "HUBTOWN"
+    "HUBTOWN",
+    "TATACOMM",
+    "GMRP&UI",
+    "SKMEGGPROD"
   ],
   "notes": "",
   "sections": {
@@ -21,14 +23,17 @@
     ],
     "intraday": [
       "DIAMINESQ",
-      "GOKUL",
-      "GMRP&UI"
+      "GOKUL"
     ],
     "momentum": [
       "JSWSTEEL",
       "FORTIS",
       "HUBTOWN"
     ],
-    "breakout": []
+    "breakout": [
+      "TATACOMM",
+      "GMRP&UI",
+      "SKMEGGPROD"
+    ]
   }
 }
