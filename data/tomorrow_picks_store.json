@@ -1,47 +1,11 @@
 {
-  "picks": [
-    "ASHIANA",
-    "EUROBOND",
-    "BALRAMCHIN",
-    "NSLNISP",
-    "NMDC",
-    "HUBTOWN",
-    "NIACL",
-    "ANURAS",
-    "UFO",
-    "CONSOFINVT",
-    "MEDPLUS",
-    "WELSPUNLIV",
-    "ASIANPAINT",
-    "BAIDFIN",
-    "TATASTEEL"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "ASHIANA",
-      "EUROBOND",
-      "BALRAMCHIN",
-      "NSLNISP",
-      "NMDC",
-      "HUBTOWN"
-    ],
-    "swing": [
-      "NIACL"
-    ],
-    "intraday": [
-      "ANURAS",
-      "UFO"
-    ],
-    "momentum": [
-      "CONSOFINVT",
-      "MEDPLUS",
-      "WELSPUNLIV"
-    ],
-    "breakout": [
-      "ASIANPAINT",
-      "BAIDFIN",
-      "TATASTEEL"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
