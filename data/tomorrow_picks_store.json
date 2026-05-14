@@ -2,24 +2,21 @@
   "picks": [
     "NSLNISP",
     "NMDC",
-    "HUBTOWN",
-    "JSWSTEEL",
-    "FORTIS",
     "ONGC",
     "DIAMINESQ",
     "GOKUL",
-    "GMRP&UI"
+    "GMRP&UI",
+    "JSWSTEEL",
+    "FORTIS",
+    "HUBTOWN"
   ],
   "notes": "",
   "sections": {
     "relax": [
       "NSLNISP",
-      "NMDC",
-      "HUBTOWN"
+      "NMDC"
     ],
     "swing": [
-      "JSWSTEEL",
-      "FORTIS",
       "ONGC"
     ],
     "intraday": [
@@ -27,7 +24,11 @@
       "GOKUL",
       "GMRP&UI"
     ],
-    "momentum": [],
+    "momentum": [
+      "JSWSTEEL",
+      "FORTIS",
+      "HUBTOWN"
+    ],
     "breakout": []
   }
 }
