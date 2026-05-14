@@ -3,6 +3,9 @@
     "ASHIANA",
     "EUROBOND",
     "BALRAMCHIN",
+    "NSLNISP",
+    "NMDC",
+    "HUBTOWN",
     "NIACL",
     "ANURAS",
     "UFO",
@@ -18,7 +21,10 @@
     "relax": [
       "ASHIANA",
       "EUROBOND",
-      "BALRAMCHIN"
+      "BALRAMCHIN",
+      "NSLNISP",
+      "NMDC",
+      "HUBTOWN"
     ],
     "swing": [
       "NIACL"
