@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "ADANIPORTS",
+    "DRREDDY",
+    "ASKAUTOLTD"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "ADANIPORTS",
+      "DRREDDY",
+      "ASKAUTOLTD"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
