@@ -2207,7 +2207,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-15T11:03:45",
+      "last_imported_at": "2026-05-15T11:04:40",
       "snapshot": {
         "Symbol": "ADANIPORTS",
         "Price (\u20b9)": 1795.1,
@@ -2298,7 +2298,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-15T11:03:45",
+      "last_imported_at": "2026-05-15T11:04:40",
       "snapshot": {
         "Symbol": "DRREDDY",
         "Price (\u20b9)": 1336.7,
@@ -2389,7 +2389,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-15T11:03:45",
+      "last_imported_at": "2026-05-15T11:04:40",
       "snapshot": {
         "Symbol": "ASKAUTOLTD",
         "Price (\u20b9)": 458.95,
@@ -2470,5 +2470,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-15T11:03:45"
+  "updated_at": "2026-05-15T11:04:40"
 }
