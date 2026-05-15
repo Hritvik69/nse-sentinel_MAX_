@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-05-15T10:40:36",
+  "saved_at": "2026-05-15T10:40:59",
   "signature": [
     "2026-05-15",
-    1778841618.323,
+    1778841653.807,
     1778841573.173
   ],
   "learning_status": {
@@ -54,8 +54,8 @@
       "false_bearish_pct": 39.91
     },
     "brain_status": {
-      "started_at": "2026-05-15T10:40:14",
-      "completed_at": "2026-05-15T10:40:36",
+      "started_at": "2026-05-15T10:40:37",
+      "completed_at": "2026-05-15T10:40:59",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -423,7 +423,7 @@
               "EMA50": 98.68,
               "Close": 88.06
             },
-            "computed_at": "2026-05-15T10:40:28"
+            "computed_at": "2026-05-15T10:40:51"
           },
           {
             "ticker": "SUMEETINDS",
@@ -490,7 +490,7 @@
               "EMA50": 29.48,
               "Close": 29.56
             },
-            "computed_at": "2026-05-15T10:40:35"
+            "computed_at": "2026-05-15T10:40:58"
           },
           {
             "ticker": "JTEKTINDIA",
@@ -557,7 +557,7 @@
               "EMA50": 134.9,
               "Close": 132.96
             },
-            "computed_at": "2026-05-15T10:40:33"
+            "computed_at": "2026-05-15T10:40:56"
           },
           {
             "ticker": "SIEMENS",
@@ -624,7 +624,7 @@
               "EMA50": 3506.86,
               "Close": 3587.9
             },
-            "computed_at": "2026-05-15T10:40:36"
+            "computed_at": "2026-05-15T10:40:59"
           },
           {
             "ticker": "SONAMLTD",
@@ -691,7 +691,7 @@
               "EMA50": 50.94,
               "Close": 50.82
             },
-            "computed_at": "2026-05-15T10:40:36"
+            "computed_at": "2026-05-15T10:40:59"
           },
           {
             "ticker": "SPECTRUM",
@@ -758,7 +758,7 @@
               "EMA50": 1288.58,
               "Close": 1444.3
             },
-            "computed_at": "2026-05-15T10:40:36"
+            "computed_at": "2026-05-15T10:40:59"
           },
           {
             "ticker": "PARACABLES",
@@ -825,7 +825,7 @@
               "EMA50": 41.64,
               "Close": 56.26
             },
-            "computed_at": "2026-05-15T10:40:31"
+            "computed_at": "2026-05-15T10:40:54"
           },
           {
             "ticker": "ACL",
@@ -892,7 +892,7 @@
               "EMA50": 55.49,
               "Close": 55.81
             },
-            "computed_at": "2026-05-15T10:40:31"
+            "computed_at": "2026-05-15T10:40:54"
           },
           {
             "ticker": "GODREJIND",
@@ -959,7 +959,7 @@
               "EMA50": 986.33,
               "Close": 1135.05
             },
-            "computed_at": "2026-05-15T10:40:31"
+            "computed_at": "2026-05-15T10:40:55"
           },
           {
             "ticker": "IPCALAB",
@@ -1026,7 +1026,7 @@
               "EMA50": 1517.91,
               "Close": 1605.0
             },
-            "computed_at": "2026-05-15T10:40:31"
+            "computed_at": "2026-05-15T10:40:54"
           },
           {
             "ticker": "PRECOT",
@@ -1093,7 +1093,7 @@
               "EMA50": 549.08,
               "Close": 666.9
             },
-            "computed_at": "2026-05-15T10:40:36"
+            "computed_at": "2026-05-15T10:40:59"
           },
           {
             "ticker": "DOLATALGO",
@@ -1160,7 +1160,7 @@
               "EMA50": 77.05,
               "Close": 77.24
             },
-            "computed_at": "2026-05-15T10:40:34"
+            "computed_at": "2026-05-15T10:40:57"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 159 tickers computed"
