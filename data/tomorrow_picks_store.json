@@ -2,8 +2,8 @@
   "picks": [
     "ADANIPORTS",
     "ASKAUTOLTD",
-    "BUILDPRO",
     "GMRP&UI",
+    "BUILDPRO",
     "DRREDDY"
   ],
   "notes": "",
@@ -12,12 +12,12 @@
       "ADANIPORTS",
       "ASKAUTOLTD"
     ],
-    "swing": [
-      "BUILDPRO",
+    "swing": [],
+    "intraday": [
       "GMRP&UI",
+      "BUILDPRO",
       "DRREDDY"
     ],
-    "intraday": [],
     "momentum": [],
     "breakout": []
   }
