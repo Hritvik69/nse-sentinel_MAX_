@@ -1,39 +1,11 @@
 {
-  "picks": [
-    "NSLNISP",
-    "NMDC",
-    "ONGC",
-    "DIAMINESQ",
-    "GOKUL",
-    "JSWSTEEL",
-    "FORTIS",
-    "HUBTOWN",
-    "TATACOMM",
-    "GMRP&UI",
-    "SKMEGGPROD"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "NSLNISP",
-      "NMDC"
-    ],
-    "swing": [
-      "ONGC"
-    ],
-    "intraday": [
-      "DIAMINESQ",
-      "GOKUL"
-    ],
-    "momentum": [
-      "JSWSTEEL",
-      "FORTIS",
-      "HUBTOWN"
-    ],
-    "breakout": [
-      "TATACOMM",
-      "GMRP&UI",
-      "SKMEGGPROD"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
