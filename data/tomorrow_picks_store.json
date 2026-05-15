@@ -1,17 +1,22 @@
 {
   "picks": [
     "ADANIPORTS",
-    "DRREDDY",
-    "ASKAUTOLTD"
+    "ASKAUTOLTD",
+    "BUILDPRO",
+    "GMRP&UI",
+    "DRREDDY"
   ],
   "notes": "",
   "sections": {
     "relax": [
       "ADANIPORTS",
-      "DRREDDY",
       "ASKAUTOLTD"
     ],
-    "swing": [],
+    "swing": [
+      "BUILDPRO",
+      "GMRP&UI",
+      "DRREDDY"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
