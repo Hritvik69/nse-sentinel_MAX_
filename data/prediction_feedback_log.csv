@@ -3315,3 +3315,4 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-16T15:17:56+05:30,2026-05-16,fa6d4b4b4d22f9ac5af8920f,HIRECT,UNMAPPED,4,A-I-L IN ONE,Master Ranking,Bullish,stock_next_session_v2,63.6500,75.9400,BUY,Medium,Sideways / no edge,Ranging,61.0400,2.7000,,LOW,1,,,
 2026-05-16T15:17:56+05:30,2026-05-16,1937eb97e44aba6eb6841150,GMRP&UI,UNMAPPED,6,A-I-L IN ONE,Master Ranking,Bearish,stock_next_session_v2,51.8300,56.3400,WATCH,Medium,Sideways / no edge,Ranging,61.2400,2.7200,,LOW,0,,,
 2026-05-16T15:17:56+05:30,2026-05-16,b3c96d6241002b0f18a918b0,GANGESSECU,UNMAPPED,4,A-I-L IN ONE,Master Ranking,Bullish,stock_next_session_v2,63.8000,68.9200,WATCH,Medium,Sideways / no edge,Ranging,63.6000,3.4100,,LOW,1,,,
+2026-05-16T15:32:21+05:30,2026-05-16,7e978a4417a255644e6cc0d0,GANGESSECU,UNMAPPED,4,A-I-L IN ONE,Master Ranking,Bearish,stock_next_session_v2,48.0500,53.9200,WATCH,Medium,Sideways / no edge,Trending Down,63.6000,3.4100,,LOW,0,,,
