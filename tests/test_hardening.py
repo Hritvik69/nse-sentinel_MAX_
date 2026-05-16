@@ -13,7 +13,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -700,6 +700,129 @@ class HardeningRegressionTests(unittest.TestCase):
         selfEqual(symbols("Institutional"), {"M4INST"})
         self.assertNotIn("M2BAL", symbols("Swing"))
 
+    def test_ail_top3_consensus_compares_normal_screener_with_tomorrow_accuracy(self) -> None:
+        from ail_in_one_engine import extract_top_candidates
+
+        frame = pd.DataFrame(
+            [
+                {
+                    "Symbol": "FAST",
+                    "Mode ID": 1,
+                    "Mode Name": "Momentum",
+                    "Final Score": 94.0,
+                    "Prediction Score": 90.0,
+                    "Backtest %": 80.0,
+                    "ML %": 82.0,
+                    "Confidence": 78.0,
+                    "RSI": 74.0,
+                    "Vol / Avg": 2.4,
+                    "5D Return (%)": 2.2,
+                    "Trap Risk": "LOW",
+                    "Action": "Buy Tomorrow",
+                    "Signal": "Strong Buy",
+                    "Grade": "A",
+                    "Conviction Tier": "HIGH",
+                    "Setup Quality": "HIGH",
+                    "Entry Timing": "GOOD",
+                    "Delta vs EMA20 (%)": 2.5,
+                    "Delta vs 20D High (%)": -0.5,
+                    "Sector Strength": 72.0,
+                    "Regime": "TRENDING_UP",
+                    "Closing Strength": "STRONG",
+                },
+                {
+                    "Symbol": "CLEAN",
+                    "Mode ID": 1,
+                    "Mode Name": "Momentum",
+                    "Final Score": 82.0,
+                    "Prediction Score": 78.0,
+                    "Backtest %": 70.0,
+                    "ML %": 72.0,
+                    "Confidence": 70.0,
+                    "RSI": 59.0,
+                    "Vol / Avg": 1.9,
+                    "5D Return (%)": 1.8,
+                    "Trap Risk": "LOW",
+                    "Action": "Watch",
+                    "Signal": "Possible Up",
+                    "Grade": "A",
+                    "Conviction Tier": "HIGH",
+                    "Setup Quality": "HIGH",
+                    "Entry Timing": "GOOD",
+                    "Delta vs EMA20 (%)": 2.0,
+                    "Delta vs 20D High (%)": -1.0,
+                    "Sector Strength": 68.0,
+                    "Regime": "TRENDING_UP",
+                    "Closing Strength": "STRONG",
+                },
+                {
+                    "Symbol": "STEADY",
+                    "Mode ID": 1,
+                    "Mode Name": "Momentum",
+                    "Final Score": 74.0,
+                    "Prediction Score": 70.0,
+                    "Backtest %": 64.0,
+                    "ML %": 66.0,
+                    "Confidence": 65.0,
+                    "RSI": 62.0,
+                    "Vol / Avg": 1.7,
+                    "5D Return (%)": 2.5,
+                    "Trap Risk": "LOW",
+                    "Action": "Watch",
+                    "Signal": "Green",
+                    "Grade": "B",
+                    "Conviction Tier": "MEDIUM",
+                    "Setup Quality": "MEDIUM",
+                    "Entry Timing": "NEUTRAL",
+                    "Delta vs EMA20 (%)": 2.4,
+                    "Delta vs 20D High (%)": -2.0,
+                    "Sector Strength": 60.0,
+                    "Regime": "TRENDING_UP",
+                    "Closing Strength": "STRONG",
+                },
+                {
+                    "Symbol": "LATE",
+                    "Mode ID": 1,
+                    "Mode Name": "Momentum",
+                    "Final Score": 70.0,
+                    "Prediction Score": 65.0,
+                    "Backtest %": 55.0,
+                    "ML %": 57.0,
+                    "Confidence": 58.0,
+                    "RSI": 69.0,
+                    "Vol / Avg": 1.1,
+                    "5D Return (%)": 8.0,
+                    "Trap Risk": "MEDIUM",
+                    "Action": "Watch",
+                    "Signal": "Watch",
+                    "Grade": "C",
+                    "Conviction Tier": "LOW",
+                    "Setup Quality": "LOW",
+                    "Entry Timing": "LATE",
+                    "Delta vs EMA20 (%)": 5.0,
+                    "Delta vs 20D High (%)": 1.2,
+                    "Sector Strength": 52.0,
+                    "Regime": "RANGE_BOUND",
+                    "Closing Strength": "NEUTRAL",
+                },
+            ]
+        )
+
+        result = extract_top_candidates({"Momentum": frame}, market_bias={"bias": "Bullish", "regime": "TRENDING_UP"}, top_n=3)
+        top_df = result["Momentum"]["top_df"]
+
+        self.assertIn("AIL Top3 Normal Score", top_df.columns)
+        self.assertIn("AIL Top3 Tomorrow Score", top_df.columns)
+        self.assertIn("AIL Top3 Source", top_df.columns)
+        self.assertIn("FAST", set(top_df["Symbol"].tolist()))
+
+        fast = top_df.loc[top_df["Symbol"].eq("FAST")].iloc[0]
+        self.assertEqual(fast["AIL Top3 Source"], "Normal mode screener")
+        self.assertTrue(bool(fast["AIL Top3 Prompt Eliminated"]))
+        self.assertGreater(float(fast["AIL Top3 Normal Score"]), 90.0)
+        self.assertGreater(float(fast["AIL Top3 Score"]), 70.0)
+        self.assertFalse(top_df["AIL Top3 Confidence"].astype(str).str.contains("Fallback", case=False).any())
+
     def test_ail_confidence_uses_real_components_without_fallback_label(self) -> None:
         from ail_confidence_engine import compute_smart_confidence
 
@@ -786,6 +909,190 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(len(set(winners)), 2)
         self.assertIn("AAA", winners)
         self.assertIn("BBB", winners)
+
+    def test_ail_market_state_temporal_adjustments_respect_closed_sessions(self) -> None:
+        from ail_market_state_engine import apply_market_state_adjustments, detect_market_state
+
+        closing = detect_market_state({"window": "LIVE"}, now=datetime(2026, 5, 15, 15, 30))
+        post_close = detect_market_state({"window": "CLOSED", "use_snapshot": True}, now=datetime(2026, 5, 15, 17, 5))
+        pre_market = detect_market_state({"window": "PRE_MARKET", "use_snapshot": True}, now=datetime(2026, 5, 15, 8, 45))
+        weekend = detect_market_state({"window": "WEEKEND", "use_snapshot": True}, now=datetime(2026, 5, 16, 12, 0))
+
+        self.assertEqual(closing["state"], "CLOSING")
+        self.assertEqual(post_close["state"], "POST_CLOSE")
+        self.assertEqual(pre_market["state"], "PRE_MARKET")
+        self.assertEqual(weekend["state"], "WEEKEND")
+
+        row = pd.DataFrame(
+            [
+                {
+                    "Symbol": "MOMO",
+                    "AIL Categories": "Momentum, Intraday",
+                    "Momentum Quality": 82.0,
+                    "Volume Quality": 72.0,
+                    "Setup Cleanliness": 48.0,
+                    "Structure Quality": 44.0,
+                    "Trap Risk Score": 58.0,
+                    "RSI": 74.0,
+                }
+            ]
+        )
+        live_fit = apply_market_state_adjustments(row, {"state": "LIVE"}).loc[0, "AIL Temporal Fit"]
+        closed_fit = apply_market_state_adjustments(row, {"state": "POST_CLOSE", "use_snapshot": True}).loc[0, "AIL Temporal Fit"]
+        self.assertLess(closed_fit, live_fit)
+        self.assertIn("closed-market momentum reduced", apply_market_state_adjustments(row, {"state": "POST_CLOSE"}).loc[0, "AIL Temporal Notes"])
+
+    def test_ail_conflict_calibration_regime_and_health_layers_are_bounded(self) -> None:
+        from ail_calibration_engine import build_confidence_buckets, calibrate_confidence_score
+        from ail_conflict_engine import apply_conflict_penalties, detect_signal_conflicts
+        from ail_health_engine import compute_orchestration_health
+        from ail_regime_orchestrator import apply_regime_preference, compute_regime_strategy_bias
+
+        row = {
+            "Symbol": "RISKY",
+            "AIL Categories": "Momentum, Breakout",
+            "Momentum Quality": 86.0,
+            "Volume Quality": 42.0,
+            "Setup Cleanliness": 44.0,
+            "Structure Quality": 40.0,
+            "Trap Risk Score": 72.0,
+            "Bullish Probability": 75.0,
+            "RSI": 76.0,
+        }
+        conflicts = detect_signal_conflicts(row)
+        self.assertGreater(conflicts["conflict_score"], 25.0)
+        conflict_df = apply_conflict_penalties(pd.DataFrame([row]))
+        self.assertEqual(len(conflict_df), 1)
+        self.assertIn("AIL Conflict Score", conflict_df.columns)
+        self.assertGreater(conflict_df.loc[0, "AIL Conflict Penalty"], 0)
+
+        feedback = pd.DataFrame(
+            [
+                {
+                    "import_source": "A-I-L IN ONE",
+                    "prediction_score": "82",
+                    "actual_next_return_pct": "-1.2",
+                    "prediction_direction": "Bullish",
+                    "pred_bullish": "True",
+                    "correct": "False",
+                }
+                for _ in range(6)
+            ]
+        )
+        buckets = build_confidence_buckets(feedback, min_rows=5)
+        calibrated, adjustment, note = calibrate_confidence_score(82.0, buckets)
+        self.assertLess(calibrated, 82.0)
+        self.assertLess(adjustment, 0)
+        self.assertIn("gap", note.lower())
+
+        bias = compute_regime_strategy_bias({"bias": "Weak", "regime": "HIGH_VOLATILITY"}, {"state": "POST_CLOSE"})
+        regime_df = apply_regime_preference(pd.DataFrame([row]), bias)
+        self.assertIn("AIL Regime Strategy Fit", regime_df.columns)
+        self.assertGreaterEqual(regime_df.loc[0, "AIL Regime Multiplier"], 0.94)
+        self.assertLessEqual(regime_df.loc[0, "AIL Regime Multiplier"], 1.06)
+
+        result = SimpleNamespace(final_ranked_df=conflict_df, health={}, elapsed_sec=12.5)
+        health = compute_orchestration_health(result, {"state": "LIVE", "use_snapshot": True}, {"buckets": buckets, "drift": {"status": "drift", "max_gap": 20}})
+        self.assertIn("market state", health["AIL Health Flags"])
+        self.assertEqual(health["market_state_health"]["status"], "stale")
+
+    def test_ail_penalty_guards_preserve_asymmetric_opportunity(self) -> None:
+        from ail_confidence_health import analyze_confidence_distribution, preserve_high_conviction, preserve_speculative_conviction
+        from ail_opportunity_engine import preserve_high_upside_candidates
+        from ail_penalty_guard import cap_total_penalty, detect_over_suppression, prevent_confidence_collapse
+        from ail_philosophy_guard import detect_philosophy_flattening, preserve_mode_identity
+
+        df = pd.DataFrame(
+            [
+                {
+                    "Symbol": "IGNITE",
+                    "AIL Categories": "Momentum, Breakout",
+                    "Mode ID": 7,
+                    "Smart Potential Score": 84.0,
+                    "AIL Master Score": 61.0,
+                    "AIL Confidence": 49.0,
+                    "AIL Calibrated Confidence": 48.0,
+                    "Momentum Quality": 88.0,
+                    "Volume Quality": 82.0,
+                    "Setup Cleanliness": 64.0,
+                    "Structure Quality": 72.0,
+                    "Trap Risk Score": 58.0,
+                    "Risk Reward Score": 78.0,
+                    "RSI": 68.0,
+                },
+                {
+                    "Symbol": "EARLY",
+                    "AIL Categories": "Relaxed",
+                    "Mode ID": 3,
+                    "Smart Potential Score": 76.0,
+                    "AIL Master Score": 60.0,
+                    "AIL Confidence": 51.0,
+                    "AIL Calibrated Confidence": 50.0,
+                    "Momentum Quality": 55.0,
+                    "Volume Quality": 60.0,
+                    "Setup Cleanliness": 70.0,
+                    "Structure Quality": 66.0,
+                    "Trap Risk Score": 38.0,
+                    "Risk Reward Score": 72.0,
+                    "RSI": 54.0,
+                    "Entry Timing": "Early accumulation",
+                },
+                {
+                    "Symbol": "SAFE",
+                    "AIL Categories": "Swing",
+                    "Mode ID": 6,
+                    "Smart Potential Score": 66.0,
+                    "AIL Master Score": 64.0,
+                    "AIL Confidence": 55.0,
+                    "AIL Calibrated Confidence": 55.0,
+                    "Momentum Quality": 58.0,
+                    "Volume Quality": 58.0,
+                    "Setup Cleanliness": 68.0,
+                    "Structure Quality": 62.0,
+                    "Trap Risk Score": 35.0,
+                    "Risk Reward Score": 66.0,
+                    "RSI": 57.0,
+                },
+                {
+                    "Symbol": "INST",
+                    "AIL Categories": "Institutional",
+                    "Mode ID": 4,
+                    "Smart Potential Score": 70.0,
+                    "AIL Master Score": 63.0,
+                    "AIL Confidence": 56.0,
+                    "AIL Calibrated Confidence": 56.0,
+                    "Momentum Quality": 62.0,
+                    "Volume Quality": 61.0,
+                    "Setup Cleanliness": 69.0,
+                    "Structure Quality": 68.0,
+                    "Trap Risk Score": 42.0,
+                    "Risk Reward Score": 67.0,
+                    "Regime Alignment": 74.0,
+                    "RSI": 59.0,
+                },
+            ]
+        )
+
+        guarded = preserve_high_upside_candidates(df)
+        guarded = preserve_mode_identity(guarded)
+        guarded = preserve_high_conviction(guarded)
+        guarded = preserve_speculative_conviction(guarded)
+        guarded = prevent_confidence_collapse(guarded)
+        guarded = cap_total_penalty(guarded)
+
+        ignite = guarded.loc[guarded["Symbol"].eq("IGNITE")].iloc[0]
+        early = guarded.loc[guarded["Symbol"].eq("EARLY")].iloc[0]
+        self.assertGreaterEqual(ignite["AIL Master Score"], 76.0)
+        self.assertGreater(ignite["AIL Opportunity Score"], 40.0)
+        self.assertGreater(early["AIL Philosophy Score"], 60.0)
+        self.assertGreaterEqual(ignite["AIL Calibrated Confidence"], 58.0)
+
+        confidence_health = analyze_confidence_distribution(guarded)
+        philosophy_health = detect_philosophy_flattening(guarded)
+        suppression_health = detect_over_suppression(guarded)
+        self.assertIn(confidence_health["status"], {"healthy", "compressed"})
+        self.assertEqual(philosophy_health["status"], "healthy")
+        self.assertEqual(suppression_health["status"], "healthy")
 
     def test_ail_pipeline_orchestrates_modes_battle_aura_and_logging(self) -> None:
         from ail_in_one_engine import AIL_CATEGORY_ORDER, AIL_MODES, run_ail_pipeline
@@ -879,6 +1186,16 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertEqual(len(battle_calls), 1)
         self.assertIn("AIL Master Score", result.final_ranked_df.columns)
         self.assertIn("AIL Confidence", result.final_ranked_df.columns)
+        self.assertIn("AIL Market State", result.final_ranked_df.columns)
+        self.assertIn("AIL Temporal Fit", result.final_ranked_df.columns)
+        self.assertIn("AIL Agreement Score", result.final_ranked_df.columns)
+        self.assertIn("AIL Conflict Score", result.final_ranked_df.columns)
+        self.assertIn("AIL Calibrated Confidence", result.final_ranked_df.columns)
+        self.assertIn("AIL Regime Strategy Fit", result.final_ranked_df.columns)
+        self.assertIn("AIL Orchestration Reasoning", result.final_ranked_df.columns)
+        self.assertIn("AIL Opportunity Score", result.final_ranked_df.columns)
+        self.assertIn("AIL Philosophy Score", result.final_ranked_df.columns)
+        self.assertIn("AIL Suppression Index", result.final_ranked_df.columns)
         self.assertTrue((pd.to_numeric(result.final_ranked_df["AIL Confidence"], errors="coerce").fillna(0) > 0).any())
         self.assertTrue(result.final_ranked_df["Smart Notes"].astype(str).str.contains("Injected battle score").any())
         for payload in result.category_top3.values():
@@ -894,6 +1211,7 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertEqual(result.health.get("enhanced_candidates"), 21)
         self.assertEqual(result.health.get("aura_verdicts"), len(aura_calls))
         self.assertEqual(result.health.get("logged_predictions"), len(result.final_ranked_df))
+        self.assertIn("AIL Health Flags", result.health)
 
     def test_ail_feedback_logging_dedupes_and_tags_import_source(self) -> None:
         import ail_in_one_engine as ail

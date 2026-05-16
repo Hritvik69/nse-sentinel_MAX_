@@ -16,9 +16,20 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
+from ail_calibration_engine import apply_confidence_calibration, compute_confidence_calibration
+from ail_confidence_health import preserve_high_conviction, preserve_speculative_conviction
 from ail_confidence_engine import compute_smart_confidence
+from ail_conflict_engine import apply_conflict_penalties
+from ail_health_engine import compute_orchestration_health
 from ail_learning_engine import build_ail_learning_profile, learning_profile_table
+from ail_market_state_engine import apply_market_state_adjustments, detect_market_state
+from ail_opportunity_engine import preserve_high_upside_candidates
+from ail_penalty_guard import cap_total_penalty, prevent_confidence_collapse
+from ail_philosophy_guard import preserve_mode_identity
+from ail_pipeline_cache import cache_orchestration_features
 from ail_ranking_engine import build_master_rankings, select_category_leaders
+from ail_reasoning_engine import apply_orchestration_reasoning
+from ail_regime_orchestrator import apply_regime_preference, compute_regime_strategy_bias
 from strategy_engines.mode_helpers import resolve_mode_id
 from strategy_engines.mode_registry import get_mode_label, get_mode_metadata, get_mode_name
 
@@ -51,6 +62,7 @@ class AILPipelineResult:
     modes_scanned: list[int] = field(default_factory=list)
     preload_stats: dict[str, Any] = field(default_factory=dict)
     market_bias: dict[str, Any] = field(default_factory=dict)
+    market_state: dict[str, Any] = field(default_factory=dict)
     mode_summaries: list[dict[str, Any]] = field(default_factory=list)
     mode_frames: dict[int, pd.DataFrame] = field(default_factory=dict)
     combined_df: pd.DataFrame = field(default_factory=pd.DataFrame)
@@ -136,10 +148,14 @@ def _best_sort_columns(df: pd.DataFrame) -> list[str]:
     preferred = [
         "AIL Master Score",
         "Smart Potential Score",
+        "AIL Top3 Consensus Score",
+        "AIL Top3 Score",
+        "AIL Calibrated Confidence",
+        "AIL Confidence",
+        "AIL Opportunity Score",
+        "AIL Philosophy Score",
         "Prediction Score",
         "Final Score",
-        "AIL Top3 Score",
-        "AIL Confidence",
         "Confidence",
         "ML %",
         "Backtest %",
@@ -371,51 +387,244 @@ def extract_top_candidates(
         else:
             payload = {}
 
-        top_rows: list[dict[str, Any]] = []
-        if payload.get("top"):
-            for rank, candidate in enumerate(list(payload.get("top", []))[:top_n], start=1):
-                row = dict(candidate.get("row", {}) or {})
-                row["AIL Category"] = category
-                row["AIL Category Rank"] = rank
-                row["AIL Top3 Score"] = round(_safe_float(candidate.get("tomorrow_score"), 0.0), 2)
-                confidence = compute_smart_confidence(row, {"market_bias": market_bias or {}})
-                candidate_conf = str(candidate.get("confidence", "") or "").strip()
-                if not candidate_conf or candidate_conf.lower() == "fallback":
-                    candidate_conf = str(confidence.get("label", ""))
-                row["AIL Top3 Confidence"] = candidate_conf
-                row["AIL Confidence"] = confidence.get("score", 0.0)
-                row["AIL Confidence Label"] = confidence.get("label", "")
-                row["AIL Confidence Drivers"] = confidence.get("drivers", "")
-                row["AIL Top3 Qualified"] = bool(candidate.get("qualified", False))
-                row["AIL Top3 Penalties"] = "; ".join(
-                    str(reason) for _, reason in list(candidate.get("penalties", []) or [])
-                )
-                row["AIL Top3 Drivers"] = " | ".join(
-                    _candidate_driver_text(candidate)
-                )
-                top_rows.append(row)
-        else:
-            fallback = _sort_existing_scores(source).head(top_n)
-            for rank, (_, row) in enumerate(fallback.iterrows(), start=1):
-                row_dict = row.to_dict()
-                confidence = compute_smart_confidence(row_dict, {"market_bias": market_bias or {}})
-                row_dict["AIL Category"] = category
-                row_dict["AIL Category Rank"] = rank
-                row_dict["AIL Top3 Score"] = _safe_float(row.get("Prediction Score", row.get("Final Score", 0.0)), 0.0)
-                row_dict["AIL Top3 Confidence"] = str(confidence.get("label", "Insufficient evidence"))
-                row_dict["AIL Confidence"] = confidence.get("score", 0.0)
-                row_dict["AIL Confidence Label"] = confidence.get("label", "")
-                row_dict["AIL Confidence Drivers"] = confidence.get("drivers", "")
-                row_dict["AIL Top3 Qualified"] = True
-                row_dict["AIL Top3 Penalties"] = ""
-                row_dict["AIL Top3 Drivers"] = str(confidence.get("drivers", "")) or "Ranked by existing score columns"
-                top_rows.append(row_dict)
+        normal_ranked = _normal_mode_top3_ranked(source)
+        top_rows = _select_consensus_top3_rows(
+            source,
+            category=category,
+            payload=payload,
+            normal_ranked=normal_ranked,
+            top_n=top_n,
+            market_bias=market_bias,
+        )
 
         payload = dict(payload)
         payload["top_rows"] = top_rows
         payload["top_df"] = pd.DataFrame(top_rows)
+        payload["normal_scored"] = int(len(normal_ranked)) if isinstance(normal_ranked, pd.DataFrame) else 0
+        payload["selection_method"] = "AIL consensus top3: normal screener + tomorrow accuracy + scanner conviction"
         outputs[category] = payload
     return outputs
+
+
+def _candidate_symbol(candidate: dict[str, Any]) -> str:
+    symbol = str(candidate.get("ticker", "") or "").strip().upper()
+    if symbol.endswith(".NS"):
+        symbol = symbol[:-3]
+    if symbol:
+        return symbol
+    row = candidate.get("row", {})
+    return _row_symbol(row) if isinstance(row, dict) else ""
+
+
+def _candidate_maps(payload: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+    by_symbol: dict[str, dict[str, Any]] = {}
+    ranks: dict[str, int] = {}
+    if not isinstance(payload, dict):
+        return by_symbol, ranks
+    for rank, candidate in enumerate(list(payload.get("ranked", []) or []), start=1):
+        if not isinstance(candidate, dict):
+            continue
+        symbol = _candidate_symbol(candidate)
+        if not symbol:
+            continue
+        ranks.setdefault(symbol, rank)
+        by_symbol.setdefault(symbol, candidate)
+    for candidate in list(payload.get("all_scored", []) or []) + list(payload.get("eliminated_rows", []) or []):
+        if not isinstance(candidate, dict):
+            continue
+        symbol = _candidate_symbol(candidate)
+        if symbol:
+            by_symbol.setdefault(symbol, candidate)
+    return by_symbol, ranks
+
+
+def _normal_mode_top3_ranked(source: pd.DataFrame) -> pd.DataFrame:
+    if source is None or not isinstance(source, pd.DataFrame) or source.empty:
+        return pd.DataFrame()
+    try:
+        from strategy_engines._engine_utils import get_tomorrow_top_picks
+
+        limit = max(3, int(len(source)))
+        ranked = get_tomorrow_top_picks(source.copy(), source="main", top_n=limit)
+    except Exception:
+        return pd.DataFrame()
+    return ranked if isinstance(ranked, pd.DataFrame) else pd.DataFrame()
+
+
+def _normal_rank_maps(normal_ranked: pd.DataFrame) -> tuple[dict[str, dict[str, Any]], dict[str, int]]:
+    rows: dict[str, dict[str, Any]] = {}
+    ranks: dict[str, int] = {}
+    if normal_ranked is None or not isinstance(normal_ranked, pd.DataFrame) or normal_ranked.empty:
+        return rows, ranks
+    for rank, (_, row) in enumerate(normal_ranked.iterrows(), start=1):
+        symbol = _row_symbol(row)
+        if not symbol:
+            continue
+        rows.setdefault(symbol, row.to_dict())
+        ranks.setdefault(symbol, rank)
+    return rows, ranks
+
+
+def _existing_scanner_conviction(row: pd.Series | dict[str, Any]) -> float:
+    weights = (
+        ("Prediction Score", 0.34),
+        ("Final Score", 0.30),
+        ("Backtest %", 0.12),
+        ("ML %", 0.12),
+        ("Confidence", 0.12),
+    )
+    values: list[tuple[float, float]] = []
+    for col, weight in weights:
+        value = _find_numeric(row, col, default=np.nan)
+        if np.isfinite(value):
+            values.append((_safe_float(value, 0.0), weight))
+    if not values:
+        return 50.0
+    return float(np.clip(sum(value * weight for value, weight in values) / sum(weight for _, weight in values), 0.0, 100.0))
+
+
+def _blend_top3_scores(
+    *,
+    normal_score: float,
+    tomorrow_score: float,
+    scanner_score: float,
+    prompt_candidate: dict[str, Any] | None,
+    row: pd.Series | dict[str, Any],
+) -> float:
+    parts: list[tuple[float, float]] = []
+    if np.isfinite(normal_score):
+        parts.append((normal_score, 0.46))
+    if np.isfinite(tomorrow_score):
+        parts.append((tomorrow_score, 0.34))
+    parts.append((scanner_score, 0.20))
+    score = sum(value * weight for value, weight in parts) / sum(weight for _, weight in parts)
+
+    eliminated = list((prompt_candidate or {}).get("eliminated", []) or [])
+    if eliminated:
+        score -= min(12.0, 6.0 + len(eliminated) * 2.0)
+    elif prompt_candidate and not bool(prompt_candidate.get("qualified", False)):
+        score -= 3.0
+
+    mode_count = _find_numeric(row, "AIL Mode Count", default=1.0)
+    if mode_count > 1:
+        score += min(4.0, (mode_count - 1.0) * 1.4)
+    return float(np.clip(score, 0.0, 100.0))
+
+
+def _top3_source_label(normal_rank: int | None, tomorrow_rank: int | None, top_n: int) -> str:
+    normal_hit = normal_rank is not None and normal_rank <= top_n
+    tomorrow_hit = tomorrow_rank is not None and tomorrow_rank <= top_n
+    if normal_hit and tomorrow_hit:
+        return "Consensus"
+    if normal_hit:
+        return "Normal mode screener"
+    if tomorrow_hit:
+        return "Tomorrow accuracy"
+    return "AIL score bridge"
+
+
+def _top3_selection_notes(
+    *,
+    normal_rank: int | None,
+    tomorrow_rank: int | None,
+    normal_score: float,
+    tomorrow_score: float,
+    prompt_candidate: dict[str, Any] | None,
+) -> str:
+    notes: list[str] = []
+    if normal_rank is not None:
+        notes.append(f"normal screener rank {normal_rank}")
+    if tomorrow_rank is not None:
+        notes.append(f"tomorrow accuracy rank {tomorrow_rank}")
+    if np.isfinite(normal_score):
+        notes.append(f"normal score {normal_score:.1f}")
+    if np.isfinite(tomorrow_score):
+        notes.append(f"tomorrow score {tomorrow_score:.1f}")
+    eliminated = list((prompt_candidate or {}).get("eliminated", []) or [])
+    if eliminated:
+        notes.append("tomorrow caution: " + ", ".join(str(item) for item in eliminated[:2]))
+    return "; ".join(notes[:5])
+
+
+def _select_consensus_top3_rows(
+    source: pd.DataFrame,
+    *,
+    category: str,
+    payload: dict[str, Any],
+    normal_ranked: pd.DataFrame,
+    top_n: int,
+    market_bias: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    prompt_map, prompt_ranks = _candidate_maps(payload)
+    normal_map, normal_ranks = _normal_rank_maps(normal_ranked)
+    candidates: list[dict[str, Any]] = []
+
+    for _, row in source.iterrows():
+        symbol = _row_symbol(row)
+        if not symbol:
+            continue
+        row_dict = row.to_dict()
+        prompt_candidate = prompt_map.get(symbol, {})
+        normal_row = normal_map.get(symbol, {})
+        normal_score = _find_numeric(normal_row, "Tomorrow Pick Score", "Prediction Score", "Final Score", default=np.nan)
+        tomorrow_score = _safe_float(prompt_candidate.get("tomorrow_score"), np.nan) if prompt_candidate else np.nan
+        scanner_score = _existing_scanner_conviction(row)
+        consensus_score = _blend_top3_scores(
+            normal_score=normal_score,
+            tomorrow_score=tomorrow_score,
+            scanner_score=scanner_score,
+            prompt_candidate=prompt_candidate,
+            row=row,
+        )
+        normal_rank = normal_ranks.get(symbol)
+        tomorrow_rank = prompt_ranks.get(symbol)
+        confidence = compute_smart_confidence(row_dict, {"market_bias": market_bias or {}})
+        candidate_conf = str(prompt_candidate.get("confidence", "") or "").strip()
+        if not candidate_conf or candidate_conf.lower() == "fallback":
+            candidate_conf = str(confidence.get("label", "Insufficient evidence") or "Insufficient evidence")
+        penalties = list(prompt_candidate.get("penalties", []) or []) if prompt_candidate else []
+        drivers = _candidate_driver_text(prompt_candidate) if prompt_candidate else []
+        normal_reason = str(normal_row.get("Tomorrow Pick Reason", "") or "").strip()
+        if normal_reason:
+            drivers.insert(0, "normal: " + normal_reason)
+
+        row_dict["AIL Category"] = category
+        row_dict["AIL Top3 Score"] = round(consensus_score, 2)
+        row_dict["AIL Top3 Consensus Score"] = round(consensus_score, 2)
+        row_dict["AIL Top3 Normal Score"] = round(normal_score, 2) if np.isfinite(normal_score) else np.nan
+        row_dict["AIL Top3 Tomorrow Score"] = round(tomorrow_score, 2) if np.isfinite(tomorrow_score) else np.nan
+        row_dict["AIL Top3 Scanner Score"] = round(scanner_score, 2)
+        row_dict["AIL Top3 Source"] = _top3_source_label(normal_rank, tomorrow_rank, top_n)
+        row_dict["AIL Top3 Normal Rank"] = normal_rank if normal_rank is not None else np.nan
+        row_dict["AIL Top3 Tomorrow Rank"] = tomorrow_rank if tomorrow_rank is not None else np.nan
+        row_dict["AIL Top3 Qualified"] = bool(prompt_candidate.get("qualified", consensus_score >= 55.0)) and not bool(prompt_candidate.get("eliminated", []))
+        row_dict["AIL Top3 Prompt Eliminated"] = bool(prompt_candidate.get("eliminated", []))
+        row_dict["AIL Top3 Penalties"] = "; ".join(str(reason) for _, reason in penalties)
+        row_dict["AIL Top3 Drivers"] = " | ".join(drivers[:5]) or str(confidence.get("drivers", "")) or "Ranked by normal screener and existing score columns"
+        row_dict["AIL Top3 Selection Notes"] = _top3_selection_notes(
+            normal_rank=normal_rank,
+            tomorrow_rank=tomorrow_rank,
+            normal_score=normal_score,
+            tomorrow_score=tomorrow_score,
+            prompt_candidate=prompt_candidate,
+        )
+        row_dict["AIL Top3 Confidence"] = candidate_conf
+        row_dict["AIL Confidence"] = confidence.get("score", 0.0)
+        row_dict["AIL Confidence Label"] = confidence.get("label", "")
+        row_dict["AIL Confidence Drivers"] = confidence.get("drivers", "")
+        row_dict["_AIL_CONSENSUS_SCORE"] = consensus_score
+        candidates.append(row_dict)
+
+    ranked = pd.DataFrame(candidates)
+    if ranked.empty:
+        return []
+    ranked = ranked.sort_values(
+        ["_AIL_CONSENSUS_SCORE", "AIL Top3 Normal Score", "AIL Top3 Tomorrow Score", "AIL Top3 Scanner Score"],
+        ascending=False,
+        kind="stable",
+    ).head(max(1, int(top_n))).reset_index(drop=True)
+    ranked["AIL Category Rank"] = range(1, len(ranked) + 1)
+    return ranked.drop(columns=["_AIL_CONSENSUS_SCORE"], errors="ignore").to_dict("records")
 
 
 def _candidate_driver_text(candidate: dict[str, Any]) -> list[str]:
@@ -498,6 +707,8 @@ def rank_cross_mode_leaders(
     market_bias: dict[str, Any] | None = None,
     prediction_cache: object = None,
     learning_profile: dict[str, Any] | None = None,
+    market_state: dict[str, Any] | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, dict[str, Any]]]:
     if candidate_pool is None or not isinstance(candidate_pool, pd.DataFrame) or candidate_pool.empty:
         return pd.DataFrame(), {}
@@ -519,7 +730,29 @@ def rank_cross_mode_leaders(
             ranked = pool.copy()
 
     try:
+        ranked = apply_market_state_adjustments(ranked, market_state or {})
+        regime_bias = compute_regime_strategy_bias(market_bias, market_state)
+        ranked = apply_regime_preference(ranked, regime_bias)
+        ranked = preserve_mode_identity(ranked)
+        ranked = preserve_high_upside_candidates(ranked)
+        ranked = apply_conflict_penalties(ranked)
+        ranked = apply_confidence_calibration(ranked, calibration)
+        ranked = preserve_high_conviction(ranked)
+        ranked = preserve_speculative_conviction(ranked)
+        ranked = prevent_confidence_collapse(ranked)
+        feature_cache = cache_orchestration_features(
+            ranked,
+            market_state=market_state,
+            calibration=calibration,
+            learning_profile=learning_profile,
+        )
+        ranked.attrs["ail_feature_cache_built_at"] = feature_cache.built_at
+        ranked.attrs["ail_feature_cache_rows"] = feature_cache.row_count
         ranked = build_master_rankings(ranked, market_bias=market_bias, learning_profile=learning_profile)
+        ranked = apply_confidence_calibration(ranked, calibration)
+        ranked = prevent_confidence_collapse(ranked)
+        ranked = cap_total_penalty(ranked)
+        ranked = apply_orchestration_reasoning(ranked)
     except Exception:
         ranked = _sort_existing_scores(ranked)
         if not ranked.empty:
@@ -854,6 +1087,15 @@ def build_risk_warnings(final_df: pd.DataFrame) -> pd.DataFrame:
             warnings.append("Thin confidence evidence")
         if market_fit < 45:
             warnings.append("Weak market compatibility")
+        conflict = _find_numeric(row, "AIL Conflict Score", default=0.0)
+        if conflict >= 45:
+            warnings.append("Cross-mode conflict")
+        temporal = _find_numeric(row, "AIL Temporal Fit", default=55.0)
+        if temporal < 45:
+            warnings.append("Weak market-state timing")
+        suppression = _find_numeric(row, "AIL Suppression Index", default=0.0)
+        if suppression > 12:
+            warnings.append("Penalty stacking watch")
         if warnings:
             rows.append(
                 {
@@ -873,7 +1115,7 @@ def build_risk_warnings(final_df: pd.DataFrame) -> pd.DataFrame:
 def build_confidence_meter(final_df: pd.DataFrame) -> dict[str, Any]:
     if final_df is None or not isinstance(final_df, pd.DataFrame) or final_df.empty:
         return {"score": 0.0, "label": "No candidates", "count": 0}
-    confidence_cols = [col for col in ("AIL Confidence", "Smart Confidence", "Confidence", "Bullish Probability") if col in final_df.columns]
+    confidence_cols = [col for col in ("AIL Calibrated Confidence", "AIL Confidence", "Smart Confidence", "Confidence", "Bullish Probability") if col in final_df.columns]
     if confidence_cols:
         values = []
         for col in confidence_cols:
@@ -902,7 +1144,13 @@ def collect_learning_insights(
     logged_predictions: int = 0,
     log_error: str = "",
     learning_profile: dict[str, Any] | None = None,
+    calibration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    calibration_buckets = (
+        calibration.get("buckets", pd.DataFrame())
+        if isinstance(calibration, dict)
+        else pd.DataFrame()
+    )
     insights: dict[str, Any] = {
         "logged_predictions": int(logged_predictions or 0),
         "log_error": log_error,
@@ -911,11 +1159,8 @@ def collect_learning_insights(
         "dynamic_weights": pd.DataFrame(),
         "ail_learning_profile": learning_profile or {},
         "ail_learning_table": learning_profile_table(learning_profile),
-        "confidence_calibration": (
-            learning_profile.get("confidence_calibration", pd.DataFrame())
-            if isinstance(learning_profile, dict)
-            else pd.DataFrame()
-        ),
+        "confidence_calibration": calibration_buckets,
+        "calibration_drift": calibration.get("drift", {}) if isinstance(calibration, dict) else {},
     }
     try:
         from learning_engine import get_training_status
@@ -1076,6 +1321,12 @@ def run_ail_pipeline(
     except Exception as exc:
         result.errors.append(f"Preload failed: {exc}")
         result.preload_stats = {}
+    try:
+        plan = result.preload_stats.get("plan") if isinstance(result.preload_stats, dict) else {}
+        result.market_state = detect_market_state(plan if isinstance(plan, dict) else {}, result.preload_stats)
+    except Exception as exc:
+        result.errors.append(f"Market state unavailable: {exc}")
+        result.market_state = {}
     notify("preload_done", stats=result.preload_stats)
 
     try:
@@ -1155,6 +1406,20 @@ def run_ail_pipeline(
         learning_profile = build_ail_learning_profile()
     except Exception:
         learning_profile = {}
+    try:
+        calibration = compute_confidence_calibration()
+    except Exception:
+        calibration = {}
+    try:
+        candidate_cache = cache_orchestration_features(
+            result.candidate_pool,
+            market_state=result.market_state,
+            calibration=calibration,
+            learning_profile=learning_profile,
+        )
+        result.candidate_pool.attrs["ail_feature_cache_built_at"] = candidate_cache.built_at
+    except Exception:
+        pass
 
     prediction_cache = None
     if callable(compare_prediction_cache_fn):
@@ -1169,6 +1434,8 @@ def run_ail_pipeline(
         market_bias=result.market_bias,
         prediction_cache=prediction_cache,
         learning_profile=learning_profile,
+        market_state=result.market_state,
+        calibration=calibration,
     )
     notify("aura_start", total=len(result.comparison_df))
 
@@ -1194,9 +1461,19 @@ def run_ail_pipeline(
         logged_predictions=logged,
         log_error=log_error,
         learning_profile=learning_profile,
+        calibration=calibration,
     )
 
     result.elapsed_sec = round(time.time() - started, 2)
+    try:
+        result.health = compute_orchestration_health(
+            result,
+            state=result.market_state,
+            calibration=calibration,
+            conflict_df=result.final_ranked_df,
+        )
+    except Exception:
+        pass
     notify("done", elapsed=result.elapsed_sec, ranked=len(result.final_ranked_df))
     return result
 

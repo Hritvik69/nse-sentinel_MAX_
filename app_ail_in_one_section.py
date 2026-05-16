@@ -117,6 +117,35 @@ def _render_health_status(result: AILPipelineResult, mode_df: pd.DataFrame) -> N
     )
 
 
+def _render_ail_health_diagnostics(result: AILPipelineResult) -> None:
+    health = result.health if isinstance(result.health, dict) else {}
+    market_state = str(health.get("market_state", result.market_state.get("state", "") if isinstance(result.market_state, dict) else "") or "-")
+    flags = str(health.get("AIL Health Flags", "healthy") or "healthy")
+    avg_conflict = _safe_float(health.get("avg_conflict_score"), 0.0)
+    avg_agreement = _safe_float(health.get("avg_agreement_score"), 0.0)
+    calibration = str(health.get("calibration_status", "insufficient_data") or "insufficient_data")
+    suppression = health.get("orchestration_suppression", {}) if isinstance(health.get("orchestration_suppression"), dict) else {}
+    confidence_dist = health.get("confidence_distribution_health", {}) if isinstance(health.get("confidence_distribution_health"), dict) else {}
+    opportunity = health.get("opportunity_preservation", {}) if isinstance(health.get("opportunity_preservation"), dict) else {}
+    philosophy = health.get("philosophy_integrity", {}) if isinstance(health.get("philosophy_integrity"), dict) else {}
+    cards = [
+        _metric_card("Market State", market_state, "Session-aware orchestration", "#7fd1ff"),
+        _metric_card("Health Flags", flags[:42], "Diagnostics from ranking, calibration, state", "#00d4a8" if flags == "healthy" else "#f0b429"),
+        _metric_card("Mode Agreement", f"{avg_agreement:.1f}", f"Conflict {avg_conflict:.1f}", "#b08cff"),
+        _metric_card("Calibration", calibration, f"Max gap {_safe_float(health.get('calibration_max_gap'), 0.0):.1f}", "#8cf08c"),
+        _metric_card("Suppression", str(suppression.get("status", "-")), f"Avg {_safe_float(suppression.get('avg_suppression'), 0.0):.1f}", "#ff8c00"),
+        _metric_card("Confidence Spread", f"{_safe_float(confidence_dist.get('spread'), 0.0):.1f}", str(confidence_dist.get("status", "-")), "#0094ff"),
+        _metric_card("Opportunity", str(opportunity.get("status", "-")), f"Share {_safe_float(opportunity.get('opportunity_share'), 0.0):.1f}%", "#00d4a8"),
+        _metric_card("Philosophy", str(philosophy.get("status", "-")), f"Integrity {_safe_float(philosophy.get('avg_integrity'), 0.0):.1f}", "#b08cff"),
+    ]
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:8px 0 14px 0;">'
+        + "".join(cards)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _top_buy_tomorrow(aura_df: pd.DataFrame, final_df: pd.DataFrame) -> pd.Series | None:
     if isinstance(aura_df, pd.DataFrame) and not aura_df.empty:
         text = (
@@ -156,6 +185,7 @@ def _render_market_scan_summary(result: AILPipelineResult) -> None:
         f"Enhanced candidates: {enhanced:,}"
     )
     _render_health_status(result, mode_df)
+    _render_ail_health_diagnostics(result)
     _render_dataframe(mode_df, ["Mode", "Mode Name", "Raw Hits", "Enhanced Candidates", "Elapsed Sec", "Error"])
 
 
@@ -167,6 +197,12 @@ def _render_mode_top3(result: AILPipelineResult) -> None:
         "Symbol",
         "Mode Name",
         "AIL Top3 Score",
+        "AIL Top3 Source",
+        "AIL Top3 Consensus Score",
+        "AIL Top3 Normal Score",
+        "AIL Top3 Tomorrow Score",
+        "AIL Top3 Scanner Score",
+        "AIL Top3 Selection Notes",
         "AIL Top3 Confidence",
         "AIL Confidence",
         "AIL Confidence Label",
@@ -225,11 +261,26 @@ def _render_ranked_leaders(result: AILPipelineResult) -> None:
         "AIL Categories",
         "Mode Name",
         "AIL Master Score",
+        "AIL Top3 Source",
+        "AIL Top3 Consensus Score",
+        "AIL Top3 Normal Score",
+        "AIL Top3 Tomorrow Score",
+        "AIL Top3 Selection Notes",
         "AIL Confidence",
         "AIL Confidence Label",
         "AIL Risk Adjusted Score",
         "AIL Regime Alignment",
         "AIL Market Compatibility",
+        "AIL Market State",
+        "AIL Temporal Fit",
+        "AIL Agreement Score",
+        "AIL Conflict Score",
+        "AIL Calibrated Confidence",
+        "AIL Regime Strategy Fit",
+        "AIL Opportunity Score",
+        "AIL Speculative Score",
+        "AIL Philosophy Score",
+        "AIL Suppression Index",
         "AIL Diversity Penalty",
         "Smart Potential Score",
         "Bullish Probability",
@@ -240,7 +291,10 @@ def _render_ranked_leaders(result: AILPipelineResult) -> None:
         "Trap Risk Score",
         "Final Verdict",
         "AI Verdict",
-        "AIL Reasoning",
+        "AIL Orchestration Reasoning",
+        "AIL Opportunity Notes",
+        "AIL Philosophy Notes",
+        "AIL Conflict Notes",
         "Smart Notes",
     ]
     _render_dataframe(df, cols, height=360)
@@ -367,6 +421,13 @@ def _render_risk_sector_confidence_learning(result: AILPipelineResult) -> None:
     if isinstance(calibration, pd.DataFrame) and not calibration.empty:
         st.caption("Confidence calibration")
         _render_dataframe(calibration, ["Confidence Bin", "Observations", "Expected %", "Observed Win %", "Calibration Gap"])
+    drift = insights.get("calibration_drift")
+    if isinstance(drift, dict) and drift:
+        st.caption(
+            f"Calibration drift: {drift.get('status', 'insufficient_data')} | "
+            f"Max gap {_safe_float(drift.get('max_gap'), 0.0):.1f} | "
+            f"Drifted bins {int(drift.get('drifted_bins', 0) or 0)}"
+        )
 
 
 def _render_errors(result: AILPipelineResult) -> None:

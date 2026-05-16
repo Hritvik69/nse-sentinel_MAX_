@@ -121,15 +121,19 @@ def apply_diversity_penalty(df: pd.DataFrame) -> pd.DataFrame:
     for _, row in work.iterrows():
         penalty = 0.0
         sector = _text(row, "Sector").upper()
+        opportunity = _numeric(row, "AIL Opportunity Score", "AIL Speculative Score", default=0.0)
+        elite = _numeric(row, "AIL Master Score", "Smart Potential Score", default=0.0) >= 78.0 or opportunity >= 48.0
         if sector:
             seen = sector_seen.get(sector, 0)
-            penalty += min(4.5, seen * 1.5)
+            sector_cap = 2.4 if elite else 4.0
+            penalty += min(sector_cap, seen * (0.8 if elite else 1.2))
             sector_seen[sector] = seen + 1
         cats = sorted(_categories(row))
         primary = cats[0] if cats else ""
         if primary:
             seen = category_seen.get(primary, 0)
-            penalty += min(3.0, seen * 1.0)
+            category_cap = 1.8 if elite else 2.6
+            penalty += min(category_cap, seen * (0.55 if elite else 0.85))
             category_seen[primary] = seen + 1
         penalties.append(round(penalty, 2))
 

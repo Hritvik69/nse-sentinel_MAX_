@@ -301,7 +301,14 @@ def compute_ail_master_score(
         regime = compute_regime_alignment(row, market_bias)
         market_compat = compute_market_compatibility(row, market_bias)
         mode_fit, philosophy_reason = _mode_philosophy_score(row, market_bias)
-        agreement = _clip(52.0 + _multi_mode_bonus(row) * 2.0)
+        calibrated_conf = _numeric(row, "AIL Calibrated Confidence")
+        confidence_score = calibrated_conf if calibrated_conf is not None else float(confidence.get("score", 0.0) or 0.0)
+        temporal_fit = _numeric(row, "AIL Temporal Fit")
+        regime_strategy = _numeric(row, "AIL Regime Strategy Fit")
+        agreement_existing = _numeric(row, "AIL Agreement Score")
+        agreement = agreement_existing if agreement_existing is not None else _clip(52.0 + _multi_mode_bonus(row) * 2.0)
+        conflict_score = _numeric(row, "AIL Conflict Score")
+        conflict_control = _clip(100.0 - conflict_score) if conflict_score is not None else 58.0
         sector = _numeric(row, "Sector Support", "Sector Strength") or market_compat
         trap = _numeric(row, "Trap Risk Score")
         risk_control = _clip(100.0 - trap) if trap is not None else _quality_from_text(_text(row, "Trap Risk", "Trap Warning"), 56.0)
@@ -313,16 +320,26 @@ def compute_ail_master_score(
         values = {
             "base_score": base_score,
             "prediction": prediction,
-            "confidence": float(confidence.get("score", 0.0) or 0.0),
+            "confidence": confidence_score,
             "risk_adjusted": risk_adjusted,
             "mode_fit": mode_fit,
-            "regime": regime,
+            "regime": regime_strategy if regime_strategy is not None else regime,
             "sector": sector,
             "learning": float(learning_score) if learning_score is not None else 0.0,
             "agreement": agreement,
             "risk_control": risk_control,
+            "temporal": temporal_fit if temporal_fit is not None else mode_fit,
+            "conflict_control": conflict_control,
+            "market_compatibility": market_compat,
         }
         weights = _dynamic_weights(row, market_bias)
+        weights.setdefault("temporal", 0.06)
+        weights.setdefault("conflict_control", 0.06)
+        weights.setdefault("market_compatibility", 0.04)
+        weights = {key: max(0.0, value) for key, value in weights.items()}
+        total_weight = sum(weights.values())
+        if total_weight > 0:
+            weights = {key: value / total_weight for key, value in weights.items()}
         available = [(key, values[key], weight) for key, weight in weights.items() if values.get(key, 0.0) > 0.0]
         if available:
             score = sum(value * weight for key, value, weight in available) / sum(weight for _, _, weight in available)
@@ -330,9 +347,15 @@ def compute_ail_master_score(
             score = 0.0
         score = _clip(score + _multi_mode_bonus(row) * 0.35)
         score = _clip(score * float(learning.get("multiplier", 1.0) or 1.0))
+        score = _clip(score * _safe_float(_get(row, "AIL Temporal Multiplier"), 1.0))
+        score = _clip(score * _safe_float(_get(row, "AIL Regime Multiplier"), 1.0))
+        score = _clip(score * _safe_float(_get(row, "AIL Conflict Multiplier"), 1.0))
+        score = _clip(score + _safe_float(_get(row, "AIL Opportunity Boost"), 0.0))
+        score = _clip(score + _safe_float(_get(row, "AIL Philosophy Boost"), 0.0))
+        score = _clip(score + _safe_float(_get(row, "AIL Confidence Health Boost"), 0.0))
 
         out["AIL Master Score"] = round(score, 2)
-        out["AIL Confidence"] = round(float(confidence.get("score", 0.0) or 0.0), 2)
+        out["AIL Confidence"] = round(confidence_score, 2)
         out["AIL Confidence Label"] = confidence.get("label", "")
         out["AIL Confidence Drivers"] = confidence.get("drivers", "")
         out["AIL Confidence Coverage"] = confidence.get("coverage", 0.0)
