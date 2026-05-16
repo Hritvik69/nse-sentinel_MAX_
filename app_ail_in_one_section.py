@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 from typing import Any, Callable
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -33,6 +34,21 @@ def _row_symbol(row: pd.Series | dict[str, Any]) -> str:
         if symbol:
             return symbol
     return ""
+
+
+def _tradingview_chart_url(symbol: Any) -> str:
+    ticker = _plain_symbol(symbol)
+    if not ticker:
+        return ""
+    return "https://www.tradingview.com/chart/?symbol=" + quote(f"NSE:{ticker}", safe=":")
+
+
+def _with_chart_links(df: pd.DataFrame, *, link_col: str = "Chart") -> pd.DataFrame:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty or "Symbol" not in df.columns:
+        return df
+    out = df.copy()
+    out[link_col] = out["Symbol"].apply(_tradingview_chart_url)
+    return out
 
 
 def _existing_cols(df: pd.DataFrame, cols: list[str]) -> list[str]:
@@ -82,6 +98,12 @@ def _render_dataframe(df: pd.DataFrame, cols: list[str], *, height: int | None =
         dataframe_kwargs["height"] = height
     elif isinstance(height, str) and height in {"auto", "content"}:
         dataframe_kwargs["height"] = height
+    link_cols = [col for col in ("Chart", "TradingView", "Chart Link") if col in view.columns]
+    if link_cols:
+        dataframe_kwargs["column_config"] = {
+            col: st.column_config.LinkColumn(col, display_text="Open Chart")
+            for col in link_cols
+        }
     st.dataframe(view, **dataframe_kwargs)
 
 
@@ -327,9 +349,10 @@ def _render_comparison_results(result: AILPipelineResult) -> None:
 
 def _render_aura_verdict(result: AILPipelineResult) -> pd.DataFrame:
     st.subheader("5. Final Aura Verdict")
-    aura_df = pd.DataFrame(result.aura_verdicts)
+    aura_df = _with_chart_links(pd.DataFrame(result.aura_verdicts))
     cols = [
         "Symbol",
+        "Chart",
         "Aura Score",
         "Final Verdict",
         "AI Verdict",
@@ -360,6 +383,7 @@ def _render_best_buy_tomorrow(aura_df: pd.DataFrame, result: AILPipelineResult) 
     timing = str(row.get("Entry Timing", row.get("Timing Reason", "")) or "")
     risk = _safe_float(row.get("Risk %", 0.0), 0.0)
     target = _safe_float(row.get("Target 2", row.get("Target 1", 0.0)), 0.0)
+    chart_url = _tradingview_chart_url(symbol)
     st.markdown(
         f'<div style="background:linear-gradient(135deg,#0b1017 58%,rgba(0,212,168,0.12));'
         f'border:1.5px solid #00d4a8;border-radius:12px;padding:18px 20px;margin:8px 0 14px 0;">'
@@ -376,6 +400,8 @@ def _render_best_buy_tomorrow(aura_df: pd.DataFrame, result: AILPipelineResult) 
         f'</div></div>',
         unsafe_allow_html=True,
     )
+    if chart_url:
+        st.link_button("Open Chart", chart_url, width="stretch")
 
 
 def _render_risk_sector_confidence_learning(result: AILPipelineResult) -> None:

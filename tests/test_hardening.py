@@ -671,6 +671,18 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertTrue(captured.get("hide_index"))
         self.assertNotIn("height", captured)
 
+    def test_ail_aura_verdict_adds_encoded_chart_links(self) -> None:
+        import app_ail_in_one_section as ail_ui
+
+        source = pd.DataFrame([{"Symbol": "GMRP&UI", "Aura Score": 89.0}])
+        linked = ail_ui._with_chart_links(source)
+
+        self.assertIn("Chart", linked.columns)
+        self.assertEqual(
+            linked.loc[0, "Chart"],
+            "https://www.tradingview.com/chart/?symbol=NSE:GMRP%26UI",
+        )
+
     def test_ail_category_mapping_uses_mode_registry_truth(self) -> None:
         from ail_in_one_engine import classify_scan_results
 
