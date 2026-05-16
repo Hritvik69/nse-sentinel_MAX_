@@ -106,6 +106,18 @@ def collect_compare_import_symbols(
     return normalize_compare_plain_symbols(symbols, limit=limit)
 
 
+def select_compare_tomorrow_import_symbols(
+    saved_store: object,
+    visible_symbols: object = None,
+    *,
+    limit: int = COMPARE_STOCK_LIMIT,
+) -> list[str]:
+    saved_symbols = collect_compare_import_symbols(saved_store, limit=limit)
+    if saved_symbols:
+        return saved_symbols
+    return collect_compare_import_symbols(visible_symbols, limit=limit)
+
+
 def build_compare_source_statuses(symbols: list[str]) -> list[dict[str, Any]]:
     statuses: list[dict[str, Any]] = []
     for symbol in normalize_compare_symbols(symbols):

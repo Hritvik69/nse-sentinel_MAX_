@@ -614,6 +614,44 @@ class HardeningRegressionTests(unittest.TestCase):
             fdm.get_expected_data_date = old_expected_date  # type: ignore[assignment]
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_compare_import_prefers_saved_tomorrow_store_over_stale_visible_symbols(self) -> None:
+        from app_compare_stocks_section import select_compare_tomorrow_import_symbols
+
+        saved_store = {
+            "picks": [
+                "ADANIPORTS",
+                "GMRP&UI",
+                "BUILDPRO",
+                "DRREDDY",
+                "ASKAUTOLTD",
+                "INSECTICID",
+                "ALPA",
+                "KIRLOSENG",
+            ],
+            "sections": {
+                "relax": ["ADANIPORTS"],
+                "swing": [],
+                "intraday": ["GMRP&UI", "BUILDPRO", "DRREDDY"],
+                "momentum": ["ASKAUTOLTD", "INSECTICID", "ALPA"],
+                "breakout": ["KIRLOSENG"],
+            },
+        }
+        stale_visible = [f"RANDOM{i}" for i in range(19)]
+
+        self.assertEqual(
+            select_compare_tomorrow_import_symbols(saved_store, stale_visible, limit=19),
+            [
+                "ADANIPORTS",
+                "GMRP&UI",
+                "BUILDPRO",
+                "DRREDDY",
+                "ASKAUTOLTD",
+                "INSECTICID",
+                "ALPA",
+                "KIRLOSENG",
+            ],
+        )
+
     def test_live_breakout_direct_download_uses_bounded_limiter(self) -> None:
         import live_breakout_pulse_engine as pulse
 

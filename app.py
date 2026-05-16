@@ -1338,6 +1338,11 @@ except Exception:
     def render_ail_in_one_panel(*args, **kwargs):  # type: ignore[misc]
         return None
 
+try:
+    from app_stock_aura_section import _run_aura_engine as _ail_run_aura_engine
+except Exception:
+    _ail_run_aura_engine = None
+
 from app_compare_stocks_section import (
     COMPARE_STOCK_LIMIT as _COMPARE_STOCK_LIMIT,
     build_compare_source_statuses as _build_compare_source_statuses,
@@ -1345,6 +1350,7 @@ from app_compare_stocks_section import (
     load_compare_results as _load_compare_results,
     normalize_compare_symbols as _normalize_compare_symbols,
     save_compare_results as _save_compare_results,
+    select_compare_tomorrow_import_symbols as _select_compare_tomorrow_import_symbols,
     summarize_compare_sources as _summarize_compare_sources,
 )
 
@@ -1581,22 +1587,27 @@ def _compare_prediction_cache_source() -> pd.DataFrame:
 
 
 def _get_saved_tomorrow_pick_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
-    visible_symbols = _collect_compare_import_symbols(
-        st.session_state.get("tomorrow_picks_visible_symbols", []),
-        limit=limit,
-    )
-    if visible_symbols:
-        return visible_symbols
-
     try:
         store, _storage_mode = _load_tomorrow_store()
         sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
-        saved_symbols = _tomorrow_flatten_sections(sections, limit=20)
-        if not saved_symbols:
-            saved_symbols = store.get("picks", [])
-        return _collect_compare_import_symbols(saved_symbols, limit=limit)
+        saved_store = {
+            "sections": sections,
+            "picks": _tomorrow_flatten_sections(sections, limit=20) or store.get("picks", []),
+        }
+        import_symbols = _select_compare_tomorrow_import_symbols(
+            saved_store,
+            st.session_state.get("tomorrow_picks_visible_symbols", []),
+            limit=limit,
+        )
+        if import_symbols:
+            st.session_state["tomorrow_picks_visible_symbols"] = list(import_symbols)
+        return import_symbols
     except Exception:
-        return []
+        return _select_compare_tomorrow_import_symbols(
+            None,
+            st.session_state.get("tomorrow_picks_visible_symbols", []),
+            limit=limit,
+        )
 
 
 def _get_compare_tomorrow_import_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
@@ -9723,7 +9734,7 @@ if st.session_state.get("ail_in_one_show_panel", False):
             compute_market_bias_fn=compute_market_bias,
             get_train_function_fn=get_train_function,
             compute_battle_scores_fn=_ail_compute_battle_scores,
-            run_aura_engine_fn=_run_aura_engine,
+            run_aura_engine_fn=_ail_run_aura_engine,
             compare_prediction_cache_fn=_compare_prediction_cache_source,
             all_data=_engine_utils.ALL_DATA if _engine_utils is not None else {},
             tt_module=_tt if _TIME_TRAVEL_OK else None,
