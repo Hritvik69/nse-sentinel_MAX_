@@ -77,7 +77,12 @@ def _render_dataframe(df: pd.DataFrame, cols: list[str], *, height: int | None =
         return
     view_cols = _existing_cols(df, cols)
     view = df[view_cols].copy() if view_cols else df.copy()
-    st.dataframe(view, width="stretch", hide_index=True, height=height)
+    dataframe_kwargs: dict[str, Any] = {"width": "stretch", "hide_index": True}
+    if isinstance(height, int) and height > 0:
+        dataframe_kwargs["height"] = height
+    elif isinstance(height, str) and height in {"auto", "content"}:
+        dataframe_kwargs["height"] = height
+    st.dataframe(view, **dataframe_kwargs)
 
 
 def _top_buy_tomorrow(aura_df: pd.DataFrame, final_df: pd.DataFrame) -> pd.Series | None:

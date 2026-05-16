@@ -652,6 +652,25 @@ class HardeningRegressionTests(unittest.TestCase):
             ],
         )
 
+    def test_ail_dataframe_omits_none_height_for_streamlit_cloud(self) -> None:
+        import app_ail_in_one_section as ail_ui
+
+        captured: dict[str, object] = {}
+        old_dataframe = ail_ui.st.dataframe
+
+        def fake_dataframe(*_args, **kwargs):
+            captured.update(kwargs)
+
+        try:
+            ail_ui.st.dataframe = fake_dataframe  # type: ignore[assignment]
+            ail_ui._render_dataframe(pd.DataFrame([{"Mode": 1, "Raw Hits": 3}]), ["Mode", "Raw Hits"])
+        finally:
+            ail_ui.st.dataframe = old_dataframe  # type: ignore[assignment]
+
+        self.assertEqual(captured.get("width"), "stretch")
+        self.assertTrue(captured.get("hide_index"))
+        self.assertNotIn("height", captured)
+
     def test_live_breakout_direct_download_uses_bounded_limiter(self) -> None:
         import live_breakout_pulse_engine as pulse
 
