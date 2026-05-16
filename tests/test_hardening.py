@@ -700,6 +700,93 @@ class HardeningRegressionTests(unittest.TestCase):
         selfEqual(symbols("Institutional"), {"M4INST"})
         self.assertNotIn("M2BAL", symbols("Swing"))
 
+    def test_ail_confidence_uses_real_components_without_fallback_label(self) -> None:
+        from ail_confidence_engine import compute_smart_confidence
+
+        row = {
+            "Symbol": "AAA",
+            "Prediction Score": 72,
+            "Confidence": 66,
+            "Trap Risk Score": 34,
+            "Setup Cleanliness": 70,
+            "Volume Quality": 74,
+            "Regime Alignment": 68,
+            "Sector Support": 65,
+            "Learned Prob %": 61,
+        }
+        confidence = compute_smart_confidence(row, {"market_bias": {"bias": "Bullish", "regime": "Trending Up"}})
+        self.assertGreater(confidence["score"], 55)
+        self.assertNotIn("Fallback", confidence["label"])
+        self.assertIn("prediction", confidence["components"])
+        self.assertGreater(confidence["coverage"], 50)
+
+        thin = compute_smart_confidence({"Symbol": "EMPTY"}, {})
+        self.assertEqual(thin["score"], 0.0)
+        self.assertEqual(thin["label"], "Insufficient evidence")
+
+    def test_ail_diversity_role_selection_avoids_single_stock_sweep(self) -> None:
+        from ail_ranking_engine import build_master_rankings, select_category_leaders
+
+        df = pd.DataFrame(
+            [
+                {
+                    "Symbol": "AAA",
+                    "AIL Categories": "Momentum, Breakout",
+                    "Mode ID": 1,
+                    "AIL Master Score": 82.0,
+                    "AIL Confidence": 75.0,
+                    "AIL Risk Adjusted Score": 70.0,
+                    "Momentum Quality": 88.0,
+                    "Volume Quality": 78.0,
+                    "Trap Risk Score": 42.0,
+                    "Setup Cleanliness": 70.0,
+                    "Regime Alignment": 72.0,
+                    "Sector Support": 68.0,
+                    "Risk Reward Score": 72.0,
+                    "RSI": 64.0,
+                },
+                {
+                    "Symbol": "BBB",
+                    "AIL Categories": "Swing, Relaxed",
+                    "Mode ID": 6,
+                    "AIL Master Score": 79.0,
+                    "AIL Confidence": 73.0,
+                    "AIL Risk Adjusted Score": 78.0,
+                    "Momentum Quality": 68.0,
+                    "Volume Quality": 70.0,
+                    "Trap Risk Score": 28.0,
+                    "Setup Cleanliness": 84.0,
+                    "Regime Alignment": 68.0,
+                    "Sector Support": 66.0,
+                    "Risk Reward Score": 80.0,
+                    "RSI": 54.0,
+                    "Entry Timing": "Early pullback",
+                },
+                {
+                    "Symbol": "CCC",
+                    "AIL Categories": "Institutional",
+                    "Mode ID": 4,
+                    "AIL Master Score": 77.0,
+                    "AIL Confidence": 71.0,
+                    "AIL Risk Adjusted Score": 74.0,
+                    "Momentum Quality": 65.0,
+                    "Volume Quality": 72.0,
+                    "Trap Risk Score": 35.0,
+                    "Setup Cleanliness": 76.0,
+                    "Regime Alignment": 86.0,
+                    "Sector Support": 82.0,
+                    "Risk Reward Score": 73.0,
+                    "RSI": 58.0,
+                },
+            ]
+        )
+        ranked = build_master_rankings(df, market_bias={"bias": "Bullish", "regime": "Trending Up"})
+        summary = select_category_leaders(ranked)
+        winners = [item["symbol"] for item in summary.values() if item.get("symbol")]
+        self.assertGreaterEqual(len(set(winners)), 2)
+        self.assertIn("AAA", winners)
+        self.assertIn("BBB", winners)
+
     def test_ail_pipeline_orchestrates_modes_battle_aura_and_logging(self) -> None:
         from ail_in_one_engine import AIL_CATEGORY_ORDER, AIL_MODES, run_ail_pipeline
 
@@ -790,7 +877,14 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertEqual(scan_calls, list(AIL_MODES))
         self.assertTrue(all(len(result.category_top3[name].get("top_df", pd.DataFrame())) > 0 for name in AIL_CATEGORY_ORDER))
         self.assertEqual(len(battle_calls), 1)
+        self.assertIn("AIL Master Score", result.final_ranked_df.columns)
+        self.assertIn("AIL Confidence", result.final_ranked_df.columns)
+        self.assertTrue((pd.to_numeric(result.final_ranked_df["AIL Confidence"], errors="coerce").fillna(0) > 0).any())
         self.assertTrue(result.final_ranked_df["Smart Notes"].astype(str).str.contains("Injected battle score").any())
+        for payload in result.category_top3.values():
+            frame = payload.get("top_df", pd.DataFrame())
+            if isinstance(frame, pd.DataFrame) and not frame.empty and "AIL Top3 Confidence" in frame.columns:
+                self.assertFalse(frame["AIL Top3 Confidence"].astype(str).str.contains("Fallback", case=False).any())
         self.assertTrue(set(aura_calls).issubset({"AAA", "BBB"}))
         self.assertNotIn("NOHIST", aura_calls)
         self.assertEqual(len(logged_frames), 1)

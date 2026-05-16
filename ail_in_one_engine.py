@@ -16,6 +16,9 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
+from ail_confidence_engine import compute_smart_confidence
+from ail_learning_engine import build_ail_learning_profile, learning_profile_table
+from ail_ranking_engine import build_master_rankings, select_category_leaders
 from strategy_engines.mode_helpers import resolve_mode_id
 from strategy_engines.mode_registry import get_mode_label, get_mode_metadata, get_mode_name
 
@@ -131,10 +134,12 @@ def _find_numeric(row: pd.Series | dict[str, Any], *keys: str, default: float = 
 
 def _best_sort_columns(df: pd.DataFrame) -> list[str]:
     preferred = [
+        "AIL Master Score",
         "Smart Potential Score",
         "Prediction Score",
         "Final Score",
         "AIL Top3 Score",
+        "AIL Confidence",
         "Confidence",
         "ML %",
         "Backtest %",
@@ -373,7 +378,14 @@ def extract_top_candidates(
                 row["AIL Category"] = category
                 row["AIL Category Rank"] = rank
                 row["AIL Top3 Score"] = round(_safe_float(candidate.get("tomorrow_score"), 0.0), 2)
-                row["AIL Top3 Confidence"] = str(candidate.get("confidence", "") or "")
+                confidence = compute_smart_confidence(row, {"market_bias": market_bias or {}})
+                candidate_conf = str(candidate.get("confidence", "") or "").strip()
+                if not candidate_conf or candidate_conf.lower() == "fallback":
+                    candidate_conf = str(confidence.get("label", ""))
+                row["AIL Top3 Confidence"] = candidate_conf
+                row["AIL Confidence"] = confidence.get("score", 0.0)
+                row["AIL Confidence Label"] = confidence.get("label", "")
+                row["AIL Confidence Drivers"] = confidence.get("drivers", "")
                 row["AIL Top3 Qualified"] = bool(candidate.get("qualified", False))
                 row["AIL Top3 Penalties"] = "; ".join(
                     str(reason) for _, reason in list(candidate.get("penalties", []) or [])
@@ -386,13 +398,17 @@ def extract_top_candidates(
             fallback = _sort_existing_scores(source).head(top_n)
             for rank, (_, row) in enumerate(fallback.iterrows(), start=1):
                 row_dict = row.to_dict()
+                confidence = compute_smart_confidence(row_dict, {"market_bias": market_bias or {}})
                 row_dict["AIL Category"] = category
                 row_dict["AIL Category Rank"] = rank
                 row_dict["AIL Top3 Score"] = _safe_float(row.get("Prediction Score", row.get("Final Score", 0.0)), 0.0)
-                row_dict["AIL Top3 Confidence"] = "Fallback"
+                row_dict["AIL Top3 Confidence"] = str(confidence.get("label", "Insufficient evidence"))
+                row_dict["AIL Confidence"] = confidence.get("score", 0.0)
+                row_dict["AIL Confidence Label"] = confidence.get("label", "")
+                row_dict["AIL Confidence Drivers"] = confidence.get("drivers", "")
                 row_dict["AIL Top3 Qualified"] = True
                 row_dict["AIL Top3 Penalties"] = ""
-                row_dict["AIL Top3 Drivers"] = "Ranked by existing score columns"
+                row_dict["AIL Top3 Drivers"] = str(confidence.get("drivers", "")) or "Ranked by existing score columns"
                 top_rows.append(row_dict)
 
         payload = dict(payload)
@@ -481,6 +497,7 @@ def rank_cross_mode_leaders(
     compute_battle_scores_fn: Callable[..., pd.DataFrame] | None = None,
     market_bias: dict[str, Any] | None = None,
     prediction_cache: object = None,
+    learning_profile: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, dict[str, dict[str, Any]]]:
     if candidate_pool is None or not isinstance(candidate_pool, pd.DataFrame) or candidate_pool.empty:
         return pd.DataFrame(), {}
@@ -501,9 +518,15 @@ def rank_cross_mode_leaders(
         except Exception:
             ranked = pool.copy()
 
-    ranked = _sort_existing_scores(ranked)
-    if not ranked.empty:
-        ranked["AIL Master Rank"] = range(1, len(ranked) + 1)
+    try:
+        ranked = build_master_rankings(ranked, market_bias=market_bias, learning_profile=learning_profile)
+    except Exception:
+        ranked = _sort_existing_scores(ranked)
+        if not ranked.empty:
+            if "AIL Master Score" not in ranked.columns:
+                score_col = _best_sort_columns(ranked)[0] if _best_sort_columns(ranked) else None
+                ranked["AIL Master Score"] = pd.to_numeric(ranked[score_col], errors="coerce").fillna(0.0) if score_col else 0.0
+            ranked["AIL Master Rank"] = range(1, len(ranked) + 1)
 
     return ranked, build_comparison_summary(ranked)
 
@@ -557,6 +580,12 @@ def _first_available_row(*rows: pd.Series | None) -> pd.Series | None:
 def build_comparison_summary(ranked_df: pd.DataFrame) -> dict[str, dict[str, Any]]:
     if ranked_df is None or not isinstance(ranked_df, pd.DataFrame) or ranked_df.empty:
         return {}
+    try:
+        summary = select_category_leaders(ranked_df)
+        if summary:
+            return summary
+    except Exception:
+        pass
 
     top = ranked_df.iloc[0] if len(ranked_df) else None
     categories = ranked_df.get("AIL Categories", pd.Series("", index=ranked_df.index)).fillna("").astype(str)
@@ -764,10 +793,10 @@ def build_sector_strength(ranked_df: pd.DataFrame) -> pd.DataFrame:
             work["Sector"] = [str(get_sector(_row_symbol(row)) or "UNMAPPED") for _, row in work.iterrows()]
         except Exception:
             work["Sector"] = "UNMAPPED"
-    for col in ("Smart Potential Score", "Sector Support", "Momentum Quality", "Bullish Probability"):
+    for col in ("AIL Master Score", "Smart Potential Score", "Sector Support", "Momentum Quality", "Bullish Probability"):
         if col in work.columns:
             work[col] = pd.to_numeric(work[col], errors="coerce")
-    score_col = "Smart Potential Score" if "Smart Potential Score" in work.columns else _best_sort_columns(work)[0] if _best_sort_columns(work) else None
+    score_col = "AIL Master Score" if "AIL Master Score" in work.columns else "Smart Potential Score" if "Smart Potential Score" in work.columns else _best_sort_columns(work)[0] if _best_sort_columns(work) else None
     rows: list[dict[str, Any]] = []
     for sector, grp in work.groupby("Sector", dropna=False):
         if grp.empty:
@@ -781,13 +810,16 @@ def build_sector_strength(ranked_df: pd.DataFrame) -> pd.DataFrame:
                 "Avg Smart Score": round(float(grp.get("Smart Potential Score", pd.Series(np.nan)).mean()), 2)
                 if "Smart Potential Score" in grp.columns
                 else np.nan,
+                "Avg AIL Score": round(float(grp.get("AIL Master Score", pd.Series(np.nan)).mean()), 2)
+                if "AIL Master Score" in grp.columns
+                else np.nan,
                 "Avg Sector Support": round(float(grp.get("Sector Support", pd.Series(np.nan)).mean()), 2)
                 if "Sector Support" in grp.columns
                 else np.nan,
                 "Best Score": round(_safe_float(best_row.get(score_col), 0.0), 2) if score_col else 0.0,
             }
         )
-    return pd.DataFrame(rows).sort_values(["Best Score", "Avg Smart Score"], ascending=False, kind="stable").reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["Best Score", "Avg AIL Score", "Avg Smart Score"], ascending=False, kind="stable").reset_index(drop=True)
 
 
 def build_risk_warnings(final_df: pd.DataFrame) -> pd.DataFrame:
@@ -813,6 +845,15 @@ def build_risk_warnings(final_df: pd.DataFrame) -> pd.DataFrame:
         final_signal = _first_text(row, ("Final Signal", "Adjusted Signal", "Signal"), "")
         if str(final_signal).upper() in {"AVOID", "TRAP"}:
             warnings.append(f"Final signal {final_signal}")
+        ail_conf = _find_numeric(row, "AIL Confidence", default=0.0)
+        ail_coverage = _find_numeric(row, "AIL Confidence Coverage", default=100.0)
+        market_fit = _find_numeric(row, "AIL Market Compatibility", default=55.0)
+        if ail_conf > 0 and ail_conf < 45:
+            warnings.append("Low A-I-L confidence")
+        if ail_coverage < 45:
+            warnings.append("Thin confidence evidence")
+        if market_fit < 45:
+            warnings.append("Weak market compatibility")
         if warnings:
             rows.append(
                 {
@@ -823,6 +864,7 @@ def build_risk_warnings(final_df: pd.DataFrame) -> pd.DataFrame:
                     "RSI": round(rsi, 2),
                     "Vol / Avg": round(vol_ratio, 2),
                     "EMA20 Distance %": round(dist_ema20, 2),
+                    "AIL Reasoning": _first_text(row, ("AIL Reasoning",), ""),
                 }
             )
     return pd.DataFrame(rows)
@@ -831,7 +873,7 @@ def build_risk_warnings(final_df: pd.DataFrame) -> pd.DataFrame:
 def build_confidence_meter(final_df: pd.DataFrame) -> dict[str, Any]:
     if final_df is None or not isinstance(final_df, pd.DataFrame) or final_df.empty:
         return {"score": 0.0, "label": "No candidates", "count": 0}
-    confidence_cols = [col for col in ("Smart Confidence", "Confidence", "Bullish Probability") if col in final_df.columns]
+    confidence_cols = [col for col in ("AIL Confidence", "Smart Confidence", "Confidence", "Bullish Probability") if col in final_df.columns]
     if confidence_cols:
         values = []
         for col in confidence_cols:
@@ -859,6 +901,7 @@ def collect_learning_insights(
     *,
     logged_predictions: int = 0,
     log_error: str = "",
+    learning_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     insights: dict[str, Any] = {
         "logged_predictions": int(logged_predictions or 0),
@@ -866,6 +909,13 @@ def collect_learning_insights(
         "training_status": {},
         "feedback_summary": {},
         "dynamic_weights": pd.DataFrame(),
+        "ail_learning_profile": learning_profile or {},
+        "ail_learning_table": learning_profile_table(learning_profile),
+        "confidence_calibration": (
+            learning_profile.get("confidence_calibration", pd.DataFrame())
+            if isinstance(learning_profile, dict)
+            else pd.DataFrame()
+        ),
     }
     try:
         from learning_engine import get_training_status
@@ -1101,6 +1151,11 @@ def run_ail_pipeline(
     result.candidate_pool = _candidate_pool_from_top3(result.category_top3)
     notify("compare_start", total=len(result.candidate_pool))
 
+    try:
+        learning_profile = build_ail_learning_profile()
+    except Exception:
+        learning_profile = {}
+
     prediction_cache = None
     if callable(compare_prediction_cache_fn):
         try:
@@ -1113,6 +1168,7 @@ def run_ail_pipeline(
         compute_battle_scores_fn=compute_battle_scores_fn,
         market_bias=result.market_bias,
         prediction_cache=prediction_cache,
+        learning_profile=learning_profile,
     )
     notify("aura_start", total=len(result.comparison_df))
 
@@ -1134,7 +1190,11 @@ def run_ail_pipeline(
         log_scan_predictions_fn=log_scan_predictions_fn,
     )
     result.health = build_health_summary(result, logged_predictions=logged)
-    result.learning_insights = collect_learning_insights(logged_predictions=logged, log_error=log_error)
+    result.learning_insights = collect_learning_insights(
+        logged_predictions=logged,
+        log_error=log_error,
+        learning_profile=learning_profile,
+    )
 
     result.elapsed_sec = round(time.time() - started, 2)
     notify("done", elapsed=result.elapsed_sec, ranked=len(result.final_ranked_df))

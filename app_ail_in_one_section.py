@@ -168,6 +168,8 @@ def _render_mode_top3(result: AILPipelineResult) -> None:
         "Mode Name",
         "AIL Top3 Score",
         "AIL Top3 Confidence",
+        "AIL Confidence",
+        "AIL Confidence Label",
         "Prediction Score",
         "Final Score",
         "Confidence",
@@ -176,6 +178,7 @@ def _render_mode_top3(result: AILPipelineResult) -> None:
         "Setup Quality",
         "Entry Timing",
         "Sector",
+        "AIL Confidence Drivers",
         "AIL Top3 Drivers",
         "AIL Top3 Penalties",
     ]
@@ -202,9 +205,13 @@ def _render_ranked_leaders(result: AILPipelineResult) -> None:
     colors = ["#00d4a8", "#0094ff", "#f0b429"]
     for idx, (_, row) in enumerate(df.head(3).iterrows()):
         symbol = _row_symbol(row)
-        score = _safe_float(row.get("Smart Potential Score", row.get("Battle Score", row.get("Final Score", 0))))
+        score = _safe_float(row.get("AIL Master Score", row.get("Smart Potential Score", row.get("Battle Score", row.get("Final Score", 0)))))
         verdict = str(row.get("AI Verdict", row.get("Smart Verdict", row.get("Final Verdict", ""))) or "")
-        cards.append(_metric_card(f"Rank #{idx + 1}", symbol, f"{verdict} | Score {score:.1f}", colors[idx % len(colors)]))
+        confidence = str(row.get("AIL Confidence Label", "") or "").strip()
+        subtext = f"{verdict} | AIL {score:.1f}"
+        if confidence:
+            subtext += f" | {confidence}"
+        cards.append(_metric_card(f"Rank #{idx + 1}", symbol, subtext, colors[idx % len(colors)]))
     st.markdown(
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:8px 0 14px 0;">'
         + "".join(cards)
@@ -217,6 +224,13 @@ def _render_ranked_leaders(result: AILPipelineResult) -> None:
         "Symbol",
         "AIL Categories",
         "Mode Name",
+        "AIL Master Score",
+        "AIL Confidence",
+        "AIL Confidence Label",
+        "AIL Risk Adjusted Score",
+        "AIL Regime Alignment",
+        "AIL Market Compatibility",
+        "AIL Diversity Penalty",
         "Smart Potential Score",
         "Bullish Probability",
         "Smart Confidence",
@@ -226,6 +240,7 @@ def _render_ranked_leaders(result: AILPipelineResult) -> None:
         "Trap Risk Score",
         "Final Verdict",
         "AI Verdict",
+        "AIL Reasoning",
         "Smart Notes",
     ]
     _render_dataframe(df, cols, height=360)
@@ -312,12 +327,12 @@ def _render_best_buy_tomorrow(aura_df: pd.DataFrame, result: AILPipelineResult) 
 def _render_risk_sector_confidence_learning(result: AILPipelineResult) -> None:
     st.subheader("7. Risk Warnings")
     if isinstance(result.risk_warnings, pd.DataFrame) and not result.risk_warnings.empty:
-        _render_dataframe(result.risk_warnings, ["Rank", "Symbol", "Warnings", "Trap Risk Score", "RSI", "Vol / Avg", "EMA20 Distance %"])
+        _render_dataframe(result.risk_warnings, ["Rank", "Symbol", "Warnings", "Trap Risk Score", "RSI", "Vol / Avg", "EMA20 Distance %", "AIL Reasoning"])
     else:
         st.success("No high-priority trap or extension warnings in the final ranked set.")
 
     st.subheader("8. Sector Strength")
-    _render_dataframe(result.sector_strength, ["Sector", "Candidates", "Best Stock", "Best Score", "Avg Smart Score", "Avg Sector Support"])
+    _render_dataframe(result.sector_strength, ["Sector", "Candidates", "Best Stock", "Best Score", "Avg AIL Score", "Avg Smart Score", "Avg Sector Support"])
 
     st.subheader("9. Confidence Meter")
     meter = result.confidence_meter or {}
@@ -344,6 +359,14 @@ def _render_risk_sector_confidence_learning(result: AILPipelineResult) -> None:
     weights = insights.get("dynamic_weights")
     if isinstance(weights, pd.DataFrame) and not weights.empty:
         _render_dataframe(weights.head(8), ["Signal", "Observations", "Win Rate", "Static Weight", "Dynamic Weight", "Δ Weight"])
+    ail_table = insights.get("ail_learning_table")
+    if isinstance(ail_table, pd.DataFrame) and not ail_table.empty:
+        st.caption("A-I-L adaptive reliability inputs")
+        _render_dataframe(ail_table.head(10), ["Layer", "Name", "Observations", "Win Rate %", "Reliability Score"])
+    calibration = insights.get("confidence_calibration")
+    if isinstance(calibration, pd.DataFrame) and not calibration.empty:
+        st.caption("Confidence calibration")
+        _render_dataframe(calibration, ["Confidence Bin", "Observations", "Expected %", "Observed Win %", "Calibration Gap"])
 
 
 def _render_errors(result: AILPipelineResult) -> None:
