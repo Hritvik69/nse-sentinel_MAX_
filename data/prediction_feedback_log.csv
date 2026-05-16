@@ -3070,15 +3070,37 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-16T06:09:29+05:30,2026-05-16,b6ddbe0ad6f96c8f81cd36dd,ALPA,,7,Mode 3 Top 3,Momentum,Bullish,stock_next_session_v2,79.4000,59.7500,BUY,High,Sideways / no edge,Trending Down,58.4400,2.1500,,LOW,1,,,
 2026-05-16T06:09:29+05:30,2026-05-16,19e48373dca60da5891e090a,ASKAUTOLTD,,3,Mode 1 Top 3 | Mode 3 Top 3,Relax | Momentum,Bullish,stock_next_session_v2,79.9100,51.7200,BUY,High,Sideways / no edge,Trending Down,58.2700,1.3500,,LOW,1,,,
 2026-05-15T11:04:40+05:30,2026-05-15,e9e5b28f17e06f046faea959,ADANIPORTS,INFRA,3,Mode 1 Top 3,Relax,Bullish,stock_next_session_v2,60.4000,43.1500,BUY,Medium,Sideways / no edge,Trending Down,69.5800,1.5800,,LOW,1,,,
-2026-05-13T15:17:45+05:30,2026-05-13,c91692157d3384819faa4701,ASIANPAINT,CONSUMER_DURABLES,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,100.0000,LIVE BREAKOUT,,,,65.1000,3.5500,,,0,0.1757,False,incorrect
-2026-05-13T15:17:45+05:30,2026-05-13,f63b2d4260d9d38525d5969d,BAIDFIN,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,96.0000,LIVE BREAKOUT,,,,58.3000,3.0200,,,0,2.0566,False,incorrect
-2026-05-14T16:00:53+05:30,2026-05-14,017265c5aef791a4e08c1f32,TATACOMM,TELECOM,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,95.0000,LIVE BREAKOUT,,,,64.4000,2.5100,,,0,1.4432,False,incorrect
-2026-05-14T16:00:53+05:30,2026-05-14,e882e766e4a0bd9b8b9b2371,SKMEGGPROD,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,91.0000,LIVE BREAKOUT,,,,59.1000,2.1000,,,0,-0.9981,True,correct
 2026-05-16T06:11:45+05:30,2026-05-16,6f172c21a447a88d960627d3,INSECTICID,,7,Mode 3 Top 3 | Live Breakout Pulse Top 3,Momentum | Breakout Pulse,Bearish,stock_next_session_v2,,95.0000,LIVE BREAKOUT,,,,65.9000,2.2700,,,0,,,
 2026-05-16T06:11:45+05:30,2026-05-16,805642ce2979765f41ff122f,ALPA,,7,Mode 3 Top 3 | Live Breakout Pulse Top 3,Momentum | Breakout Pulse,Bearish,stock_next_session_v2,,91.0000,LIVE BREAKOUT,,,,58.4000,2.1500,,,0,,,
-2026-05-16T06:11:45+05:30,2026-05-16,08481daf4cc214937f4ecde8,KIRLOSENG,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,96.0000,LIVE BREAKOUT,,,,61.8000,5.4800,,,0,,,
-2026-05-13T15:17:45+05:30,2026-05-13,c91692157d3384819faa4701,ASIANPAINT,CONSUMER_DURABLES,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,100.0000,LIVE BREAKOUT,,,,65.1000,3.5500,,,0,0.1757,False,incorrect
-2026-05-13T15:17:45+05:30,2026-05-13,f63b2d4260d9d38525d5969d,BAIDFIN,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,96.0000,LIVE BREAKOUT,,,,58.3000,3.0200,,,0,2.0566,False,incorrect
-2026-05-14T16:00:53+05:30,2026-05-14,017265c5aef791a4e08c1f32,TATACOMM,TELECOM,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,95.0000,LIVE BREAKOUT,,,,64.4000,2.5100,,,0,1.4432,False,incorrect
-2026-05-14T16:00:53+05:30,2026-05-14,e882e766e4a0bd9b8b9b2371,SKMEGGPROD,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,91.0000,LIVE BREAKOUT,,,,59.1000,2.1000,,,0,-0.9981,True,correct
 2026-05-16T06:12:13+05:30,2026-05-16,08481daf4cc214937f4ecde8,KIRLOSENG,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,96.0000,LIVE BREAKOUT,,,,61.8000,5.4800,,,0,,,
+2026-05-16T11:44:15+05:30,2026-05-16,c478adef39aca14e9343d9c3,KALYANIFRG,,7,,,Bullish,stock_next_session_v2,78.5600,73.8500,BUY,High,Sideways / no edge,Trending Down,53.8900,1.5500,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,f6822502d9752c021d912e9e,KPIL,,7,,,Bullish,stock_next_session_v2,77.0800,70.4600,BUY,High,Sideways / no edge,Trending Down,56.0200,3.9000,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,b33416629a394791b458a3c0,DHANUKA,,7,,,Bullish,stock_next_session_v2,82.6800,68.1500,BUY,High,Sideways / no edge,Trending Down,57.8000,1.9600,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,0a33343224354e882e9b56ec,DELHIVERY,,7,,,Bullish,stock_next_session_v2,80.0800,67.3200,BUY,High,Sideways / no edge,Trending Down,59.0900,1.9500,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,8f26f95521e2cf3d697b0ca7,GRASIM,,7,,,Bullish,stock_next_session_v2,79.2600,66.9400,BUY,High,Sideways / no edge,Trending Down,62.6300,1.8900,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,55fd6a206a5a11324ca4dfdd,MUKANDLTD,,7,,,Bullish,stock_next_session_v2,67.8800,66.7900,BUY,High,Sideways / no edge,Trending Down,59.0100,5.1300,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,3c7853f72cae3218c12f3407,INSECTICID,,7,,,Bullish,stock_next_session_v2,75.3300,66.2800,BUY,High,Sideways / no edge,Trending Down,65.9300,2.2700,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,396729e8f4790a563d0c55a9,MARATHON,,7,,,Bullish,stock_next_session_v2,69.1600,61.6500,BUY,High,Sideways / no edge,Trending Down,52.3700,1.4100,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,00047bd0073bfda225d72beb,BALMLAWRIE,,7,,,Bullish,stock_next_session_v2,76.4300,61.0500,BUY,High,Sideways / no edge,Trending Down,64.3800,1.4900,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,76cd21de2a7e175ecbd036f7,DONEAR,,7,,,Bullish,stock_next_session_v2,83.2400,60.6300,BUY,High,Sideways / no edge,Trending Down,56.2000,1.8600,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,6f8d650a43eb4d0fc07820e6,ALPA,,7,,,Bullish,stock_next_session_v2,79.4000,59.7500,BUY,High,Sideways / no edge,Trending Down,58.4400,2.1500,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,67fa3594a76a92e09a36def7,FOCUS,,7,,,Bearish,stock_next_session_v2,52.4400,57.7600,WATCH,Medium,Sideways / no edge,Trending Down,65.0100,1.3100,,LOW,0,,,
+2026-05-16T11:44:15+05:30,2026-05-16,43befdcc1344190fbdf99a3a,AFCONS,,7,,,Bullish,stock_next_session_v2,57.9300,57.3800,BUY,Medium,Sideways / no edge,Trending Down,55.5200,1.0400,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,2cb0edc021ccc26e26b1b1e6,ENDURANCE,AUTO,7,,,Bullish,stock_next_session_v2,76.1700,56.5100,BUY,High,Sideways / no edge,Trending Down,58.3700,3.0700,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,a5a4746720cd8642ba016827,TATVA,,7,,,Bullish,stock_next_session_v2,74.3700,53.5100,BUY,High,Sideways / no edge,Trending Down,55.7100,1.3600,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,354a37f45fe3b12af60fb90e,ISGEC,,7,,,Bullish,stock_next_session_v2,61.8200,52.4700,BUY,Medium,Sideways / no edge,Trending Down,62.5900,1.1400,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,fb7392934316421a144ad12e,ASKAUTOLTD,,7,,,Bullish,stock_next_session_v2,79.9100,51.7200,BUY,High,Sideways / no edge,Trending Down,58.2700,1.3500,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,4795e903e6e5a3eb89b5ec85,SAILIFE,,7,,,Bullish,stock_next_session_v2,64.8100,50.5600,BUY,High,Sideways / no edge,Trending Down,58.6200,11.9000,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,9370cc74adaf1ec0a1f30a51,NGLFINE,,7,,,Bullish,stock_next_session_v2,62.5100,48.5200,WATCH,High,Sideways / no edge,Trending Down,52.6900,1.6400,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,e71132a3a649c169b873cd94,AMBER,CONSUMER_DURABLES,7,,,Bullish,stock_next_session_v2,66.7500,45.6900,BUY,High,Sideways / no edge,Trending Down,61.1500,1.2900,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,cf4bae15d916e7cd6182ccde,EPACKPEB,,7,,,Bullish,stock_next_session_v2,68.1800,45.0800,BUY,High,Sideways / no edge,Trending Down,56.0600,2.3800,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,343905d8720deecf3cde5289,ADANIPORTS,INFRA,7,,,Bullish,stock_next_session_v2,60.4000,43.1500,BUY,Medium,Sideways / no edge,Trending Down,69.5800,1.5800,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,0e3c5e8ca94df5e1ec0f59df,SKIPPER,,7,,,Bullish,stock_next_session_v2,62.9200,42.4800,BUY,High,Sideways / no edge,Trending Down,56.2300,1.2700,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,7f994bc3de7b61f092351a22,SOLEX,,7,,,Bullish,stock_next_session_v2,50.8800,42.1000,BUY,Medium,Sideways / no edge,Trending Down,57.7800,1.0100,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,9537bf51319cb84dd72e9907,HEG,,7,,,Bullish,stock_next_session_v2,61.4700,40.9200,WATCH,High,Sideways / no edge,Trending Down,56.9300,1.3300,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,843833bf7b115261c9c50920,BIKAJI,,7,,,Bullish,stock_next_session_v2,70.6600,40.0200,BUY,High,Sideways / no edge,Trending Down,53.5500,3.2500,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,a246d3a22b01284ec1e7b803,SIYSIL,,7,,,Bullish,stock_next_session_v2,68.3900,38.1300,BUY,High,Sideways / no edge,Trending Down,54.3600,1.3200,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,c2ce0241b1ba285b0291b14c,SUVEN,,7,,,Bullish,stock_next_session_v2,59.4400,35.6100,BUY,High,Sideways / no edge,Trending Down,58.0500,1.2400,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,5c122eb694366c8b704a4247,KIRLOSENG,,7,,,Bullish,stock_next_session_v2,56.8800,29.3700,WATCH,Medium,Sideways / no edge,Trending Down,61.7600,5.4800,,LOW,1,,,
+2026-05-16T11:44:15+05:30,2026-05-16,a3c3b0d6e40a0a3d7021034c,SHANKARA,,7,,,Bearish,stock_next_session_v2,31.2200,21.4300,AVOID,Medium,Sideways / no edge,Trending Down,51.1000,9.4900,,LOW,0,,,
+2026-05-16T11:44:15+05:30,2026-05-16,7b733ae9257261136230d5be,PAGEIND,,7,,,Bearish,stock_next_session_v2,36.5600,5.5100,WATCH,Low,Sideways / no edge,Trending Down,55.2300,0.9200,,LOW,0,,,
