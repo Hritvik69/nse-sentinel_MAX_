@@ -1083,6 +1083,7 @@ from strategy_engines import (
     get_engine_functions,
     get_train_function,
     preload_all,
+    prepare_market_session_data,
     backtest_with_preloaded,
     get_df_for_ticker,
 )
@@ -1325,6 +1326,15 @@ except Exception:
     _LIVE_PULSE_SECTION_OK = False
 
     def render_live_breakout_pulse(*args, **kwargs):  # type: ignore[misc]
+        return None
+
+try:
+    from app_ail_in_one_section import render_ail_in_one_panel
+    _AIL_IN_ONE_SECTION_OK = True
+except Exception:
+    _AIL_IN_ONE_SECTION_OK = False
+
+    def render_ail_in_one_panel(*args, **kwargs):  # type: ignore[misc]
         return None
 
 from app_compare_stocks_section import (
@@ -8580,6 +8590,7 @@ _SIDEBAR_PANEL_KEYS = (
     "show_sector_screener",
     "battle_show_panel",
     "aura_show_panel",
+    "ail_in_one_show_panel",
     "tomorrow_picks_show_panel",
     "pred_chart_show_panel",
     "imported_ai_learning_show_panel",
@@ -8719,6 +8730,7 @@ with st.sidebar:
     sector_screener_clicked = st.button("🔭 Sector Screener Dashboard", key="sector_screener_dashboard_btn")
     battle_compare_clicked = st.button("⚔️ Compare Stocks", key="battle_compare_btn")
     aura_clicked = st.button("🔮 Stock Aura", key="stock_aura_btn")
+    ail_in_one_clicked = st.button("🧠 A-I-L IN ONE", key="ail_in_one_btn")
     tomorrow_picks_clicked = st.button("📈 Tomorrow's Picks", key="tomorrow_picks_btn")
 
     pred_chart_clicked = st.button("📊 Prediction Chart Tomorrow", key="pred_chart_btn")
@@ -8729,6 +8741,9 @@ with st.sidebar:
         _activate_sidebar_panel("battle_show_panel")
     if aura_clicked:
         _activate_sidebar_panel("aura_show_panel")
+    if ail_in_one_clicked:
+        st.session_state["ail_in_one_run_requested"] = True
+        _activate_sidebar_panel("ail_in_one_show_panel")
     if tomorrow_picks_clicked:
         _activate_sidebar_panel("tomorrow_picks_show_panel")
     if pred_chart_clicked:
@@ -8925,12 +8940,14 @@ mc = mode_colors[mode]
 _mc_soft = _hex_to_rgba(mc, 0.10)
 _mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
+_show_ail_in_one_panel = bool(st.session_state.get("ail_in_one_show_panel", False))
 _show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
 _show_tomorrow_picks_panel = bool(st.session_state.get("tomorrow_picks_show_panel", False))
 _show_pred_chart_panel = bool(st.session_state.get("pred_chart_show_panel", False))
 _show_imported_ai_learning_panel = bool(st.session_state.get("imported_ai_learning_show_panel", False))
 _show_home_scanner = not (
     _show_sector_screener
+    or _show_ail_in_one_panel
     or _show_live_pulse_panel
     or _show_tomorrow_picks_panel
     or _show_pred_chart_panel
@@ -9628,6 +9645,35 @@ if st.session_state.get("battle_show_panel", False):
             st.session_state["battle_tickers_request"] = _battle_tickers
 
 render_tomorrow_picks_panel()
+
+if st.session_state.get("ail_in_one_show_panel", False):
+    if _AIL_IN_ONE_SECTION_OK:
+        try:
+            from battle_mode_engine import compute_battle_scores as _ail_compute_battle_scores
+        except Exception:
+            _ail_compute_battle_scores = None
+        render_ail_in_one_panel(
+            tickers=all_tickers,
+            workers=workers,
+            prepare_market_session_data_fn=prepare_market_session_data,
+            preload_all_fn=preload_all,
+            run_scan_fn=run_scan,
+            enhance_results_fn=enhance_results,
+            apply_enhanced_logic_fn=apply_enhanced_logic,
+            apply_universal_grading_fn=apply_universal_grading,
+            apply_phase4_logic_fn=apply_phase4_logic,
+            apply_phase42_logic_fn=apply_phase42_logic,
+            apply_gate_to_scan_df_fn=apply_gate_to_scan_df,
+            compute_market_bias_fn=compute_market_bias,
+            get_train_function_fn=get_train_function,
+            compute_battle_scores_fn=_ail_compute_battle_scores,
+            run_aura_engine_fn=_run_aura_engine,
+            compare_prediction_cache_fn=_compare_prediction_cache_source,
+            all_data=_engine_utils.ALL_DATA if _engine_utils is not None else {},
+            tt_module=_tt if _TIME_TRAVEL_OK else None,
+        )
+    else:
+        st.warning("A-I-L IN ONE panel is unavailable because app_ail_in_one_section.py could not be imported.")
 
 if st.session_state.get("show_bias_engine"):
     st.caption("📊 Market Bias Engine (Analytics)")
