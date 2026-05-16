@@ -1581,6 +1581,13 @@ def _compare_prediction_cache_source() -> pd.DataFrame:
 
 
 def _get_saved_tomorrow_pick_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
+    visible_symbols = _collect_compare_import_symbols(
+        st.session_state.get("tomorrow_picks_visible_symbols", []),
+        limit=limit,
+    )
+    if visible_symbols:
+        return visible_symbols
+
     try:
         store, _storage_mode = _load_tomorrow_store()
         sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
@@ -1593,33 +1600,7 @@ def _get_saved_tomorrow_pick_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[
 
 
 def _get_compare_tomorrow_import_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
-    saved_symbols = _get_saved_tomorrow_pick_symbols(limit=limit)
-    if saved_symbols:
-        return saved_symbols
-
-    sources: list[object] = [
-        st.session_state.get("compare_last_tomorrow_pick_symbols", []),
-        st.session_state.get("compare_tomorrow_pool_symbols", []),
-        st.session_state.get("compare_tomorrow_pool_df", pd.DataFrame()),
-        _compare_prediction_cache_source(),
-    ]
-
-    try:
-        records = _get_imported_ai_learning_records()
-        sources.append(records)
-    except Exception:
-        pass
-
-    try:
-        scan_df = st.session_state.get("last_scan_df")
-        if isinstance(scan_df, pd.DataFrame) and not scan_df.empty:
-            from strategy_engines._engine_utils import get_tomorrow_top_picks
-
-            sources.append(get_tomorrow_top_picks(scan_df, source="main", top_n=limit))
-    except Exception:
-        pass
-
-    return _collect_compare_import_symbols(*sources, limit=limit)
+    return _get_saved_tomorrow_pick_symbols(limit=limit)
 
 
 def _get_compare_search_universe() -> list[str]:
@@ -1633,8 +1614,6 @@ def _get_compare_search_universe() -> list[str]:
     extra_symbols = _collect_compare_import_symbols(
         _get_saved_tomorrow_pick_symbols(limit=_COMPARE_STOCK_LIMIT),
         st.session_state.get("compare_imported_input_symbols", []),
-        st.session_state.get("compare_last_tomorrow_pick_symbols", []),
-        st.session_state.get("compare_tomorrow_pool_symbols", []),
         current_values,
         limit=_COMPARE_STOCK_LIMIT * 4,
     )
@@ -1665,9 +1644,10 @@ def _import_compare_tomorrow_picks_to_form() -> None:
         filled_symbols = _set_compare_input_symbols(imported_symbols)
         if filled_symbols:
             noun = "stock" if len(filled_symbols) == 1 else "stocks"
+            preview = ", ".join(filled_symbols[:8])
             _set_compare_import_feedback(
                 "success",
-                f"Imported {len(filled_symbols)} {noun} from Tomorrow's Picks into Compare Stocks.",
+                f"Imported {len(filled_symbols)} saved {noun} from Tomorrow's Picks into Compare Stocks: {preview}.",
             )
         else:
             _set_compare_import_feedback(
@@ -4513,6 +4493,7 @@ def render_tomorrow_picks_panel() -> None:
     sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
     store["sections"] = sections
     store["picks"] = _tomorrow_flatten_sections(sections, limit=20)
+    st.session_state["tomorrow_picks_visible_symbols"] = list(store["picks"])
 
     saved_count = len(store["picks"])
     slots_left = max(0, 20 - saved_count)
@@ -5174,6 +5155,7 @@ def render_tomorrow_picks_panel() -> None:
 def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
     store, _storage_mode = _load_tomorrow_store()
     sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+    st.session_state["tomorrow_picks_visible_symbols"] = _tomorrow_flatten_sections(sections, limit=20)
     container_margin_top = "0px" if embedded else "-12px"
     container_margin_bottom = "14px" if embedded else "2px"
     shell_margin = "0 0 18px 0" if embedded else "0 0 8px 0"
