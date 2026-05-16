@@ -8,8 +8,14 @@ import pandas as pd
 
 from feature_data_manager import feature_manager
 
+COMPARE_STOCK_LIMIT = 19
+_SYMBOL_KEYS = ("Symbol", "Ticker", "ticker", "symbol", "Stock", "stock")
 
-def normalize_compare_symbols(values: list[object] | tuple[object, ...] | None, limit: int = 10) -> list[str]:
+
+def normalize_compare_symbols(
+    values: list[object] | tuple[object, ...] | None,
+    limit: int = COMPARE_STOCK_LIMIT,
+) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
     for raw in values or []:
@@ -26,6 +32,78 @@ def normalize_compare_symbols(values: list[object] | tuple[object, ...] | None, 
         if len(ordered) >= max(1, int(limit)):
             break
     return ordered
+
+
+def normalize_compare_plain_symbols(
+    values: list[object] | tuple[object, ...] | None,
+    limit: int = COMPARE_STOCK_LIMIT,
+) -> list[str]:
+    return [symbol.replace(".NS", "") for symbol in normalize_compare_symbols(values, limit=limit)]
+
+
+def _symbol_from_row(row: dict[str, Any]) -> str:
+    for key in _SYMBOL_KEYS:
+        value = row.get(key)
+        symbol = normalize_compare_plain_symbols([value], limit=1)
+        if symbol:
+            return symbol[0]
+    return ""
+
+
+def _iter_source_symbols(source: object) -> list[object]:
+    if source is None:
+        return []
+
+    if isinstance(source, pd.DataFrame):
+        return [_symbol_from_row(row.to_dict()) for _, row in source.iterrows()]
+
+    if isinstance(source, pd.Series):
+        return [_symbol_from_row(source.to_dict())]
+
+    if isinstance(source, dict):
+        symbols: list[object] = []
+        row_symbol = _symbol_from_row(source)
+        if row_symbol:
+            symbols.append(row_symbol)
+
+        sections = source.get("sections")
+        if isinstance(sections, dict):
+            for values in sections.values():
+                if isinstance(values, (list, tuple)):
+                    symbols.extend(values)
+
+        for key in ("picks", "symbols", "tickers", "records", "predictions"):
+            values = source.get(key)
+            if isinstance(values, pd.DataFrame):
+                symbols.extend(_iter_source_symbols(values))
+            elif isinstance(values, (list, tuple)):
+                for item in values:
+                    if isinstance(item, dict):
+                        symbols.extend(_iter_source_symbols(item))
+                    else:
+                        symbols.append(item)
+        return symbols
+
+    if isinstance(source, (list, tuple, set)):
+        symbols = []
+        for item in source:
+            if isinstance(item, (dict, pd.Series, pd.DataFrame)):
+                symbols.extend(_iter_source_symbols(item))
+            else:
+                symbols.append(item)
+        return symbols
+
+    return [source]
+
+
+def collect_compare_import_symbols(
+    *sources: object,
+    limit: int = COMPARE_STOCK_LIMIT,
+) -> list[str]:
+    symbols: list[object] = []
+    for source in sources:
+        symbols.extend(_iter_source_symbols(source))
+    return normalize_compare_plain_symbols(symbols, limit=limit)
 
 
 def build_compare_source_statuses(symbols: list[str]) -> list[dict[str, Any]]:

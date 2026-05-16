@@ -2532,6 +2532,14 @@ def extract_selected_symbol(value: str | None) -> str:
     return normalized
 
 
+def format_nse_stock_option(value: str | None) -> str:
+    """Return the selectbox option string used for a symbol."""
+    symbol = _normalize_symbol(value)
+    if not symbol:
+        return ""
+    return f"{symbol}{_DISPLAY_SEPARATOR}{_company_name_for_symbol(symbol)}"
+
+
 def render_nse_stock_input(
     label: str,
     *,
@@ -2544,6 +2552,14 @@ def render_nse_stock_input(
     seed_value = str(default_value or "")
     if not _SEARCH_ROWS:
         configure_nse_stock_search(None)
+
+    if key in st.session_state:
+        state_symbol = extract_selected_symbol(st.session_state.get(key))
+        state_choice = format_nse_stock_option(state_symbol) if state_symbol else ""
+        if state_choice in _SEARCH_OPTIONS:
+            st.session_state[key] = state_choice
+        elif st.session_state.get(key) not in (None, ""):
+            st.session_state.pop(key, None)
 
     default_choice = ""
     default_symbol = extract_selected_symbol(seed_value)

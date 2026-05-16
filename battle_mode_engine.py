@@ -8,7 +8,7 @@ NEW FILE ONLY — does not modify any existing file or function.
 Public API
 ──────────
     run_battle_mode(tickers, mode)  →  list[dict]
-        Build raw indicator rows (no mode filter) for up to 10 tickers.
+        Build raw indicator rows (no mode filter) for up to 19 tickers.
         Return value is fed directly to app.py's enhance_results().
 
     compute_battle_scores(df)       →  pd.DataFrame
@@ -39,6 +39,8 @@ import pandas as pd
 from strategy_engines._engine_utils import ema, rsi_vec
 from strategy_engines.mode_registry import get_mode_label_map
 from feature_data_manager import feature_manager
+
+COMPARE_STOCK_LIMIT = 19
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -94,6 +96,194 @@ def _score_lookup(label: str, mapping: dict[str, float], default: float = 0.0) -
 
 def _clip(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return float(np.clip(v, lo, hi))
+
+
+def _plain_symbol(value: object) -> str:
+    symbol = str(value or "").strip().upper()
+    if symbol.endswith(".NS"):
+        symbol = symbol[:-3]
+    return symbol
+
+
+def _row_symbol(row: pd.Series | dict) -> str:
+    try:
+        getter = row.get  # type: ignore[attr-defined]
+        return _plain_symbol(getter("Symbol", getter("Ticker", getter("ticker", ""))))
+    except Exception:
+        return ""
+
+
+def _prediction_lookup(prediction_cache: object) -> dict[str, dict]:
+    lookup: dict[str, dict] = {}
+    try:
+        if isinstance(prediction_cache, pd.DataFrame):
+            iterable = [row.to_dict() for _, row in prediction_cache.iterrows()]
+        elif isinstance(prediction_cache, dict):
+            raw = prediction_cache.get("predictions", prediction_cache.get("records", []))
+            if isinstance(raw, pd.DataFrame):
+                iterable = [row.to_dict() for _, row in raw.iterrows()]
+            elif isinstance(raw, dict):
+                iterable = list(raw.values())
+            elif isinstance(raw, (list, tuple)):
+                iterable = list(raw)
+            else:
+                iterable = [prediction_cache]
+        elif isinstance(prediction_cache, (list, tuple)):
+            iterable = list(prediction_cache)
+        else:
+            iterable = []
+
+        for item in iterable:
+            if not isinstance(item, dict):
+                continue
+            symbol = _row_symbol(item)
+            if symbol:
+                lookup[symbol] = dict(item)
+    except Exception:
+        return {}
+    return lookup
+
+
+def _text_has_any(value: object, needles: tuple[str, ...]) -> bool:
+    text = str(value or "").strip().lower()
+    return any(needle in text for needle in needles)
+
+
+def _quality_text_score(value: object, default: float = 55.0) -> float:
+    text = str(value or "").strip().upper()
+    if text in {"VERY HIGH", "EXCELLENT", "A+", "STRONG"}:
+        return 88.0
+    if text in {"HIGH", "A", "GOOD", "BUILDING", "IDEAL", "READY", "EARLY"}:
+        return 76.0
+    if text in {"MEDIUM", "B", "NORMAL", "NEUTRAL", "WATCH"}:
+        return 58.0
+    if text in {"LOW", "C", "WEAK", "LATE"}:
+        return 38.0
+    if text in {"D", "BAD", "AVOID", "TRAP", "HIGH RISK"}:
+        return 22.0
+    return default
+
+
+def _market_alignment_score(market_bias: dict | None) -> float:
+    if not isinstance(market_bias, dict):
+        return 55.0
+    bias = str(market_bias.get("bias", market_bias.get("regime", "")) or "").lower()
+    conf = _clip(_sf(market_bias.get("confidence", 50.0), 50.0))
+    if "bull" in bias or "up" in bias:
+        return _clip(60.0 + conf * 0.25)
+    if "bear" in bias or "down" in bias or "negative" in bias:
+        return _clip(46.0 - conf * 0.12)
+    if "sideways" in bias or "range" in bias or "no edge" in bias:
+        return 54.0
+    return 55.0
+
+
+def _ratio_quality(vol_ratio: float) -> float:
+    if vol_ratio >= 2.6:
+        return 76.0
+    if vol_ratio >= 1.45:
+        return 88.0
+    if vol_ratio >= 1.15:
+        return 78.0
+    if vol_ratio >= 0.95:
+        return 62.0
+    if vol_ratio >= 0.75:
+        return 48.0
+    return 32.0
+
+
+def _rsi_quality(rsi: float) -> float:
+    if 52.0 <= rsi <= 66.0:
+        return 90.0
+    if 46.0 <= rsi < 52.0:
+        return 70.0
+    if 66.0 < rsi <= 72.0:
+        return 64.0
+    if 40.0 <= rsi < 46.0:
+        return 52.0
+    if 72.0 < rsi <= 78.0:
+        return 38.0
+    return 28.0
+
+
+def _breakout_quality(dist_20d_high: float) -> float:
+    if -3.5 <= dist_20d_high <= 2.0:
+        return 86.0
+    if 2.0 < dist_20d_high <= 6.5:
+        return 72.0
+    if -7.5 <= dist_20d_high < -3.5:
+        return 62.0
+    if 6.5 < dist_20d_high <= 11.0:
+        return 48.0
+    if dist_20d_high < -12.0:
+        return 36.0
+    return 40.0
+
+
+def _extension_quality(dist_ema20: float) -> float:
+    if -1.0 <= dist_ema20 <= 4.0:
+        return 88.0
+    if 4.0 < dist_ema20 <= 7.0:
+        return 66.0
+    if -4.0 <= dist_ema20 < -1.0:
+        return 58.0
+    if 7.0 < dist_ema20 <= 10.0:
+        return 38.0
+    return 30.0
+
+
+def _smart_verdict(score: float, bull_prob: float, trap_score: float) -> str:
+    if trap_score >= 76.0:
+        return "TRAP WARNING"
+    if score >= 76.0 and bull_prob >= 66.0 and trap_score <= 45.0:
+        return "BEST POTENTIAL"
+    if score >= 66.0 and bull_prob >= 58.0:
+        return "STRONG CANDIDATE"
+    if score >= 56.0:
+        return "WATCHLIST"
+    return "LOW EDGE"
+
+
+def _smart_notes(
+    *,
+    momentum: float,
+    volume: float,
+    setup: float,
+    regime: float,
+    trap: float,
+    rsi: float,
+    dist_ema20: float,
+    vol_ratio: float,
+    setup_type: str,
+) -> str:
+    strengths: list[str] = []
+    cautions: list[str] = []
+    if setup >= 72.0:
+        strengths.append("clean setup")
+    if momentum >= 72.0:
+        strengths.append("strong momentum")
+    if volume >= 70.0:
+        strengths.append("volume support")
+    if regime >= 64.0:
+        strengths.append("regime/sector support")
+    if setup_type:
+        strengths.append(str(setup_type).strip().lower())
+
+    if trap >= 70.0:
+        cautions.append("elevated trap risk")
+    elif trap >= 55.0:
+        cautions.append("some trap risk")
+    if rsi > 72.0:
+        cautions.append("RSI exhaustion")
+    if dist_ema20 > 7.0:
+        cautions.append("extended above EMA20")
+    if vol_ratio < 0.85:
+        cautions.append("thin volume")
+
+    left = ", ".join(strengths[:3]) if strengths else "mixed but comparable setup"
+    if cautions:
+        return f"{left} | caution: {', '.join(cautions[:2])}"
+    return left
 
 
 def _battle_verdict(
@@ -293,13 +483,13 @@ def _build_battle_row(ticker_ns: str, mode: int, df: pd.DataFrame | None = None)
 
 def run_battle_mode(tickers: list[str], mode: int) -> list[dict]:
     """
-    Build raw indicator rows for up to 10 tickers.
+    Build raw indicator rows for up to 19 tickers.
 
     Parameters
     ----------
     tickers : list[str]
         User-supplied ticker symbols (with or without .NS suffix).
-        Capped at 10 internally.
+        Capped at 19 internally.
     mode : int
         Strategy mode. Used only to set the "Mode" label and to
         configure engine functions — no scan filter is applied.
@@ -317,7 +507,7 @@ def run_battle_mode(tickers: list[str], mode: int) -> list[dict]:
         # ── 1. Clean and cap tickers ──────────────────────────────────
         cleaned: list[str] = []
         seen: set[str] = set()
-        for raw in tickers[:10]:
+        for raw in tickers[:COMPARE_STOCK_LIMIT]:
             t = str(raw).strip().upper()
             if not t:
                 continue
@@ -360,7 +550,12 @@ def run_battle_mode(tickers: list[str], mode: int) -> list[dict]:
 # PUBLIC: compute_battle_scores — ADDITIVE only, new columns only
 # ─────────────────────────────────────────────────────────────────────
 
-def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
+def compute_battle_scores(
+    df: pd.DataFrame,
+    market_bias: dict | None = None,
+    prediction_cache: object = None,
+    sector_context: dict | None = None,
+) -> pd.DataFrame:
     """
     Add battle comparison columns to an already-enriched
     DataFrame (after enhance_results + grading + enhanced_logic + phase4).
@@ -378,6 +573,8 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
             return df
 
         out = df.copy()
+        prediction_map = _prediction_lookup(prediction_cache)
+        market_alignment_base = _market_alignment_score(market_bias)
 
         battle_scores: list[float] = []
         battle_probs: list[float] = []
@@ -385,6 +582,21 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
         battle_qualities: list[float] = []
         battle_verdicts: list[str] = []
         battle_notes: list[str] = []
+        smart_scores: list[float] = []
+        bullish_probs: list[float] = []
+        smart_confidences: list[float] = []
+        momentum_scores: list[float] = []
+        volume_scores: list[float] = []
+        trap_scores: list[float] = []
+        setup_scores: list[float] = []
+        regime_scores: list[float] = []
+        historical_scores: list[float] = []
+        risk_reward_scores: list[float] = []
+        sector_scores: list[float] = []
+        smart_verdicts: list[str] = []
+        smart_notes: list[str] = []
+        trap_warnings: list[str] = []
+        compare_tags: list[str] = []
 
         for idx in out.index:
             try:
@@ -599,6 +811,227 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
                 elif final_signal == "AVOID":
                     bs = min(bs, 47.0)
 
+                symbol = _row_symbol(row)
+                pred_ctx = prediction_map.get(symbol, {})
+                if isinstance(sector_context, dict):
+                    try:
+                        sector_by_symbol = sector_context.get("by_symbol", {})
+                        if isinstance(sector_by_symbol, dict):
+                            pred_ctx = {**dict(sector_by_symbol.get(symbol, {}) or {}), **pred_ctx}
+                    except Exception:
+                        pass
+
+                price = _get_value(row, "Close", "Price", default=0.0, contains=("price",))
+                ema20 = _get_value(row, "EMA 20", "EMA20", default=0.0, contains=("ema", "20"))
+                ema50 = _get_value(row, "EMA 50", "EMA50", default=0.0, contains=("ema", "50"))
+                ema_alignment = 50.0
+                if price > 0 and ema20 > 0:
+                    ema_alignment += 20.0 if price >= ema20 else -16.0
+                if ema20 > 0 and ema50 > 0:
+                    ema_alignment += 18.0 if ema20 >= ema50 else -14.0
+                if -1.0 <= dist_ema20 <= 4.5:
+                    ema_alignment += 10.0
+                elif dist_ema20 > 8.0 or dist_ema20 < -5.0:
+                    ema_alignment -= 10.0
+                ema_alignment = _clip(ema_alignment)
+
+                rsi_quality = _rsi_quality(rsi)
+                trend_cleanliness = _clip(
+                    50.0
+                    + float(np.clip(ret_5d * 3.2, -18.0, 18.0))
+                    + float(np.clip(ret_20d * 1.25, -18.0, 18.0))
+                )
+                if ret_5d > 0.0 and ret_20d > 0.0:
+                    trend_cleanliness += 5.0
+                elif ret_5d < 0.0 and ret_20d < 0.0:
+                    trend_cleanliness -= 8.0
+                trend_cleanliness = _clip(trend_cleanliness)
+
+                breakout_quality = _breakout_quality(dist_20d_high)
+                extension_quality = _extension_quality(dist_ema20)
+                momentum_quality = _clip(
+                    0.28 * rsi_quality
+                    + 0.24 * ema_alignment
+                    + 0.22 * trend_cleanliness
+                    + 0.16 * breakout_quality
+                    + 0.10 * extension_quality
+                )
+
+                vol_ratio_quality = _ratio_quality(vol_avg)
+                volume_text_quality = _quality_text_score(volume_trend, default=58.0)
+                volume_confirmation = _quality_text_score(
+                    _get_text(row, "Volume Confirmation", "Volume Strength", default=volume_trend),
+                    default=volume_text_quality,
+                )
+                volume_quality = _clip(
+                    0.48 * vol_ratio_quality
+                    + 0.30 * volume_text_quality
+                    + 0.22 * volume_confirmation
+                )
+                suspicious_low_volume = vol_avg < 0.85 and (ret_5d > 1.5 or dist_20d_high >= -4.0)
+                if suspicious_low_volume:
+                    volume_quality = _clip(volume_quality - 14.0)
+
+                trap_score = _score_lookup(
+                    trap_risk,
+                    {"HIGH": 76.0, "MEDIUM": 52.0, "LOW": 24.0},
+                    default=38.0,
+                )
+                if advanced_trap and advanced_trap not in {"NONE", "N/A", "NA"}:
+                    trap_score += 15.0
+                if rsi > 72.0:
+                    trap_score += 12.0
+                if dist_ema20 > 7.0:
+                    trap_score += 14.0
+                if ret_20d > 18.0 and rsi > 66.0:
+                    trap_score += 9.0
+                if suspicious_low_volume:
+                    trap_score += 12.0
+                if final_signal == "TRAP":
+                    trap_score += 20.0
+                elif final_signal == "AVOID":
+                    trap_score += 8.0
+                trap_score = _clip(trap_score)
+
+                grade_quality = _quality_text_score(_get_text(row, "Grade", default="B"), default=56.0)
+                setup_text_quality = _quality_text_score(setup_quality, default=58.0)
+                timing_quality = _quality_text_score(entry_timing, default=56.0)
+                setup_cleanliness = _clip(
+                    0.30 * setup_text_quality
+                    + 0.20 * timing_quality
+                    + 0.20 * grade_quality
+                    + 0.18 * extension_quality
+                    + 0.12 * volume_quality
+                    - 0.34 * trap_score
+                    + 28.0
+                )
+
+                tomorrow_score = _sf(
+                    pred_ctx.get("score", pred_ctx.get("raw_score", pred_score)),
+                    pred_score,
+                )
+                tomorrow_conf = _sf(pred_ctx.get("confidence", confidence), confidence)
+                learned_prob = _sf(
+                    pred_ctx.get("learned_probability", _get_value(row, "Learned Prob %", default=ml_pct)),
+                    ml_pct,
+                )
+                pred_direction = str(pred_ctx.get("direction", "") or "").upper()
+
+                sector_strength = _get_value(
+                    row,
+                    "Sector Strength",
+                    "sector_strength",
+                    default=_sf(pred_ctx.get("sector_accuracy", 55.0), 55.0),
+                    contains=("sector", "strength"),
+                )
+                sector_momentum = _get_value(
+                    row,
+                    "Sector Momentum",
+                    "momentum_score",
+                    default=sector_strength,
+                    contains=("sector", "momentum"),
+                )
+                sector_accuracy = _sf(pred_ctx.get("sector_accuracy", sector_strength), sector_strength)
+                sector_support = _clip(0.48 * sector_strength + 0.30 * sector_momentum + 0.22 * sector_accuracy)
+                regime_fit = _sf(pred_ctx.get("regime_fit", market_alignment_base), market_alignment_base)
+                market_alignment = market_alignment_base
+                if "BEAR" in pred_direction:
+                    market_alignment = min(market_alignment, 48.0)
+                elif "BULL" in pred_direction:
+                    market_alignment = max(market_alignment, 58.0)
+                regime_alignment = _clip(0.42 * market_alignment + 0.35 * sector_support + 0.23 * regime_fit)
+
+                backtest = _get_value(row, "Backtest %", "Historical Win %", default=confidence)
+                scanner_reliability = _get_value(row, "Scanner Reliability", "Mode Reliability", default=confidence)
+                historical_reliability = _clip(
+                    0.24 * backtest
+                    + 0.22 * learned_prob
+                    + 0.18 * ml_pct
+                    + 0.16 * confidence
+                    + 0.12 * scanner_reliability
+                    + 0.08 * consistency_score
+                )
+
+                risk_reward = _clip(
+                    0.32 * setup_cleanliness
+                    + 0.24 * momentum_quality
+                    + 0.18 * (100.0 - risk_score)
+                    + 0.16 * breakout_quality
+                    + 0.10 * extension_quality
+                    - 0.22 * trap_score
+                    + 18.0
+                )
+
+                bullish_probability = _clip(
+                    0.45 * battle_prob
+                    + 0.22 * tomorrow_score
+                    + 0.12 * tomorrow_conf
+                    + 0.09 * momentum_quality
+                    + 0.07 * volume_quality
+                    + 0.05 * regime_alignment
+                    - 0.12 * trap_score
+                )
+                if "BEAR" in pred_direction:
+                    bullish_probability = min(bullish_probability, 48.0)
+                elif "BULL" in pred_direction:
+                    bullish_probability = _clip(bullish_probability + 3.0)
+
+                smart_score = _clip(
+                    0.24 * bullish_probability
+                    + 0.18 * setup_cleanliness
+                    + 0.16 * momentum_quality
+                    + 0.12 * volume_quality
+                    + 0.12 * risk_reward
+                    + 0.10 * regime_alignment
+                    + 0.08 * historical_reliability
+                    - 0.12 * trap_score
+                    + 10.0
+                )
+                smart_confidence = _clip(
+                    0.38 * battle_conf
+                    + 0.24 * historical_reliability
+                    + 0.18 * tomorrow_conf
+                    + 0.12 * consistency_score
+                    + 0.08 * (100.0 - trap_score)
+                )
+
+                trap_warning = ""
+                if trap_score >= 72.0:
+                    trap_warning = "High trap risk"
+                elif trap_score >= 56.0:
+                    trap_warning = "Watch trap risk"
+                elif suspicious_low_volume:
+                    trap_warning = "Low-volume move"
+                else:
+                    trap_warning = "Clean"
+
+                tags: list[str] = []
+                if bullish_probability >= 66.0:
+                    tags.append("Probability")
+                if setup_cleanliness >= 70.0:
+                    tags.append("Clean")
+                if momentum_quality >= 72.0:
+                    tags.append("Momentum")
+                if volume_quality >= 70.0:
+                    tags.append("Volume")
+                if regime_alignment >= 64.0:
+                    tags.append("Regime")
+                if trap_score >= 56.0:
+                    tags.append("Trap Watch")
+                if not tags:
+                    tags.append("Mixed")
+
+                smart_note = _smart_notes(
+                    momentum=momentum_quality,
+                    volume=volume_quality,
+                    setup=setup_cleanliness,
+                    regime=regime_alignment,
+                    trap=trap_score,
+                    rsi=rsi,
+                    dist_ema20=dist_ema20,
+                    vol_ratio=vol_avg,
+                    setup_type=setup_type,
+                )
                 verdict = _battle_verdict(bs, battle_prob, battle_conf, final_signal, trap_risk)
                 notes = _battle_notes(
                     final_signal=final_signal,
@@ -619,6 +1052,21 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
                 battle_qualities.append(round(quality_score, 2))
                 battle_verdicts.append(verdict)
                 battle_notes.append(notes)
+                smart_scores.append(round(smart_score, 2))
+                bullish_probs.append(round(bullish_probability, 2))
+                smart_confidences.append(round(smart_confidence, 2))
+                momentum_scores.append(round(momentum_quality, 2))
+                volume_scores.append(round(volume_quality, 2))
+                trap_scores.append(round(trap_score, 2))
+                setup_scores.append(round(setup_cleanliness, 2))
+                regime_scores.append(round(regime_alignment, 2))
+                historical_scores.append(round(historical_reliability, 2))
+                risk_reward_scores.append(round(risk_reward, 2))
+                sector_scores.append(round(sector_support, 2))
+                smart_verdicts.append(_smart_verdict(smart_score, bullish_probability, trap_score))
+                smart_notes.append(smart_note)
+                trap_warnings.append(trap_warning)
+                compare_tags.append(", ".join(tags))
             except Exception:
                 battle_scores.append(0.0)
                 battle_probs.append(50.0)
@@ -626,6 +1074,21 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
                 battle_qualities.append(45.0)
                 battle_verdicts.append("WATCHLIST")
                 battle_notes.append("mixed setup")
+                smart_scores.append(45.0)
+                bullish_probs.append(50.0)
+                smart_confidences.append(40.0)
+                momentum_scores.append(45.0)
+                volume_scores.append(45.0)
+                trap_scores.append(55.0)
+                setup_scores.append(45.0)
+                regime_scores.append(55.0)
+                historical_scores.append(50.0)
+                risk_reward_scores.append(45.0)
+                sector_scores.append(55.0)
+                smart_verdicts.append("WATCHLIST")
+                smart_notes.append("mixed setup")
+                trap_warnings.append("Check manually")
+                compare_tags.append("Mixed")
 
         out["Battle Score"] = battle_scores
         out["Battle Probability"] = battle_probs
@@ -633,6 +1096,21 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
         out["Battle Quality"] = battle_qualities
         out["Battle Verdict"] = battle_verdicts
         out["Battle Notes"] = battle_notes
+        out["Smart Potential Score"] = smart_scores
+        out["Bullish Probability"] = bullish_probs
+        out["Smart Confidence"] = smart_confidences
+        out["Momentum Quality"] = momentum_scores
+        out["Volume Quality"] = volume_scores
+        out["Trap Risk Score"] = trap_scores
+        out["Setup Cleanliness"] = setup_scores
+        out["Regime Alignment"] = regime_scores
+        out["Historical Reliability"] = historical_scores
+        out["Risk Reward Score"] = risk_reward_scores
+        out["Sector Support"] = sector_scores
+        out["Smart Verdict"] = smart_verdicts
+        out["Smart Notes"] = smart_notes
+        out["Trap Warning"] = trap_warnings
+        out["Compare Tags"] = compare_tags
 
         # ── Within-group relative normalization ───────────────────────
         # When all stocks score similarly (e.g. 70–75), raw scores look identical.
@@ -667,20 +1145,24 @@ def compute_battle_scores(df: pd.DataFrame) -> pd.DataFrame:
             if "TRAP" not in fs_n.upper() and "AVOID" not in fs_n.upper():
                 out.at[idx2, "Battle Verdict"] = _battle_verdict(bs_n, bp_n, bc_n, "WATCH", "LOW")
 
-        # Sort descending by Battle Score
-        out = out.sort_values("Battle Score", ascending=False).reset_index(drop=True)
+        # Sort by the smart selector score while preserving legacy Battle columns.
+        sort_col = "Smart Potential Score" if "Smart Potential Score" in out.columns else "Battle Score"
+        out = out.sort_values(sort_col, ascending=False).reset_index(drop=True)
 
         # Assign rank (1-based)
         out["Battle Rank"] = range(1, len(out) + 1)
+        out["Smart Rank"] = out["Battle Rank"]
         if len(out) > 1:
             edges = []
-            scores = out["Battle Score"].tolist()
+            scores = out[sort_col].tolist()
             for i, score in enumerate(scores):
                 next_score = scores[i + 1] if i + 1 < len(scores) else score
                 edges.append(round(float(score - next_score), 2))
             out["Battle Edge"] = edges
+            out["Smart Edge"] = edges
         else:
             out["Battle Edge"] = [0.0]
+            out["Smart Edge"] = [0.0]
 
         return out
 

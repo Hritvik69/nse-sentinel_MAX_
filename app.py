@@ -1199,6 +1199,7 @@ _get_shared_market_frame = getattr(
 )
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
+    format_nse_stock_option,
     render_nse_stock_input,
 )
 # preload_history_batch removed — use preload_all() directly
@@ -1327,7 +1328,9 @@ except Exception:
         return None
 
 from app_compare_stocks_section import (
+    COMPARE_STOCK_LIMIT as _COMPARE_STOCK_LIMIT,
     build_compare_source_statuses as _build_compare_source_statuses,
+    collect_compare_import_symbols as _collect_compare_import_symbols,
     load_compare_results as _load_compare_results,
     normalize_compare_symbols as _normalize_compare_symbols,
     save_compare_results as _save_compare_results,
@@ -1518,6 +1521,163 @@ def _normalize_tomorrow_symbols(values: list[object] | tuple[object, ...] | None
         if len(symbols) >= limit:
             break
     return symbols
+
+
+def _set_compare_input_symbols(symbols: list[object] | tuple[object, ...] | None) -> list[str]:
+    normalized = _collect_compare_import_symbols(symbols, limit=_COMPARE_STOCK_LIMIT)
+    for idx in range(1, _COMPARE_STOCK_LIMIT + 1):
+        key = f"battle_t{idx}"
+        if idx <= len(normalized):
+            st.session_state[key] = format_nse_stock_option(normalized[idx - 1])
+        else:
+            st.session_state.pop(key, None)
+    return normalized
+
+
+def _compare_prediction_cache_source() -> pd.DataFrame:
+    cached = st.session_state.get("tomorrow_predictions")
+    if isinstance(cached, pd.DataFrame) and not cached.empty:
+        df = cached.copy()
+    else:
+        master_path = Path(_HERE) / "data" / "tomorrow_master_predictions.csv"
+        try:
+            df = pd.read_csv(master_path) if master_path.exists() else pd.DataFrame()
+        except Exception:
+            df = pd.DataFrame()
+
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame()
+
+    working = df.copy()
+    text_cols = []
+    for col in ("direction", "action", "label_tag", "risk"):
+        if col in working.columns:
+            text_cols.append(working[col].astype(str))
+    if text_cols:
+        combined = text_cols[0]
+        for series in text_cols[1:]:
+            combined = combined + " " + series
+        combined = combined.str.lower()
+        preferred = working.loc[
+            combined.str.contains("bullish|buy|watch|upside|sideways", regex=True, na=False)
+            & ~combined.str.contains("avoid|bearish|breakdown", regex=True, na=False)
+        ].copy()
+        if not preferred.empty:
+            working = preferred
+
+    return working
+
+
+def _get_compare_tomorrow_import_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
+    sources: list[object] = [
+        st.session_state.get("compare_last_tomorrow_pick_symbols", []),
+        st.session_state.get("compare_tomorrow_pool_symbols", []),
+        st.session_state.get("compare_tomorrow_pool_df", pd.DataFrame()),
+        _compare_prediction_cache_source(),
+    ]
+
+    try:
+        store, _storage_mode = _load_tomorrow_store()
+        sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        sources.append(_tomorrow_flatten_sections(sections, limit=20))
+    except Exception:
+        pass
+
+    try:
+        records = _get_imported_ai_learning_records()
+        sources.append(records)
+    except Exception:
+        pass
+
+    try:
+        scan_df = st.session_state.get("last_scan_df")
+        if isinstance(scan_df, pd.DataFrame) and not scan_df.empty:
+            from strategy_engines._engine_utils import get_tomorrow_top_picks
+
+            sources.append(get_tomorrow_top_picks(scan_df, source="main", top_n=limit))
+    except Exception:
+        pass
+
+    return _collect_compare_import_symbols(*sources, limit=limit)
+
+
+def _compare_numeric_row(df: pd.DataFrame, column: str, *, highest: bool = True) -> pd.Series | None:
+    if not isinstance(df, pd.DataFrame) or df.empty or column not in df.columns:
+        return None
+    values = pd.to_numeric(df[column], errors="coerce")
+    if values.dropna().empty:
+        return None
+    idx = values.idxmax() if highest else values.idxmin()
+    try:
+        return df.loc[idx]
+    except Exception:
+        return None
+
+
+def _compare_row_symbol(row: pd.Series | None) -> str:
+    if row is None:
+        return "-"
+    return _normalize_tomorrow_symbol(row.get("Symbol", row.get("Ticker", "-"))) or "-"
+
+
+def _compare_row_reason(row: pd.Series | None) -> str:
+    if row is None:
+        return "No comparable row available."
+    reason = str(row.get("Smart Notes", row.get("Battle Notes", "")) or "").strip()
+    if reason:
+        return reason
+    return str(row.get("Compare Tags", "mixed setup") or "mixed setup")
+
+
+def _render_compare_intelligence_summary(compare_df: pd.DataFrame) -> None:
+    if not isinstance(compare_df, pd.DataFrame) or compare_df.empty:
+        return
+
+    items = [
+        ("🏆 Strongest Bullish Setup", "Bullish Probability", True, "#00d4a8"),
+        ("📈 Highest Momentum", "Momentum Quality", True, "#0094ff"),
+        ("🛡 Safest Structure", "Setup Cleanliness", True, "#8cf08c"),
+        ("⚖ Best Risk/Reward", "Risk Reward Score", True, "#f0b429"),
+        ("🔥 Best Sector Alignment", "Regime Alignment", True, "#b08cff"),
+        ("⚠ Highest Trap Risk", "Trap Risk Score", True, "#ff4d6d"),
+    ]
+    cards: list[str] = []
+    for label, column, highest, color in items:
+        row = _compare_numeric_row(compare_df, column, highest=highest)
+        symbol = _compare_row_symbol(row)
+        value = 0.0 if row is None else float(pd.to_numeric(pd.Series([row.get(column, 0.0)]), errors="coerce").fillna(0.0).iloc[0])
+        reason = _compare_row_reason(row)
+        cards.append(
+            f'<div style="background:#0b1017;border:1px solid #1e3a5f;border-left:4px solid {color};'
+            f'border-radius:10px;padding:14px 15px;">'
+            f'<div style="font-size:11px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">{html.escape(label)}</div>'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:7px;">'
+            f'<div style="font-size:20px;font-weight:900;color:#ccd9e8;">{html.escape(symbol)}</div>'
+            f'<div style="font-size:18px;font-weight:900;color:{color};">{value:.1f}</div>'
+            f'</div>'
+            f'<div style="font-size:12px;color:#8ab4d8;line-height:1.55;margin-top:8px;">{html.escape(reason)}</div>'
+            f'</div>'
+        )
+
+    top_row = compare_df.iloc[0]
+    top_symbol = _compare_row_symbol(top_row)
+    top_score = float(pd.to_numeric(pd.Series([top_row.get("Smart Potential Score", top_row.get("Battle Score", 0.0))]), errors="coerce").fillna(0.0).iloc[0])
+    top_verdict = str(top_row.get("Smart Verdict", top_row.get("Battle Verdict", "BEST PICK")) or "BEST PICK")
+    top_reason = _compare_row_reason(top_row)
+    st.markdown(
+        f'<div style="background:linear-gradient(135deg,#0b1017 58%,rgba(240,180,41,0.14));'
+        f'border:1.5px solid #f0b429;border-radius:14px;padding:16px 18px;margin:16px 0;">'
+        f'<div style="font-size:10px;color:#4a6480;letter-spacing:1.4px;text-transform:uppercase;">Top Pick Banner</div>'
+        f'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:6px;">'
+        f'<div><div style="font-size:26px;font-weight:900;color:#f0b429;">{html.escape(top_symbol)}</div>'
+        f'<div style="font-size:12px;color:#8ab4d8;margin-top:4px;">{html.escape(top_verdict)} · {html.escape(top_reason)}</div></div>'
+        f'<div style="text-align:right;"><div style="font-size:30px;font-weight:900;color:#00d4a8;">{top_score:.1f}</div>'
+        f'<div style="font-size:11px;color:#4a6480;">Smart Potential</div></div>'
+        f'</div></div>'
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:10px 0 18px 0;">'
+        f'{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _tomorrow_section_defaults() -> dict[str, list[str]]:
@@ -9412,7 +9572,7 @@ if st.session_state.get("battle_show_panel", False):
     _battle_hdr_col, _battle_close_col = st.columns([6, 1])
     with _battle_hdr_col:
         st.header("⚔️ Compare Stocks")
-        st.caption("This panel now opens in the main UI. Enter up to 10 stocks and run the full comparison here.")
+        st.caption("This panel now opens in the main UI. Enter up to 19 stocks and run the full comparison here.")
     with _battle_close_col:
         st.write("")
         _battle_close_panel = st.button("Close", key="battle_close_panel_btn", width="stretch")
@@ -9422,25 +9582,45 @@ if st.session_state.get("battle_show_panel", False):
         st.rerun()
 
     configure_nse_stock_search(_get_cached_nse_tickers())
+    _battle_import_col, _battle_spacer_col = st.columns([1.25, 2], gap="small")
+    with _battle_import_col:
+        _battle_import_picks = st.button(
+            "📥 Import All Tomorrow Picks",
+            key="battle_import_tomorrow_picks_btn",
+            width="stretch",
+        )
+    with _battle_spacer_col:
+        st.write("")
+
+    if _battle_import_picks:
+        _imported_compare_symbols = _get_compare_tomorrow_import_symbols(limit=_COMPARE_STOCK_LIMIT)
+        if not _imported_compare_symbols:
+            st.warning("No Tomorrow Prediction picks are available yet. Run a scan or save Tomorrow's Picks first.")
+        else:
+            _filled_symbols = _set_compare_input_symbols(_imported_compare_symbols)
+            st.success(f"Imported {len(_filled_symbols)} stock(s) into Compare Stocks.")
+
     with st.form("battle_mode_form", clear_on_submit=False):
-        _battle_input_col1, _battle_input_col2 = st.columns(2)
-        with _battle_input_col1:
-            _t1  = render_nse_stock_input("Stock 1",  key="battle_t1",  placeholder="e.g. RELIANCE")
-            _t2  = render_nse_stock_input("Stock 2",  key="battle_t2",  placeholder="e.g. TCS")
-            _t3  = render_nse_stock_input("Stock 3",  key="battle_t3",  placeholder="e.g. INFY")
-            _t4  = render_nse_stock_input("Stock 4",  key="battle_t4",  placeholder="e.g. HDFCBANK")
-            _t5  = render_nse_stock_input("Stock 5",  key="battle_t5",  placeholder="e.g. SBIN")
-        with _battle_input_col2:
-            _t6  = render_nse_stock_input("Stock 6",  key="battle_t6",  placeholder="e.g. ICICIBANK")
-            _t7  = render_nse_stock_input("Stock 7",  key="battle_t7",  placeholder="e.g. AXISBANK")
-            _t8  = render_nse_stock_input("Stock 8",  key="battle_t8",  placeholder="e.g. BAJFINANCE")
-            _t9  = render_nse_stock_input("Stock 9",  key="battle_t9",  placeholder="e.g. TATAMOTORS")
-            _t10 = render_nse_stock_input("Stock 10", key="battle_t10", placeholder="e.g. MARUTI")
+        _battle_examples = [
+            "RELIANCE", "TCS", "INFY", "HDFCBANK", "SBIN", "ICICIBANK", "AXISBANK",
+            "BAJFINANCE", "TATAMOTORS", "MARUTI", "BEL", "TRENT", "TATASTEEL",
+            "LT", "SUNPHARMA", "M&M", "ADANIENT", "ULTRACEMCO", "WIPRO",
+        ]
+        _battle_inputs: list[str] = []
+        _battle_input_cols = st.columns(3, gap="small")
+        for _battle_idx in range(_COMPARE_STOCK_LIMIT):
+            with _battle_input_cols[_battle_idx % len(_battle_input_cols)]:
+                _battle_inputs.append(
+                    render_nse_stock_input(
+                        f"Stock {_battle_idx + 1}",
+                        key=f"battle_t{_battle_idx + 1}",
+                        placeholder=f"e.g. {_battle_examples[_battle_idx % len(_battle_examples)]}",
+                    )
+                )
 
         _battle_main_run = st.form_submit_button("Run Battle Analysis", width="stretch")
     if _battle_main_run:
-        _all_inputs = [_t1, _t2, _t3, _t4, _t5, _t6, _t7, _t8, _t9, _t10]
-        _battle_tickers = [t.strip() for t in _all_inputs if t and t.strip()][:10]
+        _battle_tickers = [t.strip() for t in _battle_inputs if t and t.strip()][:_COMPARE_STOCK_LIMIT]
         if not _battle_tickers:
             st.warning("Please enter at least 1 stock.")
         else:
@@ -9997,12 +10177,21 @@ if _show_home_scanner and "results" in st.session_state:
 
         try:
             from strategy_engines._engine_utils import get_tomorrow_top_picks
-            _tomorrow_df = get_tomorrow_top_picks(df, source="main", top_n=3)
+            _tomorrow_pool_df = get_tomorrow_top_picks(df, source="main", top_n=_COMPARE_STOCK_LIMIT)
+            _tomorrow_df = _tomorrow_pool_df.head(3).copy()
         except Exception:
+            _tomorrow_pool_df = pd.DataFrame()
             _tomorrow_df = pd.DataFrame()
 
         if isinstance(_tomorrow_df, pd.DataFrame) and not _tomorrow_df.empty:
             _tomorrow_df = _tomorrow_df.copy()
+            if isinstance(_tomorrow_pool_df, pd.DataFrame) and not _tomorrow_pool_df.empty:
+                _tomorrow_pool_symbols = _collect_compare_import_symbols(
+                    _tomorrow_pool_df,
+                    limit=_COMPARE_STOCK_LIMIT,
+                )
+                st.session_state["compare_tomorrow_pool_df"] = _tomorrow_pool_df.copy()
+                st.session_state["compare_tomorrow_pool_symbols"] = _tomorrow_pool_symbols
             try:
                 from trade_decision_simple import apply_trade_decision_simple_any
                 _tomorrow_df = apply_trade_decision_simple_any(_tomorrow_df)
@@ -10126,6 +10315,15 @@ if _show_home_scanner and "results" in st.session_state:
                     st.info(f"Only {len(_tomorrow_df)} stocks met quality criteria today.")
             except Exception:
                 pass
+
+            _compare_tomorrow_symbols = _collect_compare_import_symbols(
+                _tomorrow_symbols,
+                st.session_state.get("compare_tomorrow_pool_symbols", []),
+                _tomorrow_pool_df if isinstance(_tomorrow_pool_df, pd.DataFrame) else pd.DataFrame(),
+                limit=_COMPARE_STOCK_LIMIT,
+            )
+            if _compare_tomorrow_symbols:
+                st.session_state["compare_last_tomorrow_pick_symbols"] = _compare_tomorrow_symbols
 
             _tomorrow_cols = [
                 "Symbol", "Tomorrow Pick Score", "AI Confidence", "AI Direction",
@@ -10385,6 +10583,15 @@ else:
                     _cached_battle_df, _cached_battle_payload = _load_compare_results(_battle_symbols)
 
                 if isinstance(_cached_battle_df, pd.DataFrame) and not _cached_battle_df.empty:
+                    if "Smart Potential Score" not in _cached_battle_df.columns:
+                        try:
+                            _cached_battle_df = compute_battle_scores(
+                                _cached_battle_df,
+                                market_bias=st.session_state.get("market_bias_result"),
+                                prediction_cache=_compare_prediction_cache_source(),
+                            )
+                        except Exception:
+                            pass
                     st.session_state["battle_results_df"] = _cached_battle_df
                     st.session_state["battle_source_statuses"] = list(_cached_battle_payload.get("source_statuses", []) or [])
                 else:
@@ -10416,7 +10623,11 @@ else:
                             _battle_df = apply_phase42_logic(_battle_df)
                         except Exception:
                             pass
-                        _battle_df = compute_battle_scores(_battle_df)
+                        _battle_df = compute_battle_scores(
+                            _battle_df,
+                            market_bias=st.session_state.get("market_bias_result"),
+                            prediction_cache=_compare_prediction_cache_source(),
+                        )
                         st.session_state["battle_results_df"] = _battle_df
                         _battle_statuses = _build_compare_source_statuses(_battle_symbols)
                         st.session_state["battle_source_statuses"] = _battle_statuses
@@ -10437,15 +10648,16 @@ else:
     _battle_df = st.session_state.get("battle_results_df", None)
     if isinstance(_battle_df, pd.DataFrame) and not _battle_df.empty:
         st.divider()
-        st.header("⚔️ Multi-Stock Battle Mode")
-        st.caption("Compare up to 10 stocks head-to-head. Full pipeline per ticker. Ranks by battle probability, quality and risk-adjusted strength.")
+        st.header("⚔️ Compare Stocks")
+        st.caption("Compare up to 19 stocks head-to-head. Ranks tomorrow picks by probability, setup quality, momentum, trap risk, regime support and risk/reward.")
 
         # ── 🥇 Winner Card ────────────────────────────────
         st.write("")
-        st.caption("🥇 Battle Winner")
+        st.caption("🏆 Best Potential Stock Selector")
         _battle_sources = _summarize_compare_sources(st.session_state.get("battle_source_statuses"))
         if _battle_sources:
             st.caption(f"Data sources: {_battle_sources}")
+        _render_compare_intelligence_summary(_battle_df)
         _w = _battle_df.iloc[0]
         _w_sym    = _w.get("Symbol", "—")
         _w_score  = _w.get("Final Score", 0)
@@ -10453,36 +10665,37 @@ else:
         _w_signal = _w.get("Signal", _w.get("Final Signal", "—"))
         _w_setup  = _w.get("Setup Type", _w.get("Volume Trend", "—"))
         _w_bat    = _w.get("Battle Score", 0)
-        _w_prob   = _w.get("Battle Probability", _w_bat)
-        _w_bconf  = _w.get("Battle Confidence", _w_conf)
-        _w_bqual  = _w.get("Battle Quality", _w_score)
-        _w_verdict = _w.get("Battle Verdict", "BETTER PICK")
-        _w_edge   = _w.get("Battle Edge", 0)
-        _w_notes  = _w.get("Battle Notes", "")
+        _w_smart  = _w.get("Smart Potential Score", _w_bat)
+        _w_prob   = _w.get("Bullish Probability", _w.get("Battle Probability", _w_bat))
+        _w_bconf  = _w.get("Smart Confidence", _w.get("Battle Confidence", _w_conf))
+        _w_bqual  = _w.get("Setup Cleanliness", _w.get("Battle Quality", _w_score))
+        _w_verdict = _w.get("Smart Verdict", _w.get("Battle Verdict", "BETTER PICK"))
+        _w_edge   = _w.get("Smart Edge", _w.get("Battle Edge", 0))
+        _w_notes  = _w.get("Smart Notes", _w.get("Battle Notes", ""))
         _w_grade  = _w.get("Grade", "—")
-        _wc       = "#00d4a8" if _w_bat >= 65 else ("#f0b429" if _w_bat >= 45 else "#ff4d6d")
+        _wc       = "#00d4a8" if _w_smart >= 65 else ("#f0b429" if _w_smart >= 45 else "#ff4d6d")
         st.markdown(
             f'<div style="background:#0b1017;border:2px solid {_wc};border-radius:16px;padding:24px 28px;">'
             f'<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">'
             f'<div style="font-size:42px;">🥇</div>'
             f'<div>'
             f'<div style="font-family:\'Syne\',sans-serif;font-size:26px;font-weight:800;color:#ccd9e8;">{_w_sym}</div>'
-            f'<div style="font-size:12px;color:#4a6480;margin-top:4px;">Battle Winner · Grade: <b style="color:{_wc}">{_w_grade}</b></div>'
+            f'<div style="font-size:12px;color:#4a6480;margin-top:4px;">Best Potential · Grade: <b style="color:{_wc}">{_w_grade}</b></div>'
             f'</div>'
             f'<div style="margin-left:auto;text-align:right;">'
-            f'<div style="font-size:32px;font-weight:800;color:{_wc};">{_w_bat:.1f}</div>'
-            f'<div style="font-size:11px;color:#4a6480;">Battle Score</div>'
+            f'<div style="font-size:32px;font-weight:800;color:{_wc};">{_w_smart:.1f}</div>'
+            f'<div style="font-size:11px;color:#4a6480;">Smart Potential</div>'
             f'</div></div>'
             f'<div style="display:flex;gap:32px;margin-top:18px;flex-wrap:wrap;">'
             f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Final Score</div>'
             f'<div style="font-size:18px;font-weight:700;color:#ccd9e8;">{_w_score:.1f}</div></div>'
-            f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Battle Probability</div>'
+            f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Bullish Probability</div>'
             f'<div style="font-size:18px;font-weight:700;color:{_wc};">{_w_prob:.0f}%</div></div>'
             f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Confidence</div>'
             f'<div style="font-size:18px;font-weight:700;color:#0094ff;">{_w_conf:.0f}%</div></div>'
-            f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Compare Confidence</div>'
+            f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Smart Confidence</div>'
             f'<div style="font-size:18px;font-weight:700;color:#7fd1ff;">{_w_bconf:.0f}%</div></div>'
-            f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Battle Quality</div>'
+            f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Setup Cleanliness</div>'
             f'<div style="font-size:18px;font-weight:700;color:#8cf08c;">{_w_bqual:.1f}</div></div>'
             f'<div><div style="font-size:10px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">Signal</div>'
             f'<div style="font-size:18px;font-weight:700;color:#f0b429;">{_w_signal}</div></div>'
@@ -10502,7 +10715,7 @@ else:
             key_prefix=f"battle_winner_{_normalize_tomorrow_symbol(_w_sym) or 'stock'}",
             scope_label="Compare Stocks winner",
             bucket=_tomorrow_bucket_for_mode(st.session_state.get("mode", 3)),
-            helper_text="Add the current battle winner into Tomorrow's Picks without reopening the compare view.",
+            helper_text="Add the current best potential stock into Tomorrow's Picks without reopening the compare view.",
         )
 
         # ── 📊 Comparison Table ───────────────────────────
@@ -10516,17 +10729,22 @@ else:
             _table_rows.append({
                 "Rank":         int(_br.get("Battle Rank", 0)),
                 "Stock":        _br.get("Symbol", "—"),
-                "Verdict":      _br.get("Battle Verdict", "WATCHLIST"),
+                "Verdict":      _br.get("Smart Verdict", _br.get("Battle Verdict", "WATCHLIST")),
+                "Smart Score":  round(float(_br.get("Smart Potential Score", _br.get("Battle Score", 0))), 1),
+                "Bullish %":    round(float(_br.get("Bullish Probability", _br.get("Battle Probability", 0))), 1),
+                "Setup Clean":  round(float(_br.get("Setup Cleanliness", _br.get("Battle Quality", 0))), 1),
+                "Momentum":     round(float(_br.get("Momentum Quality", 0)), 1),
+                "Risk/Reward":  round(float(_br.get("Risk Reward Score", 0)), 1),
+                "Regime":       round(float(_br.get("Regime Alignment", 0)), 1),
+                "Trap Risk":    round(float(_br.get("Trap Risk Score", 0)), 1),
                 "Battle Score": round(float(_br.get("Battle Score", 0)), 1),
-                "Probability %": round(float(_br.get("Battle Probability", _br.get("Battle Score", 0))), 1),
-                "Compare Conf %": round(float(_br.get("Battle Confidence", _br.get("Confidence", 50))), 1),
-                "Quality":      round(float(_br.get("Battle Quality", _br.get("Final Score", 0))), 1),
+                "Smart Conf %": round(float(_br.get("Smart Confidence", _br.get("Battle Confidence", _br.get("Confidence", 50)))), 1),
                 "Signal":       _br.get("Signal", _br.get("Final Signal", "—")),
                 "Grade":        _br.get("Grade", "—"),
-                "Risk Score":   round(float(_br.get("Risk Score", 50)), 1),
-                "Edge":         round(float(_br.get("Battle Edge", 0)), 1),
-                "⚠️ Trap Check": _trap_flag,
-                "Notes":        _br.get("Battle Notes", ""),
+                "Edge":         round(float(_br.get("Smart Edge", _br.get("Battle Edge", 0))), 1),
+                "⚠️ Trap Check": _br.get("Trap Warning", _trap_flag),
+                "Tags":         _br.get("Compare Tags", ""),
+                "Why":          _br.get("Smart Notes", _br.get("Battle Notes", "")),
             })
         st.dataframe(
             pd.DataFrame(_table_rows),
@@ -10534,16 +10752,21 @@ else:
                 "Rank":         st.column_config.NumberColumn("Rank", format="%d"),
                 "Stock":        st.column_config.TextColumn("Stock"),
                 "Verdict":      st.column_config.TextColumn("Verdict"),
+                "Smart Score":  st.column_config.NumberColumn("Smart Score", format="%.1f"),
+                "Bullish %":    st.column_config.NumberColumn("Bullish %", format="%.1f%%"),
+                "Setup Clean":  st.column_config.NumberColumn("Setup Clean", format="%.1f"),
+                "Momentum":     st.column_config.NumberColumn("Momentum", format="%.1f"),
+                "Risk/Reward":  st.column_config.NumberColumn("Risk/Reward", format="%.1f"),
+                "Regime":       st.column_config.NumberColumn("Regime", format="%.1f"),
+                "Trap Risk":    st.column_config.NumberColumn("Trap Risk", format="%.1f"),
                 "Battle Score": st.column_config.NumberColumn("Battle Score", format="%.1f"),
-                "Probability %": st.column_config.NumberColumn("Probability %", format="%.1f%%"),
-                "Compare Conf %": st.column_config.NumberColumn("Compare Conf %", format="%.1f%%"),
-                "Quality":      st.column_config.NumberColumn("Quality", format="%.1f"),
+                "Smart Conf %": st.column_config.NumberColumn("Smart Conf %", format="%.1f%%"),
                 "Signal":       st.column_config.TextColumn("Signal"),
                 "Grade":        st.column_config.TextColumn("Grade"),
-                "Risk Score":   st.column_config.NumberColumn("Risk Score", format="%.1f"),
                 "Edge":         st.column_config.NumberColumn("Edge", format="%.1f"),
                 "⚠️ Trap Check": st.column_config.TextColumn("⚠️ Trap Check"),
-                "Notes":        st.column_config.TextColumn("Notes", width="large"),
+                "Tags":         st.column_config.TextColumn("Tags"),
+                "Why":          st.column_config.TextColumn("Why", width="large"),
             },
             width="stretch",
             hide_index=True,
@@ -10556,7 +10779,8 @@ else:
             str(_r.get("Symbol", "?"))
             for _, _r in _battle_df.iterrows()
             if (str(_r.get("Trap Risk", "")).strip() == "HIGH"
-                or "Bull Trap" in str(_r.get("Trap", "")))
+                or "Bull Trap" in str(_r.get("Trap", ""))
+                or float(pd.to_numeric(pd.Series([_r.get("Trap Risk Score", 0)]), errors="coerce").fillna(0).iloc[0]) >= 72.0)
         ]
         if _trap_stocks:
             st.warning(
