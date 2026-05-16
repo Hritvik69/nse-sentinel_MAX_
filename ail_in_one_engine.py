@@ -30,6 +30,14 @@ AIL_CATEGORY_ORDER: tuple[str, ...] = (
     "Institutional",
     "Multi-Mode Leaders",
 )
+AIL_MODE_CATEGORY_MAP: dict[int, tuple[str, ...]] = {
+    1: ("Momentum",),
+    3: ("Relaxed",),
+    4: ("Institutional",),
+    5: ("Intraday",),
+    6: ("Swing",),
+    7: ("Momentum",),
+}
 
 
 @dataclass
@@ -54,6 +62,7 @@ class AILPipelineResult:
     risk_warnings: pd.DataFrame = field(default_factory=pd.DataFrame)
     confidence_meter: dict[str, Any] = field(default_factory=dict)
     learning_insights: dict[str, Any] = field(default_factory=dict)
+    health: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
 
@@ -176,17 +185,7 @@ def _normalize_tickers(tickers: list[str] | tuple[str, ...] | None) -> list[str]
 
 def _mode_categories(mode_id: int) -> list[str]:
     mode_id = int(mode_id or 0)
-    if mode_id == 3:
-        return ["Relaxed"]
-    if mode_id == 5:
-        return ["Intraday"]
-    if mode_id in {1, 7}:
-        return ["Momentum"]
-    if mode_id in {2, 6}:
-        return ["Swing"]
-    if mode_id == 4:
-        return ["Institutional"]
-    return []
+    return list(AIL_MODE_CATEGORY_MAP.get(mode_id, ()))
 
 
 def _is_breakout_row(row: pd.Series | dict[str, Any]) -> bool:
@@ -895,6 +894,29 @@ def collect_learning_insights(
     return insights
 
 
+def build_health_summary(result: AILPipelineResult, *, logged_predictions: int = 0) -> dict[str, Any]:
+    mode_df = pd.DataFrame(result.mode_summaries)
+    raw_hits = 0
+    enhanced = 0
+    failed_modes = 0
+    if not mode_df.empty:
+        if "Raw Hits" in mode_df.columns:
+            raw_hits = int(pd.to_numeric(mode_df["Raw Hits"], errors="coerce").fillna(0).sum())
+        if "Enhanced Candidates" in mode_df.columns:
+            enhanced = int(pd.to_numeric(mode_df["Enhanced Candidates"], errors="coerce").fillna(0).sum())
+        if "Error" in mode_df.columns:
+            failed_modes = int(mode_df["Error"].fillna("").astype(str).str.strip().ne("").sum())
+    return {
+        "modes_scanned": int(len(result.modes_scanned)),
+        "raw_hits": raw_hits,
+        "enhanced_candidates": enhanced,
+        "ranked_candidates": int(len(result.final_ranked_df)) if isinstance(result.final_ranked_df, pd.DataFrame) else 0,
+        "aura_verdicts": int(len(result.aura_verdicts or [])),
+        "logged_predictions": int(logged_predictions or 0),
+        "failed_modes": failed_modes,
+    }
+
+
 def log_ail_predictions(
     final_df: pd.DataFrame,
     *,
@@ -913,9 +935,26 @@ def log_ail_predictions(
         log_df["Mode"] = log_df.get("Mode ID", 0)
     try:
         fn = log_scan_predictions_fn
+        read_feedback_fn = None
         if not callable(fn):
             from prediction_feedback_store import log_scan_predictions as fn  # type: ignore[no-redef]
+            try:
+                from prediction_feedback_store import read_feedback_log as read_feedback_fn  # type: ignore[no-redef]
+            except Exception:
+                read_feedback_fn = None
+        before_count = None
+        if callable(read_feedback_fn):
+            try:
+                before_count = len(read_feedback_fn())
+            except Exception:
+                before_count = None
         fn(log_df, 0, market_bias)
+        if callable(read_feedback_fn) and before_count is not None:
+            try:
+                after_count = len(read_feedback_fn())
+                return max(0, int(after_count) - int(before_count)), ""
+            except Exception:
+                pass
         return int(len(log_df)), ""
     except Exception as exc:
         return 0, str(exc)
@@ -1094,6 +1133,7 @@ def run_ail_pipeline(
         market_bias=result.market_bias,
         log_scan_predictions_fn=log_scan_predictions_fn,
     )
+    result.health = build_health_summary(result, logged_predictions=logged)
     result.learning_insights = collect_learning_insights(logged_predictions=logged, log_error=log_error)
 
     result.elapsed_sec = round(time.time() - started, 2)
@@ -1104,6 +1144,7 @@ def run_ail_pipeline(
 __all__ = [
     "AIL_MODES",
     "AIL_CATEGORY_ORDER",
+    "AIL_MODE_CATEGORY_MAP",
     "AILPipelineResult",
     "run_ail_pipeline",
     "classify_scan_results",
@@ -1113,4 +1154,5 @@ __all__ = [
     "build_sector_strength",
     "build_risk_warnings",
     "build_confidence_meter",
+    "build_health_summary",
 ]

@@ -85,6 +85,38 @@ def _render_dataframe(df: pd.DataFrame, cols: list[str], *, height: int | None =
     st.dataframe(view, **dataframe_kwargs)
 
 
+def _render_health_status(result: AILPipelineResult, mode_df: pd.DataFrame) -> None:
+    health = result.health if isinstance(result.health, dict) else {}
+    raw_hits = health.get("raw_hits")
+    enhanced = health.get("enhanced_candidates")
+    if raw_hits is None and isinstance(mode_df, pd.DataFrame) and "Raw Hits" in mode_df.columns:
+        raw_hits = int(pd.to_numeric(mode_df["Raw Hits"], errors="coerce").fillna(0).sum())
+    if enhanced is None and isinstance(mode_df, pd.DataFrame) and "Enhanced Candidates" in mode_df.columns:
+        enhanced = int(pd.to_numeric(mode_df["Enhanced Candidates"], errors="coerce").fillna(0).sum())
+    items = [
+        ("Modes", int(health.get("modes_scanned", len(result.modes_scanned)) or 0), "#0094ff"),
+        ("Raw Hits", int(raw_hits or 0), "#f0b429"),
+        ("Enhanced", int(enhanced or 0), "#00d4a8"),
+        ("Ranked", int(health.get("ranked_candidates", len(result.final_ranked_df)) or 0), "#b08cff"),
+        ("Aura", int(health.get("aura_verdicts", len(result.aura_verdicts or [])) or 0), "#7fd1ff"),
+        ("Logged", int(health.get("logged_predictions", 0) or 0), "#8cf08c"),
+    ]
+    cards = [
+        f'<div style="background:#08111b;border:1px solid rgba(55,91,130,0.68);'
+        f'border-radius:8px;padding:10px 12px;">'
+        f'<div style="font-size:9px;color:#4a6480;text-transform:uppercase;letter-spacing:1px;">{html.escape(label)}</div>'
+        f'<div style="font-size:20px;font-weight:900;color:{color};margin-top:3px;">{value:,}</div>'
+        f'</div>'
+        for label, value, color in items
+    ]
+    st.markdown(
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin:8px 0 14px 0;">'
+        + "".join(cards)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _top_buy_tomorrow(aura_df: pd.DataFrame, final_df: pd.DataFrame) -> pd.Series | None:
     if isinstance(aura_df, pd.DataFrame) and not aura_df.empty:
         text = (
@@ -123,6 +155,7 @@ def _render_market_scan_summary(result: AILPipelineResult) -> None:
         f"Preload ready rows: {preload_ready:,} | Snapshot loaded: {int(result.preload_stats.get('snapshot_loaded', 0) or 0):,} | "
         f"Enhanced candidates: {enhanced:,}"
     )
+    _render_health_status(result, mode_df)
     _render_dataframe(mode_df, ["Mode", "Mode Name", "Raw Hits", "Enhanced Candidates", "Elapsed Sec", "Error"])
 
 

@@ -671,6 +671,180 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertTrue(captured.get("hide_index"))
         self.assertNotIn("height", captured)
 
+    def test_ail_category_mapping_uses_mode_registry_truth(self) -> None:
+        from ail_in_one_engine import classify_scan_results
+
+        categories = classify_scan_results(
+            pd.DataFrame(
+                [
+                    {"Symbol": "M1MOM", "Mode ID": 1},
+                    {"Symbol": "M2BAL", "Mode ID": 2},
+                    {"Symbol": "M3RELAX", "Mode ID": 3},
+                    {"Symbol": "M4INST", "Mode ID": 4},
+                    {"Symbol": "M5INTRA", "Mode ID": 5},
+                    {"Symbol": "M6SWING", "Mode ID": 6},
+                    {"Symbol": "M7MOM", "Mode ID": 7},
+                ]
+            )
+        )
+
+        def symbols(name: str) -> set[str]:
+            frame = categories.get(name, pd.DataFrame())
+            return set(frame["Symbol"].tolist()) if isinstance(frame, pd.DataFrame) and "Symbol" in frame else set()
+
+        selfEqual = self.assertEqual
+        selfEqual(symbols("Relaxed"), {"M3RELAX"})
+        selfEqual(symbols("Intraday"), {"M5INTRA"})
+        selfEqual(symbols("Momentum"), {"M1MOM", "M7MOM"})
+        selfEqual(symbols("Swing"), {"M6SWING"})
+        selfEqual(symbols("Institutional"), {"M4INST"})
+        self.assertNotIn("M2BAL", symbols("Swing"))
+
+    def test_ail_pipeline_orchestrates_modes_battle_aura_and_logging(self) -> None:
+        from ail_in_one_engine import AIL_CATEGORY_ORDER, AIL_MODES, run_ail_pipeline
+
+        tickers = ["AAA", "BBB", "NOHIST"]
+        all_data = {
+            "AAA.NS": _sample_ohlcv(periods=45),
+            "BBB.NS": _sample_ohlcv(periods=45, close_start=120.0),
+        }
+        scan_calls: list[int] = []
+        battle_calls: list[int] = []
+        aura_calls: list[str] = []
+        logged_frames: list[pd.DataFrame] = []
+
+        def fake_scan(symbols, mode, workers=12):
+            scan_calls.append(int(mode))
+            rows = []
+            for idx, symbol in enumerate(symbols):
+                rows.append(
+                    {
+                        "Symbol": symbol,
+                        "Final Score": 72 + idx + int(mode),
+                        "Prediction Score": 66 + idx + int(mode),
+                        "Confidence": 60 + idx,
+                        "RSI": 54 + idx,
+                        "Vol / Avg": 1.4,
+                        "Delta vs 20D High (%)": -1.0,
+                        "Signal": "BUY",
+                    }
+                )
+            return rows, 0.01
+
+        def fake_enhance(rows, mode):
+            return pd.DataFrame(rows)
+
+        def fake_battle(df, **_kwargs):
+            battle_calls.append(len(df))
+            out = df.copy()
+            base = pd.to_numeric(out.get("Prediction Score", 0), errors="coerce").fillna(0)
+            out["Smart Potential Score"] = base + 5
+            out["Bullish Probability"] = base
+            out["Smart Confidence"] = pd.to_numeric(out.get("Confidence", 0), errors="coerce").fillna(0)
+            out["Setup Cleanliness"] = 72
+            out["Momentum Quality"] = 74
+            out["Volume Quality"] = 76
+            out["Trap Risk Score"] = 38
+            out["Regime Alignment"] = 65
+            out["Risk Reward Score"] = 68
+            out["Smart Notes"] = "Injected battle score"
+            return out
+
+        class FakeAura:
+            def __init__(self, symbol: str) -> None:
+                self.symbol = symbol
+                self.verdict = "BUY TOMORROW"
+                self.timing = "Tomorrow"
+                self.aura_score = 79.0
+                self.timing_reason = "Injected aura"
+                self.entry_low = 100.0
+                self.entry_high = 102.0
+                self.sl_price = 96.0
+                self.sl_pct = 4.0
+                self.target1 = 106.0
+                self.target2 = 110.0
+                self.rr_ratio = 2.0
+                self.market_note = "OK"
+                self.reasons_positive = ["trend"]
+                self.reasons_warning = []
+                self.reasons_reject = []
+
+        def fake_aura(_hist, symbol, _market_bias):
+            aura_calls.append(symbol)
+            return FakeAura(symbol)
+
+        def fake_log(df, _mode, _market_bias):
+            logged_frames.append(df.copy())
+
+        result = run_ail_pipeline(
+            tickers,
+            run_scan_fn=fake_scan,
+            enhance_results_fn=fake_enhance,
+            compute_market_bias_fn=lambda: {"bias": "Bullish", "regime": "TRENDING_UP"},
+            compute_battle_scores_fn=fake_battle,
+            run_aura_engine_fn=fake_aura,
+            log_scan_predictions_fn=fake_log,
+            all_data=all_data,
+        )
+
+        self.assertEqual(scan_calls, list(AIL_MODES))
+        self.assertTrue(all(len(result.category_top3[name].get("top_df", pd.DataFrame())) > 0 for name in AIL_CATEGORY_ORDER))
+        self.assertEqual(len(battle_calls), 1)
+        self.assertTrue(result.final_ranked_df["Smart Notes"].astype(str).str.contains("Injected battle score").any())
+        self.assertTrue(set(aura_calls).issubset({"AAA", "BBB"}))
+        self.assertNotIn("NOHIST", aura_calls)
+        self.assertEqual(len(logged_frames), 1)
+        self.assertTrue((logged_frames[0]["Import Source"] == "A-I-L IN ONE").all())
+        self.assertEqual(result.health.get("modes_scanned"), 7)
+        self.assertEqual(result.health.get("raw_hits"), 21)
+        self.assertEqual(result.health.get("enhanced_candidates"), 21)
+        self.assertEqual(result.health.get("aura_verdicts"), len(aura_calls))
+        self.assertEqual(result.health.get("logged_predictions"), len(result.final_ranked_df))
+
+    def test_ail_feedback_logging_dedupes_and_tags_import_source(self) -> None:
+        import ail_in_one_engine as ail
+        import prediction_feedback_store as pfs
+
+        tmp = Path(tempfile.mkdtemp())
+        old_data_dir = pfs.DATA_DIR
+        old_log_path = pfs.LOG_PATH
+        old_push_file = pfs._push_file
+        try:
+            pfs.DATA_DIR = tmp  # type: ignore[assignment]
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._push_file = lambda *_args, **_kwargs: True  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            final_df = pd.DataFrame(
+                [
+                    {
+                        "Symbol": "AAA",
+                        "Mode ID": 3,
+                        "Prediction Score": 68.0,
+                        "Final Score": 74.0,
+                        "Signal": "BUY",
+                        "Sector": "TEST",
+                    }
+                ]
+            )
+
+            first_count, first_error = ail.log_ail_predictions(final_df, market_bias={"bias": "Bullish"})
+            second_count, second_error = ail.log_ail_predictions(final_df, market_bias={"bias": "Bullish"})
+            logged = pfs.read_feedback_log()
+
+            self.assertEqual(first_error, "")
+            self.assertEqual(second_error, "")
+            self.assertEqual(first_count, 1)
+            self.assertEqual(second_count, 0)
+            self.assertEqual(len(logged), 1)
+            self.assertEqual(logged.loc[0, "import_source"], "A-I-L IN ONE")
+            self.assertEqual(logged.loc[0, "import_category"], "Master Ranking")
+        finally:
+            pfs.DATA_DIR = old_data_dir  # type: ignore[assignment]
+            pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
+            pfs._push_file = old_push_file  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_live_breakout_direct_download_uses_bounded_limiter(self) -> None:
         import live_breakout_pulse_engine as pulse
 
