@@ -1,17 +1,19 @@
 {
   "picks": [
     "ADANIPORTS",
+    "ASKAUTOLTD",
     "GMRP&UI",
     "BUILDPRO",
     "DRREDDY",
-    "ASKAUTOLTD",
+    "KIRLOSENG",
     "INSECTICID",
     "ALPA"
   ],
   "notes": "",
   "sections": {
     "relax": [
-      "ADANIPORTS"
+      "ADANIPORTS",
+      "ASKAUTOLTD"
     ],
     "swing": [],
     "intraday": [
@@ -19,11 +21,11 @@
       "BUILDPRO",
       "DRREDDY"
     ],
-    "momentum": [
-      "ASKAUTOLTD",
+    "momentum": [],
+    "breakout": [
+      "KIRLOSENG",
       "INSECTICID",
       "ALPA"
-    ],
-    "breakout": []
+    ]
   }
 }
