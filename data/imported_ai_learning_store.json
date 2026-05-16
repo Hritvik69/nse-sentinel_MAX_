@@ -2677,7 +2677,7 @@
         7,
         0
       ],
-      "last_imported_at": "2026-05-16T06:11:45",
+      "last_imported_at": "2026-05-16T06:12:13",
       "snapshot": {
         "Symbol": "INSECTICID",
         "Price (\u20b9)": 722.8,
@@ -2712,7 +2712,7 @@
         7,
         0
       ],
-      "last_imported_at": "2026-05-16T06:11:45",
+      "last_imported_at": "2026-05-16T06:12:13",
       "snapshot": {
         "Symbol": "ALPA",
         "Price (\u20b9)": 70.75,
@@ -2744,7 +2744,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-16T06:11:45",
+      "last_imported_at": "2026-05-16T06:12:13",
       "snapshot": {
         "Symbol": "KIRLOSENG",
         "Price (\u20b9)": 1740.2,
@@ -2766,5 +2766,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-16T06:11:45"
+  "updated_at": "2026-05-16T06:12:13"
 }
