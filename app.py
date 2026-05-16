@@ -1200,6 +1200,7 @@ _get_shared_market_frame = getattr(
 )
 from strategy_engines.nse_autocomplete import (
     configure_nse_stock_search,
+    extract_selected_symbol,
     format_nse_stock_option,
     render_nse_stock_input,
 )
@@ -1535,6 +1536,7 @@ def _normalize_tomorrow_symbols(values: list[object] | tuple[object, ...] | None
 
 def _set_compare_input_symbols(symbols: list[object] | tuple[object, ...] | None) -> list[str]:
     normalized = _collect_compare_import_symbols(symbols, limit=_COMPARE_STOCK_LIMIT)
+    st.session_state["compare_imported_input_symbols"] = list(normalized)
     for idx in range(1, _COMPARE_STOCK_LIMIT + 1):
         key = f"battle_t{idx}"
         if idx <= len(normalized):
@@ -1578,20 +1580,29 @@ def _compare_prediction_cache_source() -> pd.DataFrame:
     return working
 
 
+def _get_saved_tomorrow_pick_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
+    try:
+        store, _storage_mode = _load_tomorrow_store()
+        sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        saved_symbols = _tomorrow_flatten_sections(sections, limit=20)
+        if not saved_symbols:
+            saved_symbols = store.get("picks", [])
+        return _collect_compare_import_symbols(saved_symbols, limit=limit)
+    except Exception:
+        return []
+
+
 def _get_compare_tomorrow_import_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
+    saved_symbols = _get_saved_tomorrow_pick_symbols(limit=limit)
+    if saved_symbols:
+        return saved_symbols
+
     sources: list[object] = [
         st.session_state.get("compare_last_tomorrow_pick_symbols", []),
         st.session_state.get("compare_tomorrow_pool_symbols", []),
         st.session_state.get("compare_tomorrow_pool_df", pd.DataFrame()),
         _compare_prediction_cache_source(),
     ]
-
-    try:
-        store, _storage_mode = _load_tomorrow_store()
-        sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
-        sources.append(_tomorrow_flatten_sections(sections, limit=20))
-    except Exception:
-        pass
 
     try:
         records = _get_imported_ai_learning_records()
@@ -1609,6 +1620,62 @@ def _get_compare_tomorrow_import_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> l
         pass
 
     return _collect_compare_import_symbols(*sources, limit=limit)
+
+
+def _get_compare_search_universe() -> list[str]:
+    current_values: list[str] = []
+    for idx in range(1, _COMPARE_STOCK_LIMIT + 1):
+        raw_value = st.session_state.get(f"battle_t{idx}", "")
+        selected_symbol = extract_selected_symbol(raw_value)
+        if selected_symbol:
+            current_values.append(selected_symbol)
+
+    extra_symbols = _collect_compare_import_symbols(
+        _get_saved_tomorrow_pick_symbols(limit=_COMPARE_STOCK_LIMIT),
+        st.session_state.get("compare_imported_input_symbols", []),
+        st.session_state.get("compare_last_tomorrow_pick_symbols", []),
+        st.session_state.get("compare_tomorrow_pool_symbols", []),
+        current_values,
+        limit=_COMPARE_STOCK_LIMIT * 4,
+    )
+    try:
+        base_tickers = _get_cached_nse_tickers()
+    except Exception:
+        base_tickers = []
+    return _merge_ticker_lists(base_tickers, extra_symbols)
+
+
+def _set_compare_import_feedback(kind: str, message: str) -> None:
+    st.session_state["battle_import_tomorrow_feedback"] = {
+        "kind": str(kind or "info"),
+        "message": str(message or "").strip(),
+    }
+
+
+def _import_compare_tomorrow_picks_to_form() -> None:
+    try:
+        imported_symbols = _get_compare_tomorrow_import_symbols(limit=_COMPARE_STOCK_LIMIT)
+        if not imported_symbols:
+            _set_compare_import_feedback(
+                "warning",
+                "No Tomorrow's Picks are available yet. Run a scan or save Tomorrow's Picks first.",
+            )
+            return
+
+        filled_symbols = _set_compare_input_symbols(imported_symbols)
+        if filled_symbols:
+            noun = "stock" if len(filled_symbols) == 1 else "stocks"
+            _set_compare_import_feedback(
+                "success",
+                f"Imported {len(filled_symbols)} {noun} from Tomorrow's Picks into Compare Stocks.",
+            )
+        else:
+            _set_compare_import_feedback(
+                "warning",
+                "No valid Tomorrow's Picks symbols were available to import.",
+            )
+    except Exception as exc:
+        _set_compare_import_feedback("error", f"Import failed: {exc}")
 
 
 def _compare_numeric_row(df: pd.DataFrame, column: str, *, highest: bool = True) -> pd.Series | None:
@@ -9598,24 +9665,31 @@ if st.session_state.get("battle_show_panel", False):
         st.session_state["battle_show_panel"] = False
         st.rerun()
 
-    configure_nse_stock_search(_get_cached_nse_tickers())
+    configure_nse_stock_search(_get_compare_search_universe())
     _battle_import_col, _battle_spacer_col = st.columns([1.25, 2], gap="small")
     with _battle_import_col:
-        _battle_import_picks = st.button(
+        st.button(
             "📥 Import All Tomorrow Picks",
             key="battle_import_tomorrow_picks_btn",
             width="stretch",
+            on_click=_import_compare_tomorrow_picks_to_form,
         )
     with _battle_spacer_col:
         st.write("")
 
-    if _battle_import_picks:
-        _imported_compare_symbols = _get_compare_tomorrow_import_symbols(limit=_COMPARE_STOCK_LIMIT)
-        if not _imported_compare_symbols:
-            st.warning("No Tomorrow Prediction picks are available yet. Run a scan or save Tomorrow's Picks first.")
-        else:
-            _filled_symbols = _set_compare_input_symbols(_imported_compare_symbols)
-            st.success(f"Imported {len(_filled_symbols)} stock(s) into Compare Stocks.")
+    _battle_import_feedback = st.session_state.pop("battle_import_tomorrow_feedback", None)
+    if isinstance(_battle_import_feedback, dict):
+        _battle_import_kind = str(_battle_import_feedback.get("kind", "info") or "info").strip().lower()
+        _battle_import_msg = str(_battle_import_feedback.get("message", "") or "").strip()
+        if _battle_import_msg:
+            if _battle_import_kind == "success":
+                st.success(_battle_import_msg)
+            elif _battle_import_kind == "warning":
+                st.warning(_battle_import_msg)
+            elif _battle_import_kind == "error":
+                st.error(_battle_import_msg)
+            else:
+                st.info(_battle_import_msg)
 
     with st.form("battle_mode_form", clear_on_submit=False):
         _battle_examples = [
