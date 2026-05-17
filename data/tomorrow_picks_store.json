@@ -6,8 +6,10 @@
     "GMRP&UI",
     "DRREDDY",
     "ASKAUTOLTD",
+    "DHANUKA",
+    "KIRLOSENG",
     "INSECTICID",
-    "DHANUKA"
+    "ALPA"
   ],
   "notes": "",
   "sections": {
@@ -23,9 +25,12 @@
     "intraday": [],
     "momentum": [
       "ASKAUTOLTD",
-      "INSECTICID",
       "DHANUKA"
     ],
-    "breakout": []
+    "breakout": [
+      "KIRLOSENG",
+      "INSECTICID",
+      "ALPA"
+    ]
   }
 }
