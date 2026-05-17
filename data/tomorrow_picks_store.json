@@ -2,16 +2,21 @@
   "picks": [
     "BLISSGVS",
     "GULPOLY",
-    "BUILDPRO"
+    "BUILDPRO",
+    "GMRP&UI",
+    "DRREDDY"
   ],
   "notes": "",
   "sections": {
     "relax": [
       "BLISSGVS",
-      "GULPOLY",
-      "BUILDPRO"
+      "GULPOLY"
     ],
-    "swing": [],
+    "swing": [
+      "BUILDPRO",
+      "GMRP&UI",
+      "DRREDDY"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
