@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "BLISSGVS",
+    "GULPOLY",
+    "BUILDPRO"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "BLISSGVS",
+      "GULPOLY",
+      "BUILDPRO"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
