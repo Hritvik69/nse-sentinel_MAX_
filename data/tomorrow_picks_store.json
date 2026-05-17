@@ -4,7 +4,10 @@
     "GULPOLY",
     "BUILDPRO",
     "GMRP&UI",
-    "DRREDDY"
+    "DRREDDY",
+    "ASKAUTOLTD",
+    "INSECTICID",
+    "DHANUKA"
   ],
   "notes": "",
   "sections": {
@@ -18,7 +21,11 @@
       "DRREDDY"
     ],
     "intraday": [],
-    "momentum": [],
+    "momentum": [
+      "ASKAUTOLTD",
+      "INSECTICID",
+      "DHANUKA"
+    ],
     "breakout": []
   }
 }
