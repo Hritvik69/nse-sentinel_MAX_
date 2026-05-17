@@ -2460,7 +2460,7 @@
         3,
         7
       ],
-      "last_imported_at": "2026-05-17T12:31:39",
+      "last_imported_at": "2026-05-17T12:31:58",
       "snapshot": {
         "Symbol": "ASKAUTOLTD",
         "Price (\u20b9)": 458.95,
@@ -2680,7 +2680,7 @@
         7,
         0
       ],
-      "last_imported_at": "2026-05-17T12:31:39",
+      "last_imported_at": "2026-05-17T12:31:58",
       "snapshot": {
         "Symbol": "INSECTICID",
         "Price (\u20b9)": 722.8,
@@ -3047,7 +3047,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-17T12:31:39",
+      "last_imported_at": "2026-05-17T12:31:58",
       "snapshot": {
         "Symbol": "DHANUKA",
         "Price (\u20b9)": 1083.5,
@@ -3157,5 +3157,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-17T12:31:39"
+  "updated_at": "2026-05-17T12:31:58"
 }
