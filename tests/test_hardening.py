@@ -952,10 +952,59 @@ class HardeningRegressionTests(unittest.TestCase):
         selfEqual = self.assertEqual
         selfEqual(symbols("Relaxed"), {"M3RELAX"})
         selfEqual(symbols("Intraday"), {"M5INTRA"})
-        selfEqual(symbols("Momentum"), {"M1MOM", "M7MOM"})
+        selfEqual(symbols("Momentum"), {"M1MOM", "M2BAL", "M7MOM"})
         selfEqual(symbols("Swing"), {"M6SWING"})
         selfEqual(symbols("Institutional"), {"M4INST"})
         self.assertNotIn("M2BAL", symbols("Swing"))
+
+    def test_ail_internal_pool_widens_without_changing_displayed_top3(self) -> None:
+        from ail_in_one_engine import _candidate_pool_from_top3, extract_top_candidates
+
+        rows = []
+        for idx in range(9):
+            rows.append(
+                {
+                    "Symbol": f"RANK{idx}",
+                    "Mode ID": 1,
+                    "Mode Name": "Momentum",
+                    "Final Score": 92.0 - idx * 3.0,
+                    "Prediction Score": 90.0 - idx * 3.0,
+                    "Backtest %": 78.0 - idx,
+                    "ML %": 76.0 - idx,
+                    "Confidence": 74.0 - idx,
+                    "RSI": 58.0,
+                    "Vol / Avg": 1.8,
+                    "Trap Risk": "LOW",
+                    "Signal": "BUY",
+                }
+            )
+        rows.append(
+            {
+                "Symbol": "RESCUE",
+                "Mode ID": 1,
+                "Mode Name": "Momentum",
+                "Final Score": 45.0,
+                "Prediction Score": 44.0,
+                "Backtest %": 45.0,
+                "ML %": 45.0,
+                "Confidence": 44.0,
+                "AIL Opportunity Score": 48.0,
+                "RSI": 54.0,
+                "Vol / Avg": 1.4,
+                "Trap Risk": "LOW",
+                "Signal": "WATCH",
+            }
+        )
+
+        result = extract_top_candidates({"Momentum": pd.DataFrame(rows)}, market_bias={"bias": "Bullish"}, top_n=3)
+        top_symbols = result["Momentum"]["top_df"]["Symbol"].tolist()
+        pool = _candidate_pool_from_top3(result)
+
+        self.assertEqual(len(top_symbols), 3)
+        self.assertNotIn("RESCUE", top_symbols)
+        self.assertGreater(len(pool), len(top_symbols))
+        self.assertIn("RESCUE", set(pool["Symbol"].tolist()))
+        self.assertIn("AIL Internal Pool Reason", pool.columns)
 
     def test_ail_top3_consensus_compares_normal_screener_with_tomorrow_accuracy(self) -> None:
         from ail_in_one_engine import extract_top_candidates
@@ -1081,7 +1130,7 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertFalse(top_df["AIL Top3 Confidence"].astype(str).str.contains("Fallback", case=False).any())
 
     def test_ail_confidence_uses_real_components_without_fallback_label(self) -> None:
-        from ail_confidence_engine import compute_smart_confidence
+        from ail_confidence_engine import apply_evidence_coverage_damping, compute_smart_confidence
 
         row = {
             "Symbol": "AAA",
@@ -1103,6 +1152,12 @@ class HardeningRegressionTests(unittest.TestCase):
         thin = compute_smart_confidence({"Symbol": "EMPTY"}, {})
         self.assertEqual(thin["score"], 0.0)
         self.assertEqual(thin["label"], "Insufficient evidence")
+
+        damped = apply_evidence_coverage_damping(
+            pd.DataFrame([{"Symbol": "THIN", "AIL Confidence": 80.0, "AIL Confidence Coverage": 20.0}])
+        )
+        self.assertLess(float(damped.loc[0, "AIL Confidence"]), 80.0)
+        self.assertIn("Thin evidence", str(damped.loc[0, "AIL Evidence Label"]))
 
     def test_ail_diversity_role_selection_avoids_single_stock_sweep(self) -> None:
         from ail_ranking_engine import build_master_rankings, select_category_leaders
@@ -1200,7 +1255,7 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertIn("closed-market momentum reduced", apply_market_state_adjustments(row, {"state": "POST_CLOSE"}).loc[0, "AIL Temporal Notes"])
 
     def test_ail_conflict_calibration_regime_and_health_layers_are_bounded(self) -> None:
-        from ail_calibration_engine import build_confidence_buckets, calibrate_confidence_score
+        from ail_calibration_engine import apply_confidence_calibration, build_confidence_buckets, calibrate_confidence_score
         from ail_conflict_engine import apply_conflict_penalties, detect_signal_conflicts
         from ail_health_engine import compute_orchestration_health
         from ail_regime_orchestrator import apply_regime_preference, compute_regime_strategy_bias
@@ -1223,6 +1278,10 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertIn("AIL Conflict Score", conflict_df.columns)
         self.assertGreater(conflict_df.loc[0, "AIL Conflict Penalty"], 0)
 
+        clean_conflict_df = apply_conflict_penalties(pd.DataFrame([{"Symbol": "CLEAN", "AIL Categories": "Swing", "Trap Risk Score": 30.0}]))
+        self.assertEqual(float(clean_conflict_df.loc[0, "AIL Conflict Penalty"]), 0.0)
+        self.assertEqual(float(clean_conflict_df.loc[0, "AIL Conflict Multiplier"]), 1.0)
+
         feedback = pd.DataFrame(
             [
                 {
@@ -1241,6 +1300,12 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertLess(calibrated, 82.0)
         self.assertLess(adjustment, 0)
         self.assertIn("gap", note.lower())
+
+        calibration = {"buckets": buckets}
+        calibrated_df = apply_confidence_calibration(pd.DataFrame([{"Symbol": "CAL", "AIL Confidence": 82.0}]), calibration)
+        recalibrated_df = apply_confidence_calibration(calibrated_df.assign(**{"AIL Confidence": calibrated_df["AIL Calibrated Confidence"]}), calibration)
+        self.assertEqual(float(calibrated_df.loc[0, "AIL Calibrated Confidence"]), float(recalibrated_df.loc[0, "AIL Calibrated Confidence"]))
+        self.assertEqual(float(recalibrated_df.loc[0, "AIL Calibration Base Confidence"]), 82.0)
 
         bias = compute_regime_strategy_bias({"bias": "Weak", "regime": "HIGH_VOLATILITY"}, {"state": "POST_CLOSE"})
         regime_df = apply_regime_preference(pd.DataFrame([row]), bias)
@@ -1350,6 +1415,26 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertIn(confidence_health["status"], {"healthy", "compressed"})
         self.assertEqual(philosophy_health["status"], "healthy")
         self.assertEqual(suppression_health["status"], "healthy")
+
+    def test_ail_penalty_guard_does_not_double_count_master_boosts(self) -> None:
+        from ail_penalty_guard import cap_total_penalty
+
+        base = {
+            "Symbol": "BOOST",
+            "Smart Potential Score": 70.0,
+            "AIL Master Score": 70.0,
+            "AIL Opportunity Boost": 4.0,
+            "AIL Philosophy Boost": 3.0,
+            "AIL Confidence Health Boost": 2.0,
+        }
+        unmarked = cap_total_penalty(pd.DataFrame([base])).loc[0]
+        marked = cap_total_penalty(
+            pd.DataFrame([{**base, "AIL Boosts Applied In Master": True, "AIL Boost Ledger": "master opportunity 4.0"}])
+        ).loc[0]
+
+        self.assertEqual(float(unmarked["AIL Master Score"]), 79.0)
+        self.assertEqual(float(marked["AIL Master Score"]), 70.0)
+        self.assertIn("already applied", str(marked["AIL Penalty Guard Notes"]))
 
     def test_ail_pipeline_orchestrates_modes_battle_aura_and_logging(self) -> None:
         from ail_in_one_engine import AIL_CATEGORY_ORDER, AIL_MODES, run_ail_pipeline

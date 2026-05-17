@@ -35,6 +35,12 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"true", "1", "yes", "y"}
+
+
 def compute_safe_modifier_bounds(row: pd.Series | dict[str, Any]) -> dict[str, float]:
     scanner = _safe_float(row.get("Smart Potential Score", row.get("Final Score", row.get("Prediction Score", 0.0))), 0.0)
     opportunity = _safe_float(row.get("AIL Opportunity Score"), 0.0)
@@ -67,11 +73,14 @@ def cap_total_penalty(df: pd.DataFrame) -> pd.DataFrame:
         scanner = bounds["scanner_score"]
         min_score = bounds["min_score"]
         capped = max(current, min_score)
-        positive_boost = (
+        raw_positive_boost = (
             _safe_float(row.get("AIL Opportunity Boost"), 0.0)
             + _safe_float(row.get("AIL Philosophy Boost"), 0.0)
             + _safe_float(row.get("AIL Confidence Health Boost"), 0.0)
         )
+        boost_ledger = str(row.get("AIL Boost Ledger", "") or "").lower()
+        boosts_already_applied = _truthy(row.get("AIL Boosts Applied In Master")) or "master" in boost_ledger
+        positive_boost = 0.0 if boosts_already_applied else raw_positive_boost
         capped = _clip(capped + positive_boost)
         raw_penalty_index = max(0.0, scanner - current)
         penalty_index = max(0.0, scanner - capped)
@@ -80,6 +89,8 @@ def cap_total_penalty(df: pd.DataFrame) -> pd.DataFrame:
         indexes.append(round(penalty_index, 2))
         if current < min_score:
             notes.append(f"Penalty capped to preserve scanner conviction near {scanner:.1f}")
+        elif boosts_already_applied and raw_positive_boost > 0:
+            notes.append("Positive boosts already applied in master score")
         elif positive_boost > 0:
             notes.append(f"Opportunity/philosophy boost {positive_boost:.1f}")
         else:

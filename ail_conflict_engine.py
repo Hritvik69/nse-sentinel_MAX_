@@ -172,7 +172,7 @@ def apply_conflict_penalties(df: pd.DataFrame) -> pd.DataFrame:
     out["AIL Conflict Notes"] = notes
     out["AIL Alignment Notes"] = align_notes
     out["AIL Conflict Penalty"] = penalties
-    out["AIL Conflict Multiplier"] = [round(float(np.clip(1.02 - p / 100.0, 0.90, 1.03)), 4) for p in penalties]
+    out["AIL Conflict Multiplier"] = [round(float(np.clip(1.0 - p / 100.0, 0.90, 1.0)), 4) for p in penalties]
     if "AIL Confidence" in out.columns:
         out["AIL Confidence Before Conflict"] = pd.to_numeric(out["AIL Confidence"], errors="coerce")
         out["AIL Confidence"] = (out["AIL Confidence Before Conflict"] - out["AIL Conflict Penalty"]).clip(lower=0, upper=100)

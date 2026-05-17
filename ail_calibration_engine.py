@@ -146,7 +146,9 @@ def calibrate_confidence_score(score: float, buckets: pd.DataFrame | None, *, ma
     if bucket is None or not bool(bucket.get("Usable", False)):
         return round(score, 2), 0.0, "Calibration pending real outcomes"
     gap = _safe_float(bucket.get("Calibration Gap"), 0.0) or 0.0
-    adjustment = float(np.clip(gap * 0.25, -max_adjustment, max_adjustment))
+    observations = int(_safe_float(bucket.get("Observations"), 0.0) or 0.0)
+    reliability = float(np.clip(observations / (observations + 20.0), 0.0, 1.0))
+    adjustment = float(np.clip(gap * 0.25 * reliability, -max_adjustment, max_adjustment))
     if adjustment < 0.0 and score >= 76.0:
         adjustment = max(adjustment, -5.0)
     elif adjustment < 0.0:
@@ -154,7 +156,11 @@ def calibrate_confidence_score(score: float, buckets: pd.DataFrame | None, *, ma
     if adjustment > 0.0:
         adjustment = min(adjustment, 6.0)
     calibrated = _clip(score + adjustment)
-    return round(calibrated, 2), round(adjustment, 2), f"Bucket {bucket.get('Confidence Bin')} gap {gap:.1f} pts"
+    return (
+        round(calibrated, 2),
+        round(adjustment, 2),
+        f"Bucket {bucket.get('Confidence Bin')} gap {gap:.1f} pts; {observations} obs shrink {reliability:.2f}",
+    )
 
 
 def detect_calibration_drift(buckets: pd.DataFrame | None, *, min_rows: int = 5) -> dict[str, Any]:
@@ -174,10 +180,15 @@ def apply_confidence_calibration(df: pd.DataFrame, calibration: dict[str, Any] |
         return pd.DataFrame()
     out = df.copy()
     buckets = calibration.get("buckets") if isinstance(calibration, dict) else pd.DataFrame()
-    base = pd.to_numeric(
+    fallback_base = pd.to_numeric(
         out.get("AIL Confidence", out.get("Smart Confidence", out.get("Confidence", pd.Series(0.0, index=out.index)))),
         errors="coerce",
     ).fillna(0.0)
+    if "AIL Calibration Base Confidence" in out.columns:
+        base = pd.to_numeric(out["AIL Calibration Base Confidence"], errors="coerce").fillna(fallback_base)
+    else:
+        base = fallback_base
+        out["AIL Calibration Base Confidence"] = base
     calibrated: list[float] = []
     adjustments: list[float] = []
     notes: list[str] = []

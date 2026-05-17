@@ -10030,16 +10030,27 @@ if _show_home_scanner and "results" in st.session_state:
             try:
                 _gate_all_data = _engine_utils.ALL_DATA if _engine_utils is not None else {}
                 _gate_before = len(df)
-                df = apply_gate_to_scan_df(
+                _gate_audit_df = apply_gate_to_scan_df(
                     df,
                     _gate_all_data,
                     mode=stored_mode,
                     score_col="Final Score",
                     tomorrow_col="Tomorrow Pick Score",
                     ai_conf_col="AI Confidence",
+                    drop_blocked=False,
                 )
-                _gate_summary = getattr(df, "attrs", {}).get("quality_gate", {}) if isinstance(df, pd.DataFrame) else {}
+                _gate_summary = getattr(_gate_audit_df, "attrs", {}).get("quality_gate", {}) if isinstance(_gate_audit_df, pd.DataFrame) else {}
+                if isinstance(_gate_audit_df, pd.DataFrame) and "Gate Blocked" in _gate_audit_df.columns:
+                    _blocked_mask = _gate_audit_df["Gate Blocked"].fillna(False).astype(bool)
+                    st.session_state["_quality_gate_blocked_df"] = _gate_audit_df.loc[_blocked_mask].copy()
+                    df = _gate_audit_df.loc[~_blocked_mask].copy()
+                    df.attrs["quality_gate"] = _gate_summary
+                else:
+                    st.session_state["_quality_gate_blocked_df"] = pd.DataFrame()
+                    df = _gate_audit_df
                 if isinstance(_gate_summary, dict) and _gate_summary:
+                    _gate_summary = dict(_gate_summary)
+                    _gate_summary["after"] = int(len(df)) if isinstance(df, pd.DataFrame) else int(_gate_summary.get("after", 0) or 0)
                     st.session_state["_quality_gate_summary"] = _gate_summary
                 elif _gate_before and isinstance(df, pd.DataFrame):
                     st.session_state["_quality_gate_summary"] = {
@@ -10057,14 +10068,22 @@ if _show_home_scanner and "results" in st.session_state:
             try:
                 _gate_all_data = _engine_utils.ALL_DATA if _engine_utils is not None else {}
                 _gate_before = len(df)
-                df = apply_gate_to_scan_df(
+                _gate_audit_df = apply_gate_to_scan_df(
                     df,
                     _gate_all_data,
                     mode=stored_mode,
                     score_col="Final Score",
                     tomorrow_col="Tomorrow Pick Score",
                     ai_conf_col="AI Confidence",
+                    drop_blocked=False,
                 )
+                if isinstance(_gate_audit_df, pd.DataFrame) and "Gate Blocked" in _gate_audit_df.columns:
+                    _blocked_mask = _gate_audit_df["Gate Blocked"].fillna(False).astype(bool)
+                    st.session_state["_quality_gate_blocked_df"] = _gate_audit_df.loc[_blocked_mask].copy()
+                    df = _gate_audit_df.loc[~_blocked_mask].copy()
+                else:
+                    st.session_state["_quality_gate_blocked_df"] = pd.DataFrame()
+                    df = _gate_audit_df
                 st.session_state["_quality_gate_summary"] = {
                     "before": int(_gate_before),
                     "blocked": max(int(_gate_before) - int(len(df)), 0),
@@ -10142,6 +10161,24 @@ if _show_home_scanner and "results" in st.session_state:
                 f"Quality gate blocked {int(_gate_summary.get('blocked', 0) or 0)} "
                 f"of {int(_gate_summary.get('before', 0) or 0)} scan candidate(s) before ranking."
             )
+
+            _blocked_diag = st.session_state.get("_quality_gate_blocked_df")
+            if isinstance(_blocked_diag, pd.DataFrame) and not _blocked_diag.empty:
+                _diag_cols = [
+                    col
+                    for col in (
+                        "Symbol",
+                        "Mode Name",
+                        "Final Score",
+                        "Tomorrow Pick Score",
+                        "Gate Score Cap",
+                        "Gate Reasons",
+                        "Gate Warning",
+                    )
+                    if col in _blocked_diag.columns
+                ]
+                with st.expander("Quality gate diagnostics", expanded=False):
+                    st.dataframe(_blocked_diag[_diag_cols].head(25), use_container_width=True, hide_index=True)
 
         # ── TASK 4: Section Headers & Spacing ─────────────────────────
         st.write("")

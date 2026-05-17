@@ -350,11 +350,23 @@ def compute_ail_master_score(
         score = _clip(score * _safe_float(_get(row, "AIL Temporal Multiplier"), 1.0))
         score = _clip(score * _safe_float(_get(row, "AIL Regime Multiplier"), 1.0))
         score = _clip(score * _safe_float(_get(row, "AIL Conflict Multiplier"), 1.0))
-        score = _clip(score + _safe_float(_get(row, "AIL Opportunity Boost"), 0.0))
-        score = _clip(score + _safe_float(_get(row, "AIL Philosophy Boost"), 0.0))
-        score = _clip(score + _safe_float(_get(row, "AIL Confidence Health Boost"), 0.0))
+        score_before_boosts = score
+        opportunity_boost = _safe_float(_get(row, "AIL Opportunity Boost"), 0.0)
+        philosophy_boost = _safe_float(_get(row, "AIL Philosophy Boost"), 0.0)
+        health_boost = _safe_float(_get(row, "AIL Confidence Health Boost"), 0.0)
+        total_positive_boost = opportunity_boost + philosophy_boost + health_boost
+        score = _clip(score + opportunity_boost)
+        score = _clip(score + philosophy_boost)
+        score = _clip(score + health_boost)
 
         out["AIL Master Score"] = round(score, 2)
+        out["AIL Master Score Before Boosts"] = round(score_before_boosts, 2)
+        out["AIL Applied Positive Boost"] = round(total_positive_boost, 2)
+        out["AIL Boosts Applied In Master"] = bool(total_positive_boost > 0.0)
+        out["AIL Boost Ledger"] = (
+            f"master opportunity {opportunity_boost:.1f}; "
+            f"philosophy {philosophy_boost:.1f}; health {health_boost:.1f}"
+        )
         out["AIL Confidence"] = round(confidence_score, 2)
         out["AIL Confidence Label"] = confidence.get("label", "")
         out["AIL Confidence Drivers"] = confidence.get("drivers", "")

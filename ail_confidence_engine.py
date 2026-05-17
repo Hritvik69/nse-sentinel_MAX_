@@ -311,7 +311,66 @@ def compute_smart_confidence(
     }
 
 
+def apply_evidence_coverage_damping(
+    df: pd.DataFrame,
+    *,
+    min_coverage: float = 35.0,
+    max_adjustment: float = 6.0,
+) -> pd.DataFrame:
+    """
+    Lightly mark and damp final confidence when AIL has thin component coverage.
+
+    This does not reject rows or touch scanner scores. It only prevents a
+    probability-like confidence field from looking stronger than the measured
+    evidence coverage supports.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame()
+    if "AIL Confidence Coverage" not in df.columns:
+        return df.copy()
+
+    out = df.copy()
+    conf_col = "AIL Calibrated Confidence" if "AIL Calibrated Confidence" in out.columns else "AIL Confidence"
+    if conf_col not in out.columns:
+        return out
+
+    coverage = pd.to_numeric(out["AIL Confidence Coverage"], errors="coerce").fillna(100.0).clip(lower=0.0, upper=100.0)
+    confidence = pd.to_numeric(out[conf_col], errors="coerce").fillna(0.0)
+    adjusted: list[float] = []
+    adjustments: list[float] = []
+    labels: list[str] = []
+    for conf, cov in zip(confidence.tolist(), coverage.tolist()):
+        adjustment = 0.0
+        if conf > 0.0 and cov < float(min_coverage):
+            coverage_gap = float(min_coverage) - float(cov)
+            adjustment = -min(float(max_adjustment), max(1.0, coverage_gap * 0.18))
+        new_conf = _clip(float(conf) + adjustment)
+        adjusted.append(round(new_conf, 2))
+        adjustments.append(round(adjustment, 2))
+        if adjustment < 0.0:
+            labels.append(f"Thin evidence ({cov:.0f}% coverage)")
+        else:
+            labels.append("Evidence coverage ok")
+
+    out["AIL Evidence Coverage"] = coverage.round(2)
+    out["AIL Evidence Adjustment"] = adjustments
+    out["AIL Evidence Label"] = labels
+    out[conf_col] = adjusted
+    if conf_col != "AIL Confidence":
+        out["AIL Confidence"] = adjusted
+    if "AIL Confidence Label" in out.columns:
+        existing = out["AIL Confidence Label"].fillna("").astype(str)
+        thin = pd.Series(labels, index=out.index).str.startswith("Thin evidence")
+        if bool(thin.any()):
+            out.loc[thin, "AIL Confidence Label"] = [
+                (label + " | " if label else "") + "Thin evidence"
+                for label in existing.loc[thin].tolist()
+            ]
+    return out
+
+
 __all__ = [
+    "apply_evidence_coverage_damping",
     "compute_smart_confidence",
     "confidence_from_learning",
     "confidence_from_alignment",

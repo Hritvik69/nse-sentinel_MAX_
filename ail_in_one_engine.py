@@ -18,7 +18,7 @@ import pandas as pd
 
 from ail_calibration_engine import apply_confidence_calibration, compute_confidence_calibration
 from ail_confidence_health import preserve_high_conviction, preserve_speculative_conviction
-from ail_confidence_engine import compute_smart_confidence
+from ail_confidence_engine import apply_evidence_coverage_damping, compute_smart_confidence
 from ail_conflict_engine import apply_conflict_penalties
 from ail_health_engine import compute_orchestration_health
 from ail_learning_engine import build_ail_learning_profile, learning_profile_table
@@ -46,12 +46,16 @@ AIL_CATEGORY_ORDER: tuple[str, ...] = (
 )
 AIL_MODE_CATEGORY_MAP: dict[int, tuple[str, ...]] = {
     1: ("Momentum",),
+    2: ("Momentum",),
     3: ("Relaxed",),
     4: ("Institutional",),
     5: ("Intraday",),
     6: ("Swing",),
     7: ("Momentum",),
 }
+AIL_INTERNAL_POOL_PER_CATEGORY = 8
+AIL_RESCUE_SCANNER_SCORE = 82.0
+AIL_RESCUE_OPPORTUNITY_SCORE = 42.0
 
 
 @dataclass
@@ -79,6 +83,7 @@ class AILPipelineResult:
     learning_insights: dict[str, Any] = field(default_factory=dict)
     health: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    stage_warnings: list[str] = field(default_factory=list)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -396,10 +401,21 @@ def extract_top_candidates(
             top_n=top_n,
             market_bias=market_bias,
         )
+        pool_rows = _select_internal_candidate_pool_rows(
+            source,
+            category=category,
+            payload=payload,
+            normal_ranked=normal_ranked,
+            top_n=top_n,
+            market_bias=market_bias,
+        )
 
         payload = dict(payload)
         payload["top_rows"] = top_rows
         payload["top_df"] = pd.DataFrame(top_rows)
+        payload["candidate_pool_rows"] = pool_rows
+        payload["candidate_pool_df"] = pd.DataFrame(pool_rows)
+        payload["internal_pool_size"] = int(len(pool_rows))
         payload["normal_scored"] = int(len(normal_ranked)) if isinstance(normal_ranked, pd.DataFrame) else 0
         payload["selection_method"] = "AIL consensus top3: normal screener + tomorrow accuracy + scanner conviction"
         outputs[category] = payload
@@ -546,7 +562,7 @@ def _top3_selection_notes(
     return "; ".join(notes[:5])
 
 
-def _select_consensus_top3_rows(
+def _rank_consensus_candidate_rows(
     source: pd.DataFrame,
     *,
     category: str,
@@ -617,14 +633,89 @@ def _select_consensus_top3_rows(
 
     ranked = pd.DataFrame(candidates)
     if ranked.empty:
-        return []
-    ranked = ranked.sort_values(
+        return ranked
+    return ranked.sort_values(
         ["_AIL_CONSENSUS_SCORE", "AIL Top3 Normal Score", "AIL Top3 Tomorrow Score", "AIL Top3 Scanner Score"],
         ascending=False,
         kind="stable",
-    ).head(max(1, int(top_n))).reset_index(drop=True)
+    ).reset_index(drop=True)
+
+
+def _select_consensus_top3_rows(
+    source: pd.DataFrame,
+    *,
+    category: str,
+    payload: dict[str, Any],
+    normal_ranked: pd.DataFrame,
+    top_n: int,
+    market_bias: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    ranked = _rank_consensus_candidate_rows(
+        source,
+        category=category,
+        payload=payload,
+        normal_ranked=normal_ranked,
+        top_n=top_n,
+        market_bias=market_bias,
+    )
+    if ranked.empty:
+        return []
+    ranked = ranked.head(max(1, int(top_n))).copy().reset_index(drop=True)
     ranked["AIL Category Rank"] = range(1, len(ranked) + 1)
     return ranked.drop(columns=["_AIL_CONSENSUS_SCORE"], errors="ignore").to_dict("records")
+
+
+def _internal_pool_rescue_reason(row: pd.Series | dict[str, Any]) -> str:
+    reasons: list[str] = []
+    scanner = _find_numeric(row, "AIL Top3 Scanner Score", "Smart Potential Score", "Prediction Score", "Final Score", default=np.nan)
+    opportunity = _find_numeric(row, "AIL Opportunity Score", "AIL Speculative Score", default=np.nan)
+    if np.isfinite(scanner) and scanner >= AIL_RESCUE_SCANNER_SCORE:
+        reasons.append(f"high scanner conviction {scanner:.1f}")
+    if np.isfinite(opportunity) and opportunity >= AIL_RESCUE_OPPORTUNITY_SCORE:
+        reasons.append(f"high opportunity score {opportunity:.1f}")
+    return "; ".join(reasons)
+
+
+def _select_internal_candidate_pool_rows(
+    source: pd.DataFrame,
+    *,
+    category: str,
+    payload: dict[str, Any],
+    normal_ranked: pd.DataFrame,
+    top_n: int,
+    market_bias: dict[str, Any] | None,
+    pool_n: int = AIL_INTERNAL_POOL_PER_CATEGORY,
+) -> list[dict[str, Any]]:
+    ranked = _rank_consensus_candidate_rows(
+        source,
+        category=category,
+        payload=payload,
+        normal_ranked=normal_ranked,
+        top_n=top_n,
+        market_bias=market_bias,
+    )
+    if ranked.empty:
+        return []
+
+    base_n = max(max(1, int(top_n)), max(1, int(pool_n)))
+    selected = ranked.head(base_n).copy()
+    selected["AIL Internal Pool Reason"] = "ranked category pool"
+
+    selected_symbols = {_row_symbol(row) for _, row in selected.iterrows()}
+    rescue_mask = ranked.apply(lambda row: bool(_internal_pool_rescue_reason(row)), axis=1)
+    rescues = ranked.loc[rescue_mask].copy()
+    if not rescues.empty:
+        rescues = rescues[~rescues.apply(lambda row: _row_symbol(row) in selected_symbols, axis=1)].copy()
+        if not rescues.empty:
+            rescues["AIL Internal Pool Reason"] = [
+                _internal_pool_rescue_reason(row) or "rescued by opportunity guard"
+                for _, row in rescues.iterrows()
+            ]
+            selected = pd.concat([selected, rescues], ignore_index=True)
+
+    selected = selected.reset_index(drop=True)
+    selected["AIL Category Pool Rank"] = range(1, len(selected) + 1)
+    return selected.drop(columns=["_AIL_CONSENSUS_SCORE"], errors="ignore").to_dict("records")
 
 
 def _candidate_driver_text(candidate: dict[str, Any]) -> list[str]:
@@ -648,7 +739,8 @@ def _candidate_driver_text(candidate: dict[str, Any]) -> list[str]:
 def _candidate_pool_from_top3(category_top3: dict[str, dict[str, Any]]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for payload in category_top3.values():
-        for row in list(payload.get("top_rows", []) or []):
+        pool_rows = list(payload.get("candidate_pool_rows", []) or payload.get("top_rows", []) or [])
+        for row in pool_rows:
             rows.append(dict(row))
     if not rows:
         return pd.DataFrame()
@@ -718,6 +810,7 @@ def rank_cross_mode_leaders(
         return pd.DataFrame(), {}
 
     ranked = pool.copy()
+    stage_warnings: list[str] = []
     if callable(compute_battle_scores_fn):
         try:
             ranked = compute_battle_scores_fn(
@@ -726,7 +819,8 @@ def rank_cross_mode_leaders(
                 prediction_cache=prediction_cache if prediction_cache is not None else _prediction_cache_default(),
                 sector_context=_build_sector_context(ranked),
             )
-        except Exception:
+        except Exception as exc:
+            stage_warnings.append(f"battle_scores fallback: {exc}")
             ranked = pool.copy()
 
     try:
@@ -749,11 +843,12 @@ def rank_cross_mode_leaders(
         ranked.attrs["ail_feature_cache_built_at"] = feature_cache.built_at
         ranked.attrs["ail_feature_cache_rows"] = feature_cache.row_count
         ranked = build_master_rankings(ranked, market_bias=market_bias, learning_profile=learning_profile)
-        ranked = apply_confidence_calibration(ranked, calibration)
         ranked = prevent_confidence_collapse(ranked)
         ranked = cap_total_penalty(ranked)
+        ranked = apply_evidence_coverage_damping(ranked)
         ranked = apply_orchestration_reasoning(ranked)
-    except Exception:
+    except Exception as exc:
+        stage_warnings.append(f"orchestration fallback: {exc}")
         ranked = _sort_existing_scores(ranked)
         if not ranked.empty:
             if "AIL Master Score" not in ranked.columns:
@@ -761,6 +856,8 @@ def rank_cross_mode_leaders(
                 ranked["AIL Master Score"] = pd.to_numeric(ranked[score_col], errors="coerce").fillna(0.0) if score_col else 0.0
             ranked["AIL Master Rank"] = range(1, len(ranked) + 1)
 
+    if isinstance(ranked, pd.DataFrame):
+        ranked.attrs["ail_stage_warnings"] = stage_warnings
     return ranked, build_comparison_summary(ranked)
 
 
@@ -1209,6 +1306,7 @@ def build_health_summary(result: AILPipelineResult, *, logged_predictions: int =
         "aura_verdicts": int(len(result.aura_verdicts or [])),
         "logged_predictions": int(logged_predictions or 0),
         "failed_modes": failed_modes,
+        "stage_warnings": int(len(result.stage_warnings or [])),
     }
 
 
@@ -1293,6 +1391,11 @@ def run_ail_pipeline(
             except Exception:
                 pass
 
+    def warn(stage: str, exc: Exception | str) -> None:
+        text = str(exc).strip()
+        if text:
+            result.stage_warnings.append(f"{stage}: {text}")
+
     if not tickers_clean:
         result.errors.append("No tickers supplied.")
         return result
@@ -1347,8 +1450,8 @@ def run_ail_pipeline(
             if callable(get_train_function_fn):
                 try:
                     get_train_function_fn(mode)()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    warn(f"Mode {mode} training warmup skipped", exc)
             scan_output = run_scan_fn(tickers_clean, mode, workers=min(max(int(workers or 1), 1), 12))
             if isinstance(scan_output, tuple):
                 raw_results, elapsed = scan_output
@@ -1404,11 +1507,13 @@ def run_ail_pipeline(
 
     try:
         learning_profile = build_ail_learning_profile()
-    except Exception:
+    except Exception as exc:
+        warn("learning profile fallback", exc)
         learning_profile = {}
     try:
         calibration = compute_confidence_calibration()
-    except Exception:
+    except Exception as exc:
+        warn("confidence calibration fallback", exc)
         calibration = {}
     try:
         candidate_cache = cache_orchestration_features(
@@ -1418,14 +1523,15 @@ def run_ail_pipeline(
             learning_profile=learning_profile,
         )
         result.candidate_pool.attrs["ail_feature_cache_built_at"] = candidate_cache.built_at
-    except Exception:
-        pass
+    except Exception as exc:
+        warn("candidate feature cache fallback", exc)
 
     prediction_cache = None
     if callable(compare_prediction_cache_fn):
         try:
             prediction_cache = compare_prediction_cache_fn()
-        except Exception:
+        except Exception as exc:
+            warn("prediction cache fallback", exc)
             prediction_cache = None
 
     result.comparison_df, result.comparison_summary = rank_cross_mode_leaders(
@@ -1437,6 +1543,7 @@ def run_ail_pipeline(
         market_state=result.market_state,
         calibration=calibration,
     )
+    result.stage_warnings.extend(list(result.comparison_df.attrs.get("ail_stage_warnings", []) or []))
     notify("aura_start", total=len(result.comparison_df))
 
     result.aura_verdicts = run_final_aura_verdict(
@@ -1472,8 +1579,10 @@ def run_ail_pipeline(
             calibration=calibration,
             conflict_df=result.final_ranked_df,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        warn("orchestration health fallback", exc)
+    if isinstance(result.health, dict):
+        result.health["stage_warnings"] = int(len(result.stage_warnings or []))
     notify("done", elapsed=result.elapsed_sec, ranked=len(result.final_ranked_df))
     return result
 
