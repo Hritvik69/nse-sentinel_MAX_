@@ -320,7 +320,10 @@ def _ensure_schema() -> None:
             _invalidate_cache()
             return
         with locked_path(LOG_PATH):
-            upgraded = _coerce_schema(pd.read_csv(LOG_PATH, dtype=str))
+            current = pd.read_csv(LOG_PATH, dtype=str)
+            upgraded = _coerce_schema(current)
+            if list(current.columns) != _FIELDNAMES:
+                atomic_write_csv_df(LOG_PATH, upgraded, index=False)
         _set_cached_log(upgraded)
     except Exception:
         pass
@@ -386,98 +389,8 @@ def _legacy_log_scan_predictions_unused_old(
     mode: int,
     market_bias: dict | None,
 ) -> None:
+    """Compatibility shim for old imports; delegates to the maintained logger."""
     return log_scan_predictions(df, mode, market_bias)
-    try:
-        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-            return
-        _invalidate_cache()
-        _ensure_schema()
-        mb = market_bias if isinstance(market_bias, dict) else {}
-        bias_s = str(mb.get("bias", ""))[:160]
-        regime_s = str(mb.get("regime", ""))[:80]
-        try:
-            from sector_master import get_sector
-        except Exception:
-            def get_sector(symbol: str) -> str | None:  # type: ignore[misc]
-                return None
-        ts = datetime.now().isoformat(timespec="seconds")
-        file_exists = LOG_PATH.exists()
-        if False:  # legacy append path disabled; kept unreachable for old references
-            writer = csv.DictWriter(f, fieldnames=_FIELDNAMES, extrasaction="ignore")
-            if not file_exists:
-                writer.writeheader()
-            for _, row in df.iterrows():
-                try:
-                    sym = str(row.get("Symbol") or row.get("Ticker") or "").strip()
-                    if not sym:
-                        continue
-                    row_mode_raw = row.get("Import Mode", row.get("Mode", mode))
-                    try:
-                        row_mode = int(row_mode_raw) if row_mode_raw is not None and pd.notna(row_mode_raw) else int(mode)
-                    except Exception:
-                        row_mode = int(mode) if mode is not None else 0
-                    sector = str(row.get("Sector") or get_sector(sym) or "").strip()
-                    import_source = str(row.get("Import Source", "") or "")[:160]
-                    import_category = str(row.get("Import Category", "") or "")[:80]
-                    logged_at = _coerce_logged_at(
-                        row.get("Logged At", row.get("logged_at", row.get("Imported At", ""))),
-                        ts,
-                    )
-                    ps = row.get("Prediction Score", np.nan)
-                    fs = row.get("Final Score", np.nan)
-                    sig = str(row.get("Signal", "") or "")[:40]
-                    ct = str(row.get("Conviction Tier", "") or "")[:20]
-                    rsi = _to_float(_first_present(row, ["RSI"], ""))
-                    vol_avg_ratio = _to_float(_first_present(row, ["Vol / Avg", "Volume Ratio"], ""))
-                    delta_ema20_pct = _to_float(
-                        _first_present(
-                            row,
-                            ["Δ vs EMA20 (%)", "Î” vs EMA20 (%)", "Delta vs EMA20 (%)", "EMA Distance (%)"],
-                            "",
-                        )
-                    )
-                    trap_risk = str(
-                        _first_present(row, ["Trap Risk", "Trap Check", "Trap Flags", "Bull Trap", "Trap"], "")
-                        or ""
-                    )[:40]
-                    try:
-                        ps_f = float(ps) if ps is not None and pd.notna(ps) else float("nan")
-                    except Exception:
-                        ps_f = float("nan")
-                    writer.writerow(
-                        {
-                            "logged_at": logged_at,
-                            "symbol": sym,
-                            "sector": sector,
-                            "mode": row_mode,
-                            "import_source": import_source,
-                            "import_category": import_category,
-                            "prediction_score": f"{ps_f:.4f}" if np.isfinite(ps_f) else "",
-                            "final_score": f"{float(fs):.4f}" if fs is not None and pd.notna(fs) else "",
-                            "signal": sig,
-                            "conviction_tier": ct,
-                            "market_bias": bias_s,
-                            "regime": regime_s,
-                            "rsi": f"{rsi:.4f}" if rsi is not None else "",
-                            "vol_avg_ratio": f"{vol_avg_ratio:.4f}" if vol_avg_ratio is not None else "",
-                            "delta_ema20_pct": f"{delta_ema20_pct:.4f}" if delta_ema20_pct is not None else "",
-                            "trap_risk": trap_risk,
-                            "pred_bullish": "1" if (np.isfinite(ps_f) and ps_f >= 55.0) else "0",
-                            "actual_next_return_pct": "",
-                            "correct": "",
-                            "outcome_label": "",
-                        }
-                    )
-                except Exception:
-                    continue
-        try:
-            read_feedback_log()
-        except Exception:
-            pass
-        _push_file(LOG_PATH)
-    except Exception:
-        return
-
 
 _log_scan_predictions_legacy = _legacy_log_scan_predictions_unused_old
 

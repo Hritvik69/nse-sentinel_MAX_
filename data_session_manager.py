@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 from atomic_io import atomic_write_bytes, atomic_write_csv_df, atomic_write_json
+from safe_paths import safe_filename, safe_join
 
 try:
     from zoneinfo import ZoneInfo
@@ -140,6 +141,10 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _snapshot_csv_name(ticker: object) -> str:
+    return safe_filename(ticker, ".csv")
 
 
 def _now_ist() -> datetime:
@@ -599,14 +604,25 @@ def _snapshot_exists_cached(day_iso: str) -> bool:
             if not bool(meta.get("complete", False)):
                 return False
             saved = int(meta.get("saved", meta.get("count", 0)) or 0)
-            files = list(snap_dir.glob("*.csv"))
             if saved <= 0:
                 return False
-            if len(files) < saved:
+            checksums = meta.get("checksums", {})
+            if not isinstance(checksums, dict) or len(checksums) < saved:
                 return False
-            # Keep this existence check light. Chart/detail panels validate the
-            # specific CSV they load, so re-hashing every snapshot file here
-            # makes single-stock chart loads look blank for too long.
+            for name, expected_hash in checksums.items():
+                filename = str(name or "").strip()
+                expected = str(expected_hash or "").strip().lower()
+                if not filename or not expected:
+                    return False
+                csv_path = (snap_dir / filename).resolve(strict=False)
+                try:
+                    csv_path.relative_to(snap_dir.resolve(strict=False))
+                except Exception:
+                    return False
+                if not csv_path.exists() or not csv_path.is_file():
+                    return False
+                if _file_sha256(csv_path).lower() != expected:
+                    return False
             return True
         return len(list(snap_dir.glob("*.csv"))) >= 100
     except Exception:
@@ -659,6 +675,7 @@ def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool
 
             saved = 0
             checksums: dict[str, str] = {}
+            symbols: dict[str, str] = {}
             for ticker, df in ALL_DATA.items():
                 try:
                     if df is None or df.empty or not isinstance(df, pd.DataFrame):
@@ -668,10 +685,11 @@ def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool
                     last_seen = pd.to_datetime(df.index[-1]).date()
                     if last_seen != snap_day:
                         continue
-                    safe_name = str(ticker).replace(":", "_").replace("/", "_")
-                    out_path = temp_dir / f"{safe_name}.csv"
+                    file_name = _snapshot_csv_name(ticker)
+                    out_path = safe_join(temp_dir, file_name)
                     atomic_write_csv_df(out_path, df.sort_index())
                     checksums[out_path.name] = _file_sha256(out_path)
+                    symbols[out_path.name] = str(ticker)
                     saved += 1
                 except Exception:
                     continue
@@ -690,6 +708,7 @@ def save_closing_snapshot(ALL_DATA: dict, market_date, require_live_source: bool
                 "count": saved,
                 "complete": True,
                 "checksums": checksums,
+                "symbols": symbols,
             }
             atomic_write_json(temp_dir / "_meta.json", meta, indent=2)
             if snap_dir.exists():
@@ -750,14 +769,24 @@ def load_snapshot_into_ALL_DATA(market_date) -> int:
         snapshot_meta = read_snapshot_metadata(market_date)
         captured_at = str(snapshot_meta.get("captured_at", "") or "").strip() or None
         checksums = snapshot_meta.get("checksums", {})
+        symbols = snapshot_meta.get("symbols", {})
         csv_paths = list(snap_dir.glob("*.csv"))
         if isinstance(checksums, dict) and checksums:
-            csv_paths = [snap_dir / name for name in checksums if (snap_dir / name).exists()]
+            csv_paths = []
+            snap_root = snap_dir.resolve(strict=False)
+            for name in checksums:
+                try:
+                    candidate = (snap_dir / str(name)).resolve(strict=False)
+                    candidate.relative_to(snap_root)
+                except Exception:
+                    continue
+                if candidate.exists():
+                    csv_paths.append(candidate)
         for csv_path in csv_paths:
             try:
                 if isinstance(checksums, dict) and checksums:
                     expected_hash = str(checksums.get(csv_path.name, "") or "")
-                    if expected_hash and _file_sha256(csv_path) != expected_hash:
+                    if not expected_hash or _file_sha256(csv_path) != expected_hash:
                         continue
                 df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
                 if df is None or df.empty:
@@ -770,7 +799,10 @@ def load_snapshot_into_ALL_DATA(market_date) -> int:
                     window="CLOSED",
                     captured_at=captured_at,
                 )
-                loaded_frames[csv_path.stem] = df
+                ticker_name = ""
+                if isinstance(symbols, dict):
+                    ticker_name = str(symbols.get(csv_path.name, "") or "").strip()
+                loaded_frames[ticker_name or csv_path.stem] = df
             except Exception:
                 continue
 

@@ -118,11 +118,13 @@ class HardeningRegressionTests(unittest.TestCase):
         old_raw = ps._gh_get_raw
         old_put = ps._gh_put_status
         try:
+            ps._PENDING_PUSHES.clear()
             ps._PUSH_QUEUE = queue.Queue(maxsize=1)  # type: ignore[assignment]
             ps._PUSH_QUEUE.put_nowait(Path("already-there"))
             ps._ensure_push_worker = lambda: None  # type: ignore[assignment]
-            with self.assertLogs("persistent_store", level="ERROR"):
-                self.assertFalse(ps.push_file(tmp / "prediction_feedback_log.csv"))
+            self.assertTrue(ps.push_file(tmp / "prediction_feedback_log.csv"))
+            self.assertEqual(len(ps._PENDING_PUSHES), 1)
+            ps._PENDING_PUSHES.clear()
 
             local = tmp / "prediction_feedback_log.csv"
             local.write_text("id,value\n2,local\n", encoding="utf-8")
@@ -150,6 +152,54 @@ class HardeningRegressionTests(unittest.TestCase):
             ps._gh_get = old_get  # type: ignore[assignment]
             ps._gh_get_raw = old_raw  # type: ignore[assignment]
             ps._gh_put_status = old_put  # type: ignore[assignment]
+            ps._PENDING_PUSHES.clear()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_persistent_store_coalesces_latest_bytes_and_retries_transient(self) -> None:
+        import persistent_store as ps
+
+        tmp = Path(tempfile.mkdtemp())
+        old_queue = ps._PUSH_QUEUE
+        old_ensure = ps._ensure_push_worker
+        old_secrets = ps._get_secrets
+        old_get = ps._gh_get
+        old_put = ps._gh_put_status
+        old_sleep = ps._time.sleep
+        try:
+            local = tmp / "prediction_feedback_log.csv"
+            local.write_text("id,value\n1,old\n", encoding="utf-8")
+            ps._PENDING_PUSHES.clear()
+            ps._PUSH_QUEUE = queue.Queue(maxsize=20)  # type: ignore[assignment]
+            ps._ensure_push_worker = lambda: None  # type: ignore[assignment]
+            self.assertTrue(ps.push_file(local))
+            local.write_text("id,value\n1,new\n", encoding="utf-8")
+            self.assertTrue(ps.push_file(local))
+            pending = ps._take_pending_pushes()
+            self.assertEqual(pending, [local])
+
+            ps._get_secrets = lambda: {"token": "token", "owner": "owner", "repo": "repo", "branch": "main"}  # type: ignore[assignment]
+            ps._gh_get = lambda secrets, path: {"sha": "sha"}  # type: ignore[assignment]
+            ps._time.sleep = lambda *_args, **_kwargs: None  # type: ignore[assignment]
+            calls: list[bytes] = []
+
+            def fake_put(secrets, path, content, sha=None):
+                calls.append(content)
+                if len(calls) == 1:
+                    return {"ok": False, "status": 503}
+                return {"ok": True, "status": 200}
+
+            ps._gh_put_status = fake_put  # type: ignore[assignment]
+            self.assertTrue(ps._do_push_blocking(pending[0]))
+            self.assertEqual(calls[-1].decode("utf-8").replace("\r\n", "\n"), "id,value\n1,new\n")
+            self.assertEqual(len(calls), 2)
+        finally:
+            ps._PUSH_QUEUE = old_queue  # type: ignore[assignment]
+            ps._ensure_push_worker = old_ensure  # type: ignore[assignment]
+            ps._get_secrets = old_secrets  # type: ignore[assignment]
+            ps._gh_get = old_get  # type: ignore[assignment]
+            ps._gh_put_status = old_put  # type: ignore[assignment]
+            ps._time.sleep = old_sleep  # type: ignore[assignment]
+            ps._PENDING_PUSHES.clear()
             shutil.rmtree(tmp, ignore_errors=True)
 
     def test_prediction_feedback_dedupe_backfill_and_ist_market_date(self) -> None:
@@ -313,6 +363,20 @@ class HardeningRegressionTests(unittest.TestCase):
             dsm.atomic_write_json(
                 snap / "_meta.json",
                 {"complete": True, "saved": 1, "checksums": {csv_path.name: "bad"}},
+            )
+            dsm._invalidate_snapshot_caches()
+            self.assertFalse(dsm.snapshot_exists("2026-05-08"))
+
+            dsm.atomic_write_json(
+                snap / "_meta.json",
+                {"complete": True, "saved": 1, "checksums": {}},
+            )
+            dsm._invalidate_snapshot_caches()
+            self.assertFalse(dsm.snapshot_exists("2026-05-08"))
+
+            dsm.atomic_write_json(
+                snap / "_meta.json",
+                {"complete": True, "saved": 1, "checksums": {"MISSING.NS.csv": "0" * 64}},
             )
             dsm._invalidate_snapshot_caches()
             self.assertFalse(dsm.snapshot_exists("2026-05-08"))
@@ -613,6 +677,187 @@ class HardeningRegressionTests(unittest.TestCase):
         finally:
             fdm.get_expected_data_date = old_expected_date  # type: ignore[assignment]
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_safe_filename_containment_and_collision_hashes(self) -> None:
+        from safe_paths import safe_filename, safe_join
+
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            unsafe_values = [
+                r"..\evil",
+                "../evil",
+                "A:B",
+                "A/B",
+                "A B",
+                "निफ्टी",
+                "X" * 180,
+            ]
+            names = [safe_filename(value, ".csv") for value in unsafe_values]
+            self.assertEqual(len(names), len(set(names)))
+            for name in names:
+                path = safe_join(tmp, name)
+                path.relative_to(tmp.resolve(strict=False))
+                self.assertNotIn("..", name)
+                self.assertNotIn("\\", name)
+                self.assertNotIn("/", name)
+            self.assertEqual(safe_filename("RELIANCE.NS", ".csv"), "RELIANCE.NS.csv")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_update_data_if_old_only_refreshes_stale_or_missing(self) -> None:
+        import data_downloader as dd
+
+        tmp = Path(tempfile.mkdtemp())
+        old_dir = dd.DATA_DIR
+        old_update = dd.update_all_data
+        try:
+            dd.DATA_DIR = tmp  # type: ignore[assignment]
+            fresh = tmp / "FRESH.NS.csv"
+            stale = tmp / "STALE.NS.csv"
+            fresh.write_text("Date,Close,Volume\n2026-05-01,1,1\n", encoding="utf-8")
+            stale.write_text("Date,Close,Volume\n2026-05-01,1,1\n", encoding="utf-8")
+            now = time.time()
+            os.utime(fresh, (now, now))
+            os.utime(stale, (now - 72 * 3600, now - 72 * 3600))
+            seen: list[str] = []
+
+            def fake_update(tickers, period="6mo"):
+                seen.extend(tickers)
+                return {"updated": len(tickers), "skipped": 0, "failed": 0, "failures": {}}
+
+            dd.update_all_data = fake_update  # type: ignore[assignment]
+            updated = dd.update_data_if_old(["FRESH", "STALE", "MISS"], max_age_hours=24)
+            self.assertEqual(updated, 2)
+            self.assertEqual(seen, ["STALE.NS", "MISS.NS"])
+        finally:
+            dd.DATA_DIR = old_dir  # type: ignore[assignment]
+            dd.update_all_data = old_update  # type: ignore[assignment]
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_all_data_accessors_return_copies(self) -> None:
+        from strategy_engines import _engine_utils as eu
+
+        old_data = dict(eu.ALL_DATA)
+        try:
+            eu.ALL_DATA.clear()
+            eu.ALL_DATA["AAA.NS"] = _sample_ohlcv(periods=8)
+            frame = eu.get_all_data_frame("AAA.NS")
+            self.assertIsNotNone(frame)
+            frame.iloc[0, frame.columns.get_loc("Close")] = 9999
+            self.assertNotEqual(float(eu.ALL_DATA["AAA.NS"]["Close"].iloc[0]), 9999.0)
+            snap = eu.get_all_data_snapshot(["AAA.NS"])
+            snap["AAA.NS"].iloc[1, snap["AAA.NS"].columns.get_loc("Close")] = 8888
+            self.assertNotEqual(float(eu.ALL_DATA["AAA.NS"]["Close"].iloc[1]), 8888.0)
+        finally:
+            eu.ALL_DATA.clear()
+            eu.ALL_DATA.update(old_data)
+
+    def test_schema_migrations_are_persisted_to_disk(self) -> None:
+        import prediction_feedback_store as pfs
+        import sector_prediction_tracker as tracker
+
+        tmp = Path(tempfile.mkdtemp())
+        old_pfs_log = pfs.LOG_PATH
+        old_tracker_path = tracker._LOG_PATH
+        try:
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            pfs.LOG_PATH.write_text("symbol,mode,market_date,prediction_score,correct\nAAA,2,2026-05-08,70,True\n", encoding="utf-8")
+            pfs.read_feedback_log()
+            persisted = pd.read_csv(pfs.LOG_PATH, dtype=str)
+            self.assertEqual(list(persisted.columns), pfs._FIELDNAMES)
+
+            tracker._LOG_PATH = tmp / "sector_predictions.csv"  # type: ignore[assignment]
+            tracker._invalidate_log_cache()
+            tracker._LOG_PATH.write_text("sector,direction,confidence\nIT,Bullish,70\n", encoding="utf-8")
+            tracker.read_log()
+            sector_persisted = pd.read_csv(tracker._LOG_PATH, dtype=str)
+            self.assertEqual(list(sector_persisted.columns), tracker._FIELDNAMES)
+        finally:
+            pfs.LOG_PATH = old_pfs_log  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            tracker._LOG_PATH = old_tracker_path  # type: ignore[assignment]
+            tracker._invalidate_log_cache()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_weighted_sector_ohlc_does_not_let_tiny_outlier_dominate(self) -> None:
+        import sector_prediction_engine as spe
+        import sector_prediction_tracker as tracker
+
+        idx = pd.bdate_range("2026-04-01", periods=40)
+
+        def frame(close: float, volume: float, high_mult: float = 1.02, low_mult: float = 0.98) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "Open": [close] * len(idx),
+                    "High": [close * high_mult] * len(idx),
+                    "Low": [close * low_mult] * len(idx),
+                    "Close": [close] * len(idx),
+                    "Volume": [volume] * len(idx),
+                },
+                index=idx,
+            )
+
+        all_data = {
+            "BIG1": frame(100, 1_000_000),
+            "BIG1.NS": frame(100, 1_000_000),
+            "BIG2": frame(100, 1_000_000),
+            "BIG2.NS": frame(100, 1_000_000),
+            "TINY": frame(100, 1, high_mult=10.0, low_mult=0.1),
+            "TINY.NS": frame(100, 1, high_mult=10.0, low_mult=0.1),
+        }
+        agg, used = spe._aggregate_weighted_sector_ohlc(["BIG1", "BIG2", "TINY"], all_data)
+        self.assertIsNotNone(agg)
+        self.assertEqual(set(used), {"BIG1", "BIG2", "TINY"})
+        self.assertLess(float(agg["High"].iloc[-1]), 103.0)
+        self.assertGreater(float(agg["Low"].iloc[-1]), 97.0)
+        self.assertTrue((agg["High"] >= agg[["Open", "Close"]].max(axis=1)).all())
+        self.assertTrue((agg["Low"] <= agg[["Open", "Close"]].min(axis=1)).all())
+
+        rebuilt = tracker._rebuild_logged_weighted_basket(["BIG1", "BIG2", "TINY"], all_data)
+        self.assertIsNotNone(rebuilt)
+        self.assertLess(float(rebuilt["High"].iloc[-1]), 103.0)
+        self.assertGreater(float(rebuilt["Low"].iloc[-1]), 97.0)
+
+    def test_sector_prediction_cache_metadata_detects_changed_inputs(self) -> None:
+        import sector_prediction_engine as spe
+
+        scan_a = pd.DataFrame({"Symbol": ["AAA"], "Final Score": [70.0]})
+        scan_b = pd.DataFrame({"Symbol": ["AAA"], "Final Score": [80.0]})
+        meta_a = spe._sector_cache_metadata("IT", scan_a, {}, ["AAA"], "RANGE_BOUND", {"ema_slope": 0.1})
+        payload = {"cache_metadata": dict(meta_a)}
+        self.assertTrue(spe._cache_metadata_matches(payload, meta_a))
+        meta_b = spe._sector_cache_metadata("IT", scan_b, {}, ["AAA"], "RANGE_BOUND", {"ema_slope": 0.1})
+        self.assertFalse(spe._cache_metadata_matches(payload, meta_b))
+
+    def test_learning_prediction_does_not_mutate_encoders(self) -> None:
+        import learning_engine as le
+
+        class DummyScaler:
+            def transform(self, values):
+                return values
+
+        class DummyModel:
+            def predict_proba(self, values):
+                return [[0.4, 0.6] for _ in range(len(values))]
+
+        old_model, old_scaler = le.MODEL, le.SCALER
+        old_regime, old_sector = dict(le.REGIME_ENCODER), dict(le.SECTOR_ENCODER)
+        try:
+            le.MODEL = DummyModel()
+            le.SCALER = DummyScaler()
+            le.REGIME_ENCODER = {"UNKNOWN": 0, "RANGE": 1}
+            le.SECTOR_ENCODER = {"UNKNOWN": 0, "IT": 1}
+            before_regime = dict(le.REGIME_ENCODER)
+            before_sector = dict(le.SECTOR_ENCODER)
+            out = le.predict_success({"Regime": "BRAND_NEW", "Sector": "NEW_SECTOR", "Prediction Score": 70})
+            self.assertEqual(out, 60.0)
+            self.assertEqual(le.REGIME_ENCODER, before_regime)
+            self.assertEqual(le.SECTOR_ENCODER, before_sector)
+        finally:
+            le.MODEL, le.SCALER = old_model, old_scaler
+            le.REGIME_ENCODER = old_regime
+            le.SECTOR_ENCODER = old_sector
 
     def test_compare_import_prefers_saved_tomorrow_store_over_stale_visible_symbols(self) -> None:
         from app_compare_stocks_section import select_compare_tomorrow_import_symbols

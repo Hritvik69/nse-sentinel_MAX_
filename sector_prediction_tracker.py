@@ -47,6 +47,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from atomic_io import atomic_write_csv_df, locked_path
+from sector_ohlc_utils import build_weighted_synthetic_ohlc
 
 try:
     from zoneinfo import ZoneInfo
@@ -215,7 +216,9 @@ def _ensure_schema() -> None:
             return
         with locked_path(_LOG_PATH):
             df = pd.read_csv(_LOG_PATH, dtype=str)
-        upgraded = _coerce_schema(df)
+            upgraded = _coerce_schema(df)
+            if list(df.columns) != _FIELDNAMES:
+                atomic_write_csv_df(_LOG_PATH, upgraded, index=False)
         _set_cached_log(upgraded)
     except Exception:
         pass
@@ -311,16 +314,14 @@ def _rebuild_logged_weighted_basket(symbols: list[str], all_data: dict[str, "pd.
     weights = weights[valid_cols]
     weights = weights / max(weights.sum(), 1e-9)
 
-    scale = 100.0 / base_close[valid_cols]
-    agg = pd.DataFrame(
-        {
-            "Open": open_panel.mul(scale, axis=1).mul(weights, axis=1).sum(axis=1),
-            "High": high_panel.mul(scale, axis=1).max(axis=1),
-            "Low": low_panel.mul(scale, axis=1).min(axis=1),
-            "Close": close_panel.mul(scale, axis=1).mul(weights, axis=1).sum(axis=1),
-            "Volume": volume_panel.sum(axis=1),
-        },
-        index=common_index,
+    agg = build_weighted_synthetic_ohlc(
+        open_panel=open_panel,
+        high_panel=high_panel,
+        low_panel=low_panel,
+        close_panel=close_panel,
+        volume_panel=volume_panel,
+        weights=weights,
+        base_close=base_close[valid_cols],
     )
     return _normalize_hist(agg)
 

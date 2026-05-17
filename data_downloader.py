@@ -41,6 +41,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from atomic_io import atomic_write_csv_df
+from safe_paths import legacy_colon_slash_filename, safe_filename, safe_join
 
 try:
     from zoneinfo import ZoneInfo
@@ -84,12 +85,28 @@ class CsvResult(NamedTuple):
 # ══════════════════════════════════════════════════════════════════════
 
 def _csv_path(ticker_ns: str) -> Path:
-    safe = ticker_ns.replace(":", "_").replace("/", "_")
-    return DATA_DIR / f"{safe}.csv"
+    return safe_join(DATA_DIR, safe_filename(ticker_ns, ".csv"))
+
+
+def _legacy_csv_path(ticker_ns: str) -> Path | None:
+    try:
+        return safe_join(DATA_DIR, legacy_colon_slash_filename(ticker_ns, ".csv"))
+    except Exception:
+        return None
+
+
+def _csv_read_path(ticker_ns: str) -> Path:
+    path = _csv_path(ticker_ns)
+    if path.exists():
+        return path
+    legacy = _legacy_csv_path(ticker_ns)
+    if legacy is not None and legacy.exists():
+        return legacy
+    return path
 
 
 def _csv_age_hours(ticker_ns: str) -> float:
-    p = _csv_path(ticker_ns)
+    p = _csv_read_path(ticker_ns)
     if not p.exists():
         return float("inf")
     return (time.time() - p.stat().st_mtime) / 3600.0
@@ -121,7 +138,7 @@ def load_csv_with_quality(ticker_ns: str) -> CsvResult:
     FIX: Never returns None for a stock that *has* data — even thin data
     is returned with quality="LOW" so the scan can decide what to do.
     """
-    p = _csv_path(ticker_ns)
+    p = _csv_read_path(ticker_ns)
     if not p.exists():
         return CsvResult(None, "MISSING", 0, "CSV not found in data/")
     try:
@@ -339,7 +356,15 @@ def update_data_if_old(
     print_progress: bool = True,
 ) -> int:
     """Legacy convenience wrapper — returns count of updated tickers."""
-    results = update_all_data(tickers, period=period)
+    tickers_ns = [t if t.endswith(".NS") else f"{t}.NS" for t in tickers]
+    try:
+        max_age = float(max_age_hours)
+    except Exception:
+        max_age = float(_MAX_STALENESS_H)
+    stale_or_missing = [t for t in tickers_ns if _csv_age_hours(t) > max_age]
+    if not stale_or_missing:
+        return 0
+    results = update_all_data(stale_or_missing, period=period)
     return results["updated"]
 
 

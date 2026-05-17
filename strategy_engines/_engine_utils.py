@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from atomic_io import atomic_write_csv_df
+from safe_paths import safe_filename, safe_join
 from strategy_engines.constants import MODE7_ID, MODE_ID_COLUMN
 from strategy_engines.mode_helpers import resolve_mode_id
 try:
@@ -50,6 +51,34 @@ _LAST_LIVE_CACHE_DATE: date | None = None
 _LIVE_CACHE_LOCK = threading.Lock()
 _TT_DOWNLOAD_LOOKBACK_DAYS = 420
 _LOG = logging.getLogger(__name__)
+
+
+def _copy_frame_for_reader(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    if not isinstance(df, pd.DataFrame):
+        return None
+    out = df.copy(deep=True)
+    out.attrs.update(dict(getattr(df, "attrs", {}) or {}))
+    return out
+
+
+def get_all_data_frame(ticker_ns: str, *, copy: bool = True) -> pd.DataFrame | None:
+    """Return one ALL_DATA frame under lock; copies protect the shared store."""
+    with _ALL_DATA_LOCK:
+        df = ALL_DATA.get(ticker_ns)
+        if copy:
+            return _copy_frame_for_reader(df)
+        return df if isinstance(df, pd.DataFrame) else None
+
+
+def get_all_data_snapshot(keys: list[str] | tuple[str, ...] | None = None, *, copy: bool = True) -> dict[str, pd.DataFrame | None]:
+    """Return a locked point-in-time snapshot of selected ALL_DATA entries."""
+    with _ALL_DATA_LOCK:
+        source_keys = list(keys) if keys is not None else list(ALL_DATA.keys())
+        out: dict[str, pd.DataFrame | None] = {}
+        for key in source_keys:
+            df = ALL_DATA.get(key)
+            out[key] = _copy_frame_for_reader(df) if copy else (df if isinstance(df, pd.DataFrame) else None)
+        return out
 
 
 def _evict_all_data_if_needed() -> None:
@@ -477,8 +506,7 @@ def _persist_frame_to_csv(ticker_ns: str, df: pd.DataFrame | None) -> None:
     try:
         from data_downloader import DATA_DIR
 
-        safe = ticker_ns.replace(":", "_").replace("/", "_")
-        path = DATA_DIR / f"{safe}.csv"
+        path = safe_join(DATA_DIR, safe_filename(ticker_ns, ".csv"))
         atomic_write_csv_df(path, df.sort_index())
     except Exception:
         _LOG.exception("Failed to persist %s CSV cache", ticker_ns)
@@ -751,8 +779,7 @@ def get_shared_market_frame(
                 return prepared_tt
         except Exception:
             pass
-    with _ALL_DATA_LOCK:
-        cached = ALL_DATA.get(cache_key)
+    cached = get_all_data_frame(cache_key)
 
     stale_fallback = None
     if cached is not None:
@@ -971,8 +998,7 @@ def preload_all(
         except Exception:
             pass
 
-    with _ALL_DATA_LOCK:
-        existing = {ticker_ns: ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
+    existing = get_all_data_snapshot(tickers_ns)
     with _NO_DATA_LOCK:
         known_no_data = set(_coerce_no_data_tickers())
     if _current_time_travel_cutoff() is not None:
@@ -1236,11 +1262,11 @@ def prepare_market_session_data(
         except Exception:
             snapshot_loaded = 0
 
-    with _ALL_DATA_LOCK:
-        if force_live_refresh:
-            preload_tickers = list(tickers_ns)
-        else:
-            preload_tickers = [ticker_ns for ticker_ns in tickers_ns if ALL_DATA.get(ticker_ns) is None]
+    if force_live_refresh:
+        preload_tickers = list(tickers_ns)
+    else:
+        existing_for_plan = get_all_data_snapshot(tickers_ns, copy=False)
+        preload_tickers = [ticker_ns for ticker_ns in tickers_ns if existing_for_plan.get(ticker_ns) is None]
 
     preload_stats: dict[str, int | bool]
     if preload_tickers:
@@ -1275,7 +1301,7 @@ def prepare_market_session_data(
                 and callable(save_snapshot_fn)
                 and not snapshot_exists_fn(expected_date)
             ):
-                snapshot_saved = int(save_snapshot_fn(ALL_DATA, expected_date, require_live_source=True) or 0)
+                snapshot_saved = int(save_snapshot_fn(get_all_data_snapshot(), expected_date, require_live_source=True) or 0)
         except Exception:
             snapshot_saved = 0
 
@@ -1305,8 +1331,7 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
                 return cached_tt
         except Exception:
             pass
-    with _ALL_DATA_LOCK:
-        df = ALL_DATA.get(ticker_ns)
+    df = get_all_data_frame(ticker_ns)
     df = _apply_time_travel_cutoff_if_needed(df, ticker_ns)
     stale_fallback = None
     if df is not None:

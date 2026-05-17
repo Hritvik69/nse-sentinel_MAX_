@@ -42,6 +42,7 @@ SCALER = None
 REGIME_ENCODER: dict[str, int] = {}
 SECTOR_ENCODER: dict[str, int] = {}
 _MODEL_LOCK = threading.RLock()
+_TRAINING_LOCK = threading.Lock()
 
 TRAINING_STATUS: dict = {
     "trained": False,
@@ -185,7 +186,14 @@ def _encode_with_map(values: pd.Series, encoder: dict[str, int]) -> pd.Series:
     return values.map(lambda value: encoder.get(_normalise_text(value), 0)).astype(float)
 
 
-def _encode_feature_frame(df: pd.DataFrame, *, fit: bool = False) -> pd.DataFrame:
+def _encode_feature_frame(
+    df: pd.DataFrame,
+    *,
+    fit: bool = False,
+    regime_encoder: dict[str, int] | None = None,
+    sector_encoder: dict[str, int] | None = None,
+    update_global: bool = False,
+) -> pd.DataFrame:
     global REGIME_ENCODER, SECTOR_ENCODER
 
     frame = df.copy()
@@ -212,13 +220,20 @@ def _encode_feature_frame(df: pd.DataFrame, *, fit: bool = False) -> pd.DataFram
     frame["regime"] = frame["regime"].fillna("UNKNOWN").astype(str)
     frame["sector"] = frame["sector"].fillna("UNKNOWN").astype(str)
 
-    with _MODEL_LOCK:
-        if fit or not REGIME_ENCODER:
-            REGIME_ENCODER = _build_encoder(frame["regime"], existing={})
-        if fit or not SECTOR_ENCODER:
-            SECTOR_ENCODER = _build_encoder(frame["sector"], existing={})
-        regime_encoder = dict(REGIME_ENCODER)
-        sector_encoder = dict(SECTOR_ENCODER)
+    if fit:
+        regime_encoder = _build_encoder(frame["regime"], existing={})
+        sector_encoder = _build_encoder(frame["sector"], existing={})
+        if update_global:
+            with _MODEL_LOCK:
+                REGIME_ENCODER = dict(regime_encoder)
+                SECTOR_ENCODER = dict(sector_encoder)
+    elif regime_encoder is None or sector_encoder is None:
+        with _MODEL_LOCK:
+            regime_encoder = dict(REGIME_ENCODER)
+            sector_encoder = dict(SECTOR_ENCODER)
+    else:
+        regime_encoder = dict(regime_encoder)
+        sector_encoder = dict(sector_encoder)
 
     encoded = pd.DataFrame(
         {
@@ -326,25 +341,55 @@ def _build_sector_training_rows() -> pd.DataFrame:
         return pd.DataFrame(columns=_RAW_FEATURE_COLUMNS + ["target", "source"])
 
 
-def prepare_features(df: pd.DataFrame):
+def _prepare_training_features(df: pd.DataFrame):
     try:
         if df is None or df.empty or "target" not in df.columns:
-            return None, None
+            return None, None, {}, {}
 
         y = pd.to_numeric(df["target"], errors="coerce")
         mask = y.notna()
         if not mask.any():
-            return None, None
+            return None, None, {}, {}
 
         raw = df.loc[mask, _RAW_FEATURE_COLUMNS].reset_index(drop=True)
-        X = _encode_feature_frame(raw, fit=True)
-        return X, y.loc[mask].astype(int).reset_index(drop=True)
+        regime_encoder = _build_encoder(raw["regime"], existing={})
+        sector_encoder = _build_encoder(raw["sector"], existing={})
+        X = _encode_feature_frame(
+            raw,
+            fit=False,
+            regime_encoder=regime_encoder,
+            sector_encoder=sector_encoder,
+        )
+        return X, y.loc[mask].astype(int).reset_index(drop=True), regime_encoder, sector_encoder
     except Exception:
-        return None, None
+        return None, None, {}, {}
+
+
+def prepare_features(df: pd.DataFrame):
+    X, y, regime_encoder, sector_encoder = _prepare_training_features(df)
+    if X is not None:
+        with _MODEL_LOCK:
+            global REGIME_ENCODER, SECTOR_ENCODER
+            REGIME_ENCODER = dict(regime_encoder)
+            SECTOR_ENCODER = dict(sector_encoder)
+    return X, y
 
 
 def train_learning_model():
     global MODEL, SCALER, TRAINING_STATUS
+    if not _TRAINING_LOCK.acquire(blocking=False):
+        status = dict(TRAINING_STATUS)
+        status["message"] = "Training already in progress."
+        return {"model": MODEL, "scaler": SCALER, "status": status}
+
+    try:
+        return _train_learning_model_locked()
+    finally:
+        _TRAINING_LOCK.release()
+
+
+def _train_learning_model_locked():
+    global MODEL, SCALER, TRAINING_STATUS, REGIME_ENCODER, SECTOR_ENCODER
 
     status = {
         "trained": False,
@@ -384,7 +429,7 @@ def train_learning_model():
         TRAINING_STATUS = status
         return {"model": None, "scaler": None, "status": status}
 
-    X, y = prepare_features(train_rows)
+    X, y, regime_encoder, sector_encoder = _prepare_training_features(train_rows)
     if X is None or y is None or X.empty:
         status["message"] = "Training features unavailable."
         TRAINING_STATUS = status
@@ -422,8 +467,8 @@ def train_learning_model():
         with _MODEL_LOCK:
             MODEL = model
             SCALER = scaler
-            regime_encoder = dict(REGIME_ENCODER)
-            sector_encoder = dict(SECTOR_ENCODER)
+            REGIME_ENCODER = dict(regime_encoder)
+            SECTOR_ENCODER = dict(sector_encoder)
         status.update(
             {
                 "trained": True,
@@ -572,20 +617,27 @@ def _extract_feature_dict(row: dict | pd.Series) -> dict:
     }
 
 
-def _row_to_feature_frame(row: dict | pd.Series) -> pd.DataFrame:
+def _row_to_feature_frame(
+    row: dict | pd.Series,
+    *,
+    regime_encoder: dict[str, int] | None = None,
+    sector_encoder: dict[str, int] | None = None,
+) -> pd.DataFrame:
     raw = pd.DataFrame([_extract_feature_dict(row)])
-    return _encode_feature_frame(raw, fit=False)
+    return _encode_feature_frame(raw, fit=False, regime_encoder=regime_encoder, sector_encoder=sector_encoder)
 
 
 def predict_success(row: dict):
     with _MODEL_LOCK:
         mdl = MODEL
         scl = SCALER
+        regime_encoder = dict(REGIME_ENCODER)
+        sector_encoder = dict(SECTOR_ENCODER)
     if mdl is None or scl is None:
         return 50.0
 
     try:
-        X = _row_to_feature_frame(row)
+        X = _row_to_feature_frame(row, regime_encoder=regime_encoder, sector_encoder=sector_encoder)
         X_scaled = scl.transform(X)
         prob = mdl.predict_proba(X_scaled)[0][1]
         return round(float(prob) * 100.0, 1)
@@ -602,13 +654,20 @@ def batch_predict_success(df: pd.DataFrame) -> pd.Series:
     with _MODEL_LOCK:
         mdl = MODEL
         scl = SCALER
+        regime_encoder = dict(REGIME_ENCODER)
+        sector_encoder = dict(SECTOR_ENCODER)
     if mdl is None or scl is None:
         return default
 
     try:
         rows = [_extract_feature_dict(row) for _, row in df.iterrows()]
         feat_df = pd.DataFrame(rows)
-        feat_enc = _encode_feature_frame(feat_df, fit=False)
+        feat_enc = _encode_feature_frame(
+            feat_df,
+            fit=False,
+            regime_encoder=regime_encoder,
+            sector_encoder=sector_encoder,
+        )
         probs = mdl.predict_proba(scl.transform(feat_enc))[:, 1]
         return pd.Series([round(float(p) * 100.0, 1) for p in probs], index=df.index, dtype=float)
     except Exception:

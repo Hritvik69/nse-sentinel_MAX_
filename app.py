@@ -351,6 +351,10 @@ read_snapshot_metadata = getattr(_dsm, "read_snapshot_metadata", lambda *_args, 
 _PREDICTION_FEEDBACK_PATH = Path(_HERE) / "data" / "prediction_feedback_log.csv"
 _SECTOR_PREDICTION_PATH = Path(_HERE) / "data" / "sector_predictions.csv"
 _LEARNING_STATUS_SNAPSHOT_PATH = Path(_HERE) / "data" / "learning_status_snapshot.json"
+_LEARNING_STATUS_WORKER_CV = threading.Condition()
+_LEARNING_STATUS_PENDING: tuple[int, dict, dict, tuple[str, float, float]] | None = None
+_LEARNING_STATUS_SEQ = 0
+_LEARNING_STATUS_WORKER_STARTED = False
 
 
 def _safe_file_mtime(path: Path) -> float:
@@ -463,13 +467,34 @@ def _write_learning_status_snapshot_async(
     *,
     signature: tuple[str, float, float],
 ) -> None:
-    def _bg_write_snapshot() -> None:
-        try:
-            _write_learning_status_snapshot(learning_status, signal_status, signature=signature)
-        except Exception:
-            pass
+    global _LEARNING_STATUS_PENDING, _LEARNING_STATUS_SEQ, _LEARNING_STATUS_WORKER_STARTED
 
-    threading.Thread(target=_bg_write_snapshot, daemon=True).start()
+    def _worker() -> None:
+        global _LEARNING_STATUS_PENDING
+        while True:
+            with _LEARNING_STATUS_WORKER_CV:
+                while _LEARNING_STATUS_PENDING is None:
+                    _LEARNING_STATUS_WORKER_CV.wait()
+                seq, learning_payload, signal_payload, sig = _LEARNING_STATUS_PENDING
+                _LEARNING_STATUS_PENDING = None
+            try:
+                _write_learning_status_snapshot(learning_payload, signal_payload, signature=sig)
+            except Exception:
+                pass
+
+    with _LEARNING_STATUS_WORKER_CV:
+        _LEARNING_STATUS_SEQ += 1
+        _LEARNING_STATUS_PENDING = (
+            _LEARNING_STATUS_SEQ,
+            dict(learning_status or {}),
+            dict(signal_status or {}),
+            signature,
+        )
+        if not _LEARNING_STATUS_WORKER_STARTED:
+            thread = threading.Thread(target=_worker, daemon=True, name="learning_status_snapshot_worker")
+            thread.start()
+            _LEARNING_STATUS_WORKER_STARTED = True
+        _LEARNING_STATUS_WORKER_CV.notify()
 
 
 def _read_learning_status_snapshot() -> dict:
@@ -681,7 +706,7 @@ def _refresh_feedback_learning_system(force: bool = False) -> dict:
         return cached_status
 
     try:
-        from strategy_engines._engine_utils import ALL_DATA
+        from strategy_engines._engine_utils import ALL_DATA, get_all_data_snapshot
     except Exception:
         ALL_DATA = {}
 
@@ -690,6 +715,7 @@ def _refresh_feedback_learning_system(force: bool = False) -> dict:
             ALL_DATA = {}
         if not ALL_DATA:
             load_snapshot_into_ALL_DATA(get_expected_data_date())
+        ALL_DATA = get_all_data_snapshot() if callable(get_all_data_snapshot) else dict(ALL_DATA)
     except Exception:
         pass
 
@@ -963,11 +989,14 @@ def _pending_outcome_symbols(limit: int = _POST_CLOSE_OUTCOME_SYMBOL_LIMIT) -> d
 def _build_outcome_backfill_data(symbols: list[str]) -> dict[str, Any]:
     all_data: dict[str, Any] = {}
     try:
-        from strategy_engines._engine_utils import ALL_DATA as ENGINE_ALL_DATA
+        from strategy_engines._engine_utils import ALL_DATA as ENGINE_ALL_DATA, get_all_data_snapshot
     except Exception:
         ENGINE_ALL_DATA = {}
+        get_all_data_snapshot = None  # type: ignore[assignment]
 
-    if isinstance(ENGINE_ALL_DATA, dict):
+    if callable(get_all_data_snapshot):
+        all_data.update(get_all_data_snapshot())
+    elif isinstance(ENGINE_ALL_DATA, dict):
         all_data.update(ENGINE_ALL_DATA)
 
     for raw_symbol in symbols:
@@ -979,8 +1008,8 @@ def _build_outcome_backfill_data(symbols: list[str]) -> dict[str, Any]:
             hist = None
             for key in (ticker_ns, symbol):
                 try:
-                    if isinstance(ENGINE_ALL_DATA, dict) and ENGINE_ALL_DATA.get(key) is not None:
-                        hist = ENGINE_ALL_DATA.get(key)
+                    if key in all_data and all_data.get(key) is not None:
+                        hist = all_data.get(key)
                         break
                 except Exception:
                     pass
@@ -1419,6 +1448,8 @@ _SCOPES = [
 _TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
 _IMPORTED_AI_STORE_PATH = Path(_HERE) / "data" / "imported_ai_learning_store.json"
 _TICKER_MASTER_STORE_PATH = Path(_HERE) / "data" / "ticker_master_list.json"
+_TOMORROW_STORE_LOCK = threading.RLock()
+_IMPORTED_AI_STORE_LOCK = threading.RLock()
 
 _TOMORROW_SECTION_ORDER = ("relax", "swing", "intraday", "momentum", "breakout")
 _TOMORROW_SECTION_META = {
@@ -1450,7 +1481,7 @@ _TOMORROW_SECTION_META = {
 }
 
 
-@st.cache_resource(ttl=0)
+@st.cache_resource(ttl=1800)
 def _get_sheet():
     """
     Returns the gspread worksheet object.
@@ -1875,6 +1906,40 @@ def _merge_tomorrow_symbols(existing_symbols: list[object], incoming_symbols: li
     return merged[:limit], max(0, len(merged[:limit]) - base_len)
 
 
+def _merge_tomorrow_stores(latest: dict | None, incoming: dict | None, limit: int = 20) -> dict:
+    latest_norm = _normalize_tomorrow_store(latest)
+    incoming_norm = _normalize_tomorrow_store(incoming)
+    merged_sections = _tomorrow_section_defaults()
+    seen: set[str] = set()
+    total = 0
+    for bucket in _TOMORROW_SECTION_ORDER:
+        for source in (latest_norm.get("sections", {}), incoming_norm.get("sections", {})):
+            for raw in list(source.get(bucket, []) if isinstance(source, dict) else []):
+                symbol = _normalize_tomorrow_symbol(raw)
+                if not symbol or symbol in seen or total >= limit:
+                    continue
+                merged_sections[bucket].append(symbol)
+                seen.add(symbol)
+                total += 1
+    for source in (latest_norm.get("picks", []), incoming_norm.get("picks", [])):
+        for raw in list(source or []):
+            symbol = _normalize_tomorrow_symbol(raw)
+            if not symbol or symbol in seen or total >= limit:
+                continue
+            merged_sections["relax"].append(symbol)
+            seen.add(symbol)
+            total += 1
+    incoming_notes = str(incoming_norm.get("notes", "") or "")
+    latest_notes = str(latest_norm.get("notes", "") or "")
+    return _normalize_tomorrow_store(
+        {
+            "sections": merged_sections,
+            "picks": _tomorrow_flatten_sections(merged_sections, limit=limit),
+            "notes": incoming_notes if incoming_notes.strip() else latest_notes,
+        }
+    )
+
+
 def _load_local_tomorrow_store() -> dict:
     default = {"picks": [], "notes": ""}
     try:
@@ -1967,19 +2032,25 @@ def _load_tomorrow_store(force_refresh: bool = False) -> tuple[dict, str]:
     return _cache_tomorrow_store_session(store, storage_mode)
 
 
-def _persist_tomorrow_store(store: dict) -> None:
-    normalized = _normalize_tomorrow_store(store)
-    storage_mode = "cloud" if _get_sheet() is not None else "local"
-    _cache_tomorrow_store_session(normalized, storage_mode)
-    try:
-        _save_local_tomorrow_store(normalized)
-    except Exception:
-        pass
-    if storage_mode == "cloud":
+def _persist_tomorrow_store(store: dict, *, replace: bool = False) -> None:
+    with _TOMORROW_STORE_LOCK:
+        normalized = _normalize_tomorrow_store(store)
+        storage_mode = "cloud" if _get_sheet() is not None else "local"
+        if not replace:
+            latest = _normalize_tomorrow_store(_load_local_tomorrow_store())
+            if storage_mode == "cloud":
+                latest = _merge_tomorrow_stores(latest, _load_picks())
+            normalized = _merge_tomorrow_stores(latest, normalized)
+        _cache_tomorrow_store_session(normalized, storage_mode)
         try:
-            _save_picks(normalized)
+            _save_local_tomorrow_store(normalized)
         except Exception:
             pass
+        if storage_mode == "cloud":
+            try:
+                _save_picks(normalized)
+            except Exception:
+                pass
 
 
 def _assign_symbols_to_tomorrow_bucket(
@@ -2065,7 +2136,7 @@ def _clear_tomorrow_picks_store(store: dict) -> int:
     removed_count = len(normalized.get("picks", []))
     normalized["sections"] = _tomorrow_section_defaults()
     normalized["picks"] = []
-    _persist_tomorrow_store(normalized)
+    _persist_tomorrow_store(normalized, replace=True)
     return removed_count
 
 
@@ -2397,6 +2468,20 @@ def _normalize_imported_ai_learning_payload(payload: object) -> dict[str, object
         return default.copy()
 
 
+def _merge_imported_ai_learning_payloads(latest: object, incoming: object) -> dict[str, object]:
+    latest_norm = _normalize_imported_ai_learning_payload(latest)
+    incoming_norm = _normalize_imported_ai_learning_payload(incoming)
+    records = _normalize_imported_ai_learning_records(
+        list(latest_norm.get("records", []) or []) + list(incoming_norm.get("records", []) or [])
+    )
+    incoming_updated = str(incoming_norm.get("updated_at", "") or "")
+    latest_updated = str(latest_norm.get("updated_at", "") or "")
+    return {
+        "records": records,
+        "updated_at": incoming_updated if incoming_updated.strip() else latest_updated,
+    }
+
+
 def _load_local_imported_ai_learning_store() -> dict[str, object]:
     default = {"records": [], "updated_at": ""}
     try:
@@ -2520,28 +2605,43 @@ def _load_imported_ai_learning_store(force_refresh: bool = False) -> tuple[dict[
     return _cache_imported_ai_learning_store_session(payload, storage_mode), storage_mode
 
 
-def _persist_imported_ai_learning_store(records: list[dict[str, object]], *, updated_at: str | None = None) -> dict[str, object]:
-    normalized_records = _normalize_imported_ai_learning_records(records)
-    payload = {
-        "records": normalized_records,
-        "updated_at": (
-            datetime.now().isoformat(timespec="seconds")
-            if updated_at is None
-            else str(updated_at or "")
-        ),
-    }
-    storage_mode = "cloud" if _get_sheet() is not None else "local"
-    normalized_payload = _cache_imported_ai_learning_store_session(payload, storage_mode)
-    try:
-        _save_local_imported_ai_learning_store(normalized_payload)
-    except Exception:
-        pass
-    if storage_mode == "cloud":
+def _persist_imported_ai_learning_store(
+    records: list[dict[str, object]],
+    *,
+    updated_at: str | None = None,
+    replace: bool = False,
+) -> dict[str, object]:
+    with _IMPORTED_AI_STORE_LOCK:
+        normalized_records = _normalize_imported_ai_learning_records(records)
+        payload = {
+            "records": normalized_records,
+            "updated_at": (
+                datetime.now().isoformat(timespec="seconds")
+                if updated_at is None
+                else str(updated_at or "")
+            ),
+        }
+        storage_mode = "cloud" if _get_sheet() is not None else "local"
+        normalized_payload = _normalize_imported_ai_learning_payload(payload)
+        if not replace:
+            latest_payload = _normalize_imported_ai_learning_payload(_load_local_imported_ai_learning_store())
+            if storage_mode == "cloud":
+                latest_payload = _merge_imported_ai_learning_payloads(
+                    latest_payload,
+                    _load_imported_ai_learning_cloud_store(),
+                )
+            normalized_payload = _merge_imported_ai_learning_payloads(latest_payload, normalized_payload)
+        normalized_payload = _cache_imported_ai_learning_store_session(normalized_payload, storage_mode)
         try:
-            _save_imported_ai_learning_cloud_store(normalized_payload)
+            _save_local_imported_ai_learning_store(normalized_payload)
         except Exception:
             pass
-    return normalized_payload
+        if storage_mode == "cloud":
+            try:
+                _save_imported_ai_learning_cloud_store(normalized_payload)
+            except Exception:
+                pass
+        return normalized_payload
 
 
 def _get_imported_ai_learning_records() -> list[dict[str, object]]:
@@ -3402,7 +3502,7 @@ def render_imported_ai_learning_panel() -> None:
                 st.info("No imported AI stocks are stored yet in the permanent basket.")
     with _action3:
         if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
-            _persist_imported_ai_learning_store([], updated_at="")
+            _persist_imported_ai_learning_store([], updated_at="", replace=True)
             for key in (
                 "imported_ai_learning_records",
                 "imported_ai_learning_storage_mode",
@@ -3539,9 +3639,10 @@ def _build_mode_ai_top3_preview(
 
     if allow_live_fallback and len(prediction_map) < len(normalized):
         try:
-            from strategy_engines._engine_utils import ALL_DATA as _ai_all_data
+            from strategy_engines._engine_utils import ALL_DATA as _ai_all_data, get_all_data_snapshot as _ai_all_data_snapshot
             from tomorrow_prediction_engine import summarize_tomorrow_predictions
 
+            _ai_all_data = _ai_all_data_snapshot() if callable(_ai_all_data_snapshot) else _ai_all_data
             live_summary = summarize_tomorrow_predictions(normalized, _ai_all_data, mode_int)
             if isinstance(live_summary, dict) and live_summary:
                 summary = live_summary
@@ -4372,7 +4473,10 @@ def get_mktcap_cr(ticker: str) -> float:
             return _MKT_CACHE[ticker]
     try:
         ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-        df = _engine_utils.ALL_DATA.get(ticker_ns) if _engine_utils is not None else None
+        if _engine_utils is not None and callable(getattr(_engine_utils, "get_all_data_frame", None)):
+            df = _engine_utils.get_all_data_frame(ticker_ns)
+        else:
+            df = _engine_utils.ALL_DATA.get(ticker_ns) if _engine_utils is not None else None
         if df is not None and not df.empty and {"Close", "Volume"}.issubset(df.columns):
             close = df["Close"].dropna()
             volume = df["Volume"].dropna()
@@ -4424,7 +4528,10 @@ def get_nifty_20d_return() -> float | None:
         try:
             if _engine_utils is not None:
                 for tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
-                    df_pre = _engine_utils.ALL_DATA.get(tk)
+                    if callable(getattr(_engine_utils, "get_all_data_frame", None)):
+                        df_pre = _engine_utils.get_all_data_frame(tk)
+                    else:
+                        df_pre = _engine_utils.ALL_DATA.get(tk)
                     if df_pre is None or len(df_pre) < 25 or "Close" not in df_pre.columns:
                         continue
                     if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
@@ -5074,7 +5181,7 @@ def render_tomorrow_picks_panel() -> None:
                             ]
                             store["sections"] = _apply_tomorrow_sections_limit(updated_sections, limit=20)
                             store["picks"] = _tomorrow_flatten_sections(store["sections"], limit=20)
-                            _persist_tomorrow_store(store)
+                            _persist_tomorrow_store(store, replace=True)
                             st.rerun()
 
         with right_col:
@@ -6948,7 +7055,10 @@ def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
         try:
             if _engine_utils is not None:
                 for _tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
-                    _cached = _engine_utils.ALL_DATA.get(_tk)
+                    if callable(getattr(_engine_utils, "get_all_data_frame", None)):
+                        _cached = _engine_utils.get_all_data_frame(_tk)
+                    else:
+                        _cached = _engine_utils.ALL_DATA.get(_tk)
                     if isinstance(_cached, pd.DataFrame) and not _cached.empty:
                         df = _cached.copy()
                         break
@@ -7535,12 +7645,16 @@ def _build_ready_scan_tickers(tickers, *, strict: bool = True) -> tuple[list[str
             for ticker in tickers_list
         ]
 
-        all_data_lock = getattr(_engine_utils, "_ALL_DATA_LOCK", None)
-        if all_data_lock is not None:
-            with all_data_lock:
-                cached_frames = {ticker_ns: _engine_utils.ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
+        snapshot_fn = getattr(_engine_utils, "get_all_data_snapshot", None)
+        if callable(snapshot_fn):
+            cached_frames = snapshot_fn(tickers_ns)
         else:
-            cached_frames = {ticker_ns: _engine_utils.ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
+            all_data_lock = getattr(_engine_utils, "_ALL_DATA_LOCK", None)
+            if all_data_lock is not None:
+                with all_data_lock:
+                    cached_frames = {ticker_ns: _engine_utils.ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
+            else:
+                cached_frames = {ticker_ns: _engine_utils.ALL_DATA.get(ticker_ns) for ticker_ns in tickers_ns}
 
         no_data_lock = getattr(_engine_utils, "_NO_DATA_LOCK", None)
         no_data_fn = getattr(_engine_utils, "_coerce_no_data_tickers", None)
@@ -7591,6 +7705,7 @@ def run_scan(tickers, mode, workers=12):
     results = []
     total   = len(tickers)
     done    = 0
+    failed_scan_items: list[tuple[str, str]] = []
 
     progress_bar = st.progress(0.0)
     col_a, col_b = st.columns([3, 1])
@@ -7625,10 +7740,14 @@ def run_scan(tickers, mode, workers=12):
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {_submit_analyse(ex, t): t for t in tickers}
         for fut in as_completed(futures):
+            ticker = futures.get(fut, "")
             done += 1
-            r = fut.result()
-            if r:
-                results.append(r)
+            try:
+                r = fut.result()
+                if r:
+                    results.append(r)
+            except Exception as exc:
+                failed_scan_items.append((str(ticker), str(exc)[:180]))
             now = time.time()
             should_render = (
                 done == total
@@ -7655,6 +7774,14 @@ def run_scan(tickers, mode, workers=12):
 
     progress_bar.progress(1.0)
     elapsed_total = time.time() - t0
+    if failed_scan_items:
+        try:
+            st.session_state["last_scan_failures"] = {
+                "count": len(failed_scan_items),
+                "items": failed_scan_items[:25],
+            }
+        except Exception:
+            pass
     status.markdown(
         f'<div class="status-line"><span class="sdot sdot-green"></span>'
         f'&nbsp;✅ Complete &nbsp;·&nbsp; {total:,} stocks in'
@@ -7662,6 +7789,8 @@ def run_scan(tickers, mode, workers=12):
         f' &nbsp;·&nbsp; <b style="color:#00d4a8">{len(results)}</b> found'
         f' &nbsp;·&nbsp; Avg speed <b style="color:#8ab4d8">{(total / elapsed_total) if elapsed_total > 0 else 0:.1f}/s</b></div>',
         unsafe_allow_html=True)
+    if failed_scan_items:
+        st.caption(f"Scan skipped {len(failed_scan_items)} ticker(s) after per-symbol errors; successful rows were kept.")
     eta_box.empty()
     return results, elapsed_total
 
@@ -9411,11 +9540,16 @@ if main_scan_clicked:
         preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
             preload_message
         )
+        if _engine_utils is not None and callable(getattr(_engine_utils, "get_all_data_snapshot", None)):
+            _preload_keys = [t if t.endswith(".NS") else f"{t}.NS" for t in all_tickers]
+            _preload_existing = _engine_utils.get_all_data_snapshot(_preload_keys, copy=False)
+        else:
+            _preload_existing = {}
         _preload_tickers = [
             t for t in all_tickers
             if force_live_refresh
             or _engine_utils is None
-            or _engine_utils.ALL_DATA.get(t if t.endswith(".NS") else f"{t}.NS") is None
+            or _preload_existing.get(t if t.endswith(".NS") else f"{t}.NS") is None
         ]
         _preload_total = len(_preload_tickers)
         _preload_state = {
@@ -9480,9 +9614,10 @@ if main_scan_clicked:
         and not snapshot_exists(expected_date)
     ):
         try:
-            from strategy_engines._engine_utils import ALL_DATA
+            from strategy_engines._engine_utils import ALL_DATA, get_all_data_snapshot
 
-            saved = save_closing_snapshot(ALL_DATA, expected_date, require_live_source=True)
+            data_for_snapshot = get_all_data_snapshot() if callable(get_all_data_snapshot) else ALL_DATA
+            saved = save_closing_snapshot(data_for_snapshot, expected_date, require_live_source=True)
             if saved > 0:
                 st.success(f"💾 Market-data snapshot saved: {saved} tickers for {expected_date}")
         except Exception:
@@ -9629,7 +9764,8 @@ if st.session_state.get("show_sector_screener", False):
 
 # ── NEW: MARKET BIAS UI PANEL (Isolated) ──────────────────────────────
     try:
-        from strategy_engines._engine_utils import ALL_DATA as _sector_prediction_all_data
+        from strategy_engines._engine_utils import ALL_DATA as _sector_prediction_all_data, get_all_data_snapshot as _sector_all_data_snapshot
+        _sector_prediction_all_data = _sector_all_data_snapshot() if callable(_sector_all_data_snapshot) else _sector_prediction_all_data
     except Exception:
         _sector_prediction_all_data = {}
 

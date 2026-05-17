@@ -23,6 +23,8 @@ Public API  (backwards compatible with v1)
 from __future__ import annotations
 
 import math
+import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -32,6 +34,7 @@ import pandas as pd
 import yfinance as yf
 
 from feature_data_manager import feature_manager, get_current_window
+from sector_ohlc_utils import build_weighted_synthetic_ohlc
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -435,21 +438,14 @@ def _aggregate_weighted_sector_ohlc(
     weights = weights[valid_cols]
     weights = weights / max(weights.sum(), 1e-9)
 
-    scale = 100.0 / base_close[valid_cols]
-    norm_open = open_panel.mul(scale, axis=1)
-    norm_high = high_panel.mul(scale, axis=1)
-    norm_low = low_panel.mul(scale, axis=1)
-    norm_close = close_panel.mul(scale, axis=1)
-
-    agg = pd.DataFrame(
-        {
-            "Open": norm_open.mul(weights, axis=1).sum(axis=1),
-            "High": norm_high.max(axis=1),
-            "Low": norm_low.min(axis=1),
-            "Close": norm_close.mul(weights, axis=1).sum(axis=1),
-            "Volume": volume_panel.sum(axis=1),
-        },
-        index=common_index,
+    agg = build_weighted_synthetic_ohlc(
+        open_panel=open_panel,
+        high_panel=high_panel,
+        low_panel=low_panel,
+        close_panel=close_panel,
+        volume_panel=volume_panel,
+        weights=weights,
+        base_close=base_close[valid_cols],
     )
     agg = _normalize_ohlc_frame(agg)
     if agg is None or len(agg) < _MIN_ROWS:
@@ -683,6 +679,98 @@ def _calibrate(direction: str, raw_conf: float, sector: str) -> float:
         return raw_conf
 
 
+def _stable_json_hash(payload: object) -> str:
+    try:
+        encoded = json.dumps(payload, sort_keys=True, default=str, ensure_ascii=True)
+    except Exception:
+        encoded = str(payload)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
+def _frame_signature(df: pd.DataFrame | None) -> tuple:
+    try:
+        if df is None or df.empty:
+            return (0, "", 0.0, 0.0)
+        close = pd.to_numeric(df.get("Close", pd.Series(dtype=float)), errors="coerce").dropna()
+        volume = pd.to_numeric(df.get("Volume", pd.Series(dtype=float)), errors="coerce").dropna()
+        return (
+            int(len(df)),
+            str(pd.to_datetime(df.index[-1])),
+            round(float(close.iloc[-1]), 6) if not close.empty else 0.0,
+            round(float(volume.iloc[-1]), 2) if not volume.empty else 0.0,
+        )
+    except Exception:
+        return (0, "", 0.0, 0.0)
+
+
+def _scan_input_signature(scan_df: pd.DataFrame | None) -> str:
+    if scan_df is None or not isinstance(scan_df, pd.DataFrame) or scan_df.empty:
+        return "empty"
+    cols = [
+        col for col in ("Symbol", "Ticker", "Final Score", "Prediction Score", "Signal", "Action")
+        if col in scan_df.columns
+    ]
+    if not cols:
+        return f"rows:{len(scan_df)}"
+    sample = scan_df[cols].copy()
+    symbol_col = "Symbol" if "Symbol" in sample.columns else ("Ticker" if "Ticker" in sample.columns else "")
+    if symbol_col:
+        sample[symbol_col] = sample[symbol_col].astype(str).str.upper().str.replace(".NS", "", regex=False)
+        sample = sample.sort_values(symbol_col, kind="stable")
+    return _stable_json_hash(sample.fillna("").astype(str).to_dict("records"))
+
+
+def _all_data_input_signature(all_data: dict, symbols: list[str]) -> str:
+    items: list[tuple[str, tuple]] = []
+    for symbol in symbols[:_MAX_AGGREGATION_STOCKS]:
+        plain = _plain_symbol(symbol)
+        frame = None
+        for key in (plain, f"{plain}.NS", symbol):
+            try:
+                candidate = all_data.get(key)
+            except Exception:
+                candidate = None
+            if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                frame = candidate
+                break
+        items.append((plain, _frame_signature(frame)))
+    return _stable_json_hash(items)
+
+
+def _sector_cache_metadata(
+    sector_name: str,
+    scan_df: pd.DataFrame | None,
+    all_data: dict,
+    stocks: list[str],
+    regime: object,
+    weights: dict[str, float],
+) -> dict[str, object]:
+    try:
+        market_date = feature_manager._cache_day().isoformat()
+    except Exception:
+        market_date = ""
+    return {
+        "market_date": market_date,
+        "scan_input_signature": _scan_input_signature(scan_df),
+        "stock_universe_signature": _stable_json_hash([_plain_symbol(s) for s in stocks]),
+        "all_data_signature": _all_data_input_signature(all_data, stocks),
+        "regime_key": str(regime or ""),
+        "dynamic_weight_signature": _stable_json_hash({k: round(float(v), 6) for k, v in weights.items()}),
+    }
+
+
+def _cache_metadata_matches(payload: dict | None, expected: dict[str, object]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    meta = payload.get("cache_metadata")
+    if not isinstance(meta, dict):
+        return False
+    for key, expected_value in expected.items():
+        if str(meta.get(key, "")) != str(expected_value):
+            return False
+    return True
+
+
 # ══════════════════════════════════════════════════════════════════════
 # PUBLIC API
 # ══════════════════════════════════════════════════════════════════════
@@ -696,40 +784,11 @@ def predict_sector(
 ) -> SectorPrediction:
 
     now_ts = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
-    if not force_refresh and get_current_window() != "LIVE":
-        try:
-            cached_payload = feature_manager.load_prediction_cache(sector_name)
-            if cached_payload:
-                cached_ohlc, _ = feature_manager.load_sector_ohlc_cache(sector_name)
-                return _prediction_from_payload(cached_payload, _normalize_ohlc_frame(cached_ohlc))
-        except Exception:
-            pass
-
     try:
         from sector_master import get_stocks_in_sector
         stocks = get_stocks_in_sector(sector_name)
     except Exception:
         stocks = []
-    ohlc, used, ohlc_source, ohlc_symbol, ohlc_note = _build_sector_ohlc(
-        sector_name,
-        stocks,
-        scan_df,
-        all_data,
-        force_refresh=force_refresh,
-    )
-    if ohlc is None or len(ohlc) < _MIN_ROWS:
-        return SectorPrediction(
-            sector=sector_name,
-            direction="Sideways",
-            confidence=50.0,
-            raw_score=50.0,
-            stocks_used=used,
-            predicted_at=now_ts,
-            note=ohlc_note or "Insufficient OHLC data.",
-            ohlc_source=ohlc_source,
-            ohlc_symbol=ohlc_symbol,
-            ohlc_bars=0 if ohlc is None else len(ohlc),
-        )
 
     # ── Regime ───────────────────────────────────────────────────────
     if regime_state is None:
@@ -766,6 +825,37 @@ def predict_sector(
     # ── Signals ───────────────────────────────────────────────────────
     if scan_df is None or scan_df.empty:
         scan_df = pd.DataFrame()
+
+    expected_cache_meta = _sector_cache_metadata(sector_name, scan_df, all_data, stocks, regime, weights)
+    if not force_refresh and get_current_window() != "LIVE":
+        try:
+            cached_payload = feature_manager.load_prediction_cache(sector_name)
+            if _cache_metadata_matches(cached_payload, expected_cache_meta):
+                cached_ohlc, _ = feature_manager.load_sector_ohlc_cache(sector_name)
+                return _prediction_from_payload(cached_payload, _normalize_ohlc_frame(cached_ohlc))
+        except Exception:
+            pass
+
+    ohlc, used, ohlc_source, ohlc_symbol, ohlc_note = _build_sector_ohlc(
+        sector_name,
+        stocks,
+        scan_df,
+        all_data,
+        force_refresh=force_refresh,
+    )
+    if ohlc is None or len(ohlc) < _MIN_ROWS:
+        return SectorPrediction(
+            sector=sector_name,
+            direction="Sideways",
+            confidence=50.0,
+            raw_score=50.0,
+            stocks_used=used,
+            predicted_at=now_ts,
+            note=ohlc_note or "Insufficient OHLC data.",
+            ohlc_source=ohlc_source,
+            ohlc_symbol=ohlc_symbol,
+            ohlc_bars=0 if ohlc is None else len(ohlc),
+        )
     stock_universe = stocks or used
     try:
         signals = _compute_signals(ohlc, scan_df, stock_universe)
@@ -834,7 +924,14 @@ def predict_sector(
     )
     try:
         feature_manager.save_sector_ohlc_cache(sector_name, ohlc, top_n=len(used) if used else len(stocks))
-        feature_manager.save_prediction_cache(sector_name, _prediction_to_payload(prediction))
+        payload = _prediction_to_payload(prediction)
+        payload["cache_metadata"] = {
+            **expected_cache_meta,
+            "ohlc_source": ohlc_source,
+            "ohlc_bars": len(ohlc),
+            "stocks_used_signature": _stable_json_hash([_plain_symbol(item) for item in used]),
+        }
+        feature_manager.save_prediction_cache(sector_name, payload)
     except Exception:
         pass
     return prediction

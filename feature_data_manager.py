@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 from atomic_io import atomic_write_json
+from safe_paths import legacy_colon_slash_filename, safe_filename, safe_join
 
 try:
     import streamlit as st
@@ -37,10 +38,11 @@ except Exception:
     _tt = None  # type: ignore[assignment]
 
 try:
-    from strategy_engines._engine_utils import ALL_DATA, _ALL_DATA_LOCK
+    from strategy_engines._engine_utils import ALL_DATA, _ALL_DATA_LOCK, get_all_data_snapshot
 except Exception:
     ALL_DATA = {}  # type: ignore[assignment]
     _ALL_DATA_LOCK = threading.Lock()
+    get_all_data_snapshot = None  # type: ignore[assignment]
 
 
 _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedelta(hours=5, minutes=30))
@@ -315,22 +317,22 @@ class FeatureDataManager:
 
     def _stock_path(self, cache_day: date, symbol: str) -> Path:
         safe = self._normalize_symbol(symbol, append_nse_suffix=False)
-        return self._stock_dir(cache_day) / f"{safe}.json"
+        return safe_join(self._stock_dir(cache_day), safe_filename(safe, ".json"))
 
     def _sector_path(self, cache_day: date, sector_name: str) -> Path:
-        return self._sector_dir(cache_day) / f"{self._normalize_sector(sector_name)}.json"
+        return safe_join(self._sector_dir(cache_day), safe_filename(self._normalize_sector(sector_name), ".json"))
 
     def _prediction_path(self, cache_day: date, sector_name: str) -> Path:
-        return self._prediction_dir(cache_day) / f"{self._normalize_sector(sector_name)}.json"
+        return safe_join(self._prediction_dir(cache_day), safe_filename(self._normalize_sector(sector_name), ".json"))
 
     def _compare_path(self, cache_day: date, symbols: list[str]) -> Path:
         key = hashlib.sha256("|".join(self._normalize_compare_symbols(symbols)).encode("utf-8")).hexdigest()[:24]
-        return self._compare_dir(cache_day) / f"compare_{key}.json"
+        return safe_join(self._compare_dir(cache_day), f"compare_{key}.json")
 
     def _legacy_compare_path(self, cache_day: date, symbols: list[str]) -> Path:
         joined = "_".join(sorted(self._normalize_symbol(sym, append_nse_suffix=False) for sym in symbols if str(sym).strip()))
         safe = joined.replace("/", "_").replace(":", "_")
-        return self._compare_dir(cache_day) / f"{safe}.json"
+        return safe_join(self._compare_dir(cache_day), safe_filename(safe, ".json"))
 
     def _normalize_compare_symbols(self, symbols: list[str]) -> list[str]:
         return sorted(
@@ -589,15 +591,22 @@ class FeatureDataManager:
         if ns_key not in keys:
             keys.append(ns_key)
         try:
-            with _ALL_DATA_LOCK:
-                for key in keys:
-                    df = self._apply_time_travel_cutoff(
-                        ALL_DATA.get(key),
-                        cutoff=tt_cutoff,
-                        min_rows=min_rows,
-                    )
-                    if df is not None and self._is_acceptable_frame(df, window=window, cache_day=cache_day):
-                        return df
+            if callable(get_all_data_snapshot):
+                frames = get_all_data_snapshot(keys)
+            else:
+                with _ALL_DATA_LOCK:
+                    frames = {
+                        key: (ALL_DATA.get(key).copy() if isinstance(ALL_DATA.get(key), pd.DataFrame) else ALL_DATA.get(key))
+                        for key in keys
+                    }
+            for key in keys:
+                df = self._apply_time_travel_cutoff(
+                    frames.get(key),
+                    cutoff=tt_cutoff,
+                    min_rows=min_rows,
+                )
+                if df is not None and self._is_acceptable_frame(df, window=window, cache_day=cache_day):
+                    return df
         except Exception:
             return None
         return None
@@ -614,18 +623,29 @@ class FeatureDataManager:
                     pass
                 return
             with _ALL_DATA_LOCK:
-                ALL_DATA[symbol] = df
+                stored = df.copy()
+                stored.attrs.update(dict(getattr(df, "attrs", {}) or {}))
+                ALL_DATA[symbol] = stored
                 plain = symbol.replace(".NS", "")
-                ALL_DATA[plain] = df
+                ALL_DATA[plain] = stored.copy()
         except Exception:
             pass
 
     def _resolve_snapshot_path(self, symbol: str, cache_day: date) -> tuple[Path | None, date | None]:
         candidates = [cache_day] + [cache_day - timedelta(days=offset) for offset in range(1, 8)]
         for day in candidates:
-            csv_path = _SCANNER_SNAPSHOT_ROOT / day.isoformat() / f"{symbol}.csv"
-            if csv_path.exists():
-                return csv_path, day
+            snap_dir = _SCANNER_SNAPSHOT_ROOT / day.isoformat()
+            names = [
+                safe_filename(symbol, ".csv"),
+                legacy_colon_slash_filename(symbol, ".csv"),
+            ]
+            for filename in dict.fromkeys(names):
+                try:
+                    csv_path = safe_join(snap_dir, filename)
+                except Exception:
+                    continue
+                if csv_path.exists():
+                    return csv_path, day
         return None, None
 
     def _snapshot_file_valid(self, csv_path: Path, snapshot_day: date) -> tuple[bool, str]:
@@ -680,8 +700,7 @@ class FeatureDataManager:
 
             saved_at = ""
             try:
-                safe = symbol.replace(":", "_").replace("/", "_")
-                csv_path = data_downloader.DATA_DIR / f"{safe}.csv"
+                csv_path = data_downloader._csv_read_path(symbol)
                 if csv_path.exists():
                     saved_at = datetime.fromtimestamp(csv_path.stat().st_mtime, _IST_TZ).isoformat()
             except Exception:

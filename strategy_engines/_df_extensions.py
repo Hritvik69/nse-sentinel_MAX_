@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from strategy_engines._engine_utils import (
-    safe, ema, rsi_vec, SKLEARN_OK, ALL_DATA,
+    safe, ema, rsi_vec, SKLEARN_OK, ALL_DATA, get_all_data_frame,
 )
 
 _INDICATOR_CACHE: dict[str, dict[str, pd.Series]] = {}
@@ -433,7 +433,7 @@ def backtest_with_preloaded(mode: int, row: dict, ticker: str) -> float:
     NEVER calls download_history() — zero-API by design.
     """
     ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-    df = ALL_DATA.get(ticker_ns)
+    df = get_all_data_frame(ticker_ns)
     fn = _BACKTEST_FNS.get(mode)
     if fn is None:
         return 50.0

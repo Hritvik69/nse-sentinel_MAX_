@@ -494,8 +494,11 @@ _SYNC_ALIASES = {
 
 _PUSH_LOCK = threading.Lock()
 _PUSH_QUEUE: "_queue.Queue[Path | None]" = _queue.Queue(maxsize=20)
+_PENDING_PUSHES: dict[str, Path] = {}
+_PENDING_PUSHES_LOCK = threading.Lock()
 _PUSH_WORKER_STARTED = False
 _PUSH_WORKER_LOCK = threading.Lock()
+_TRANSIENT_PUSH_STATUSES = {429, 503}
 
 
 def _ensure_data_dir() -> None:
@@ -503,6 +506,32 @@ def _ensure_data_dir() -> None:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
     except Exception:
         pass
+
+
+def _push_key(local_path: Path) -> str:
+    try:
+        return str(local_path.resolve(strict=False)).lower()
+    except Exception:
+        return str(local_path).lower()
+
+
+def _take_pending_pushes() -> list[Path]:
+    with _PENDING_PUSHES_LOCK:
+        pending = list(_PENDING_PUSHES.values())
+        _PENDING_PUSHES.clear()
+        return pending
+
+
+def _put_with_transient_retry(secrets: dict, remote_path: str, content: bytes, sha: str | None) -> dict:
+    result: dict = {"ok": False, "status": 0}
+    for attempt, delay in enumerate((0.0, 0.25, 0.75), start=1):
+        if delay:
+            _time.sleep(delay)
+        result = _gh_put_status(secrets, remote_path, content, sha)
+        status = int(result.get("status") or 0)
+        if result.get("ok") or status not in _TRANSIENT_PUSH_STATUSES or attempt >= 3:
+            return result
+    return result
 
 
 def _do_push_blocking(local_path: Path) -> bool:
@@ -519,11 +548,17 @@ def _do_push_blocking(local_path: Path) -> bool:
         if not local_path.exists():
             _LOG.debug("persistent_store: %s does not exist -- skipped", local_path)
             return True
-        content = local_path.read_bytes()
         with _PUSH_LOCK:
+            if not local_path.exists():
+                _LOG.debug("persistent_store: %s disappeared before push -- skipped", local_path)
+                return True
             existing = _gh_get(secrets, remote_path)
             sha = existing["sha"] if isinstance(existing, dict) else None
-            result = _gh_put_status(secrets, remote_path, content, sha)
+            if not local_path.exists():
+                _LOG.debug("persistent_store: %s disappeared before push -- skipped", local_path)
+                return True
+            content = local_path.read_bytes()
+            result = _put_with_transient_retry(secrets, remote_path, content, sha)
             if result.get("ok"):
                 return True
             if int(result.get("status") or 0) == 409:
@@ -534,7 +569,7 @@ def _do_push_blocking(local_path: Path) -> bool:
                 if merged is None:
                     _LOG.error("persistent_store: GitHub conflict for %s could not be merged", remote_path)
                     return False
-                retry = _gh_put_status(secrets, remote_path, merged, latest_sha)
+                retry = _put_with_transient_retry(secrets, remote_path, merged, latest_sha)
                 if retry.get("ok"):
                     return True
             _LOG.error("persistent_store: GitHub push failed for %s status=%s", remote_path, result.get("status"))
@@ -554,7 +589,12 @@ def _run_push_worker() -> None:
         try:
             if local_path is None:
                 break
-            _do_push_blocking(local_path)
+            while True:
+                pending = _take_pending_pushes()
+                if not pending:
+                    break
+                for pending_path in pending:
+                    _do_push_blocking(pending_path)
         except Exception:
             pass
         finally:
@@ -625,11 +665,16 @@ def push_file(local_path: Path | str, *, block: bool = False) -> bool:
         return _do_push_blocking(local_path)
 
     _ensure_push_worker()
+    key = _push_key(local_path)
+    with _PENDING_PUSHES_LOCK:
+        already_pending = key in _PENDING_PUSHES
+        _PENDING_PUSHES[key] = local_path
+    if already_pending:
+        return True
     try:
         _PUSH_QUEUE.put_nowait(local_path)
     except _queue.Full:
-        _LOG.error("persistent_store: push queue full for %s", local_path.name)
-        return False
+        _LOG.warning("persistent_store: push wake queue full for %s; coalesced latest content", local_path.name)
     return True
 
 
