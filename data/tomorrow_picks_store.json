@@ -6,7 +6,9 @@
     "BLISSGVS",
     "RUBFILA",
     "GANESHHOU",
-    "TAINWALCHM"
+    "TAINWALCHM",
+    "JSWSTEEL",
+    "NYKAA"
   ],
   "notes": "",
   "sections": {
@@ -23,7 +25,10 @@
       "GANESHHOU",
       "TAINWALCHM"
     ],
-    "momentum": [],
+    "momentum": [
+      "JSWSTEEL",
+      "NYKAA"
+    ],
     "breakout": []
   }
 }
