@@ -3347,15 +3347,18 @@
     {
       "ticker": "RUBFILA",
       "categories": [
-        "Swing"
+        "Swing",
+        "Intraday"
       ],
       "sources": [
-        "Mode 2 Top 3"
+        "Mode 2 Top 3",
+        "Mode 3 Top 3"
       ],
       "modes": [
-        6
+        6,
+        5
       ],
-      "last_imported_at": "2026-05-18T14:24:11",
+      "last_imported_at": "2026-05-18T14:26:48",
       "snapshot": {
         "Symbol": "RUBFILA",
         "Price (\u20b9)": 75.64,
@@ -3364,17 +3367,17 @@
         "EMA 20": 72.09,
         "EMA 50": 70.16,
         "Vol / Avg": 3.67,
-        "Mode ID": 6,
-        "Mode": "\ud83d\udd34 Swing",
+        "Mode ID": 5,
+        "Mode": "\ud83d\udfe0 Intraday",
         "\u0394 vs 20D High (%)": -2.31,
         "\u0394 vs EMA20 (%)": 4.93,
         "5D Return (%)": 3.49,
         "20D Return (%)": 7.26,
-        "Score": 85.0,
-        "_breakdown": "{'EMA Slope (Rising)': 22, 'Price > EMA20': 15, 'Swing RSI Sweet Spot': 18, 'Vol Rising': 10, 'Approaching': 8, '5D Controlled Move': 16, '20D Uptrend': 8, 'Sharp Vol Spike': -12}",
+        "Score": 60.0,
+        "_breakdown": "{'RSI Upper Intraday': 10, 'Vol >2.5\u00d7 Explosive': 38, 'Price > EMA20': 10, 'EMA Stack': 8, '5D Momentum': 10, 'Overextended (Short)': -16}",
         "Backtest %": 50.0,
-        "ML %": 54.1,
-        "Final Score": 30.82,
+        "ML %": 46.4,
+        "Final Score": 16.78,
         "Trap": "",
         "Next-Day Signal": "\ud83d\udd25 Strong Green",
         "Volume Trend": "STRONG",
@@ -3388,20 +3391,20 @@
         "Volume Confirmation": "MEDIUM",
         "Trap Probability": "LOW",
         "Momentum Continuation": "HIGH",
-        "Grade": "B",
-        "Signal": "WATCH",
-        "Confidence": 52.05,
+        "Grade": "D",
+        "Signal": "AVOID",
+        "Confidence": 48.2,
         "Market Bias": "Bearish",
         "Market Regime": "Trending Down",
-        "Prediction Score": 55.96,
+        "Prediction Score": 43.56,
         "Conviction Tier": "Medium",
         "Setup Type": "Momentum Continuation",
         "Reason": "Strong volume, Healthy RSI",
         "Risk Score": 5.92,
         "Final Signal": "BUY",
-        "Action": "\ud83d\udfe1 Watch",
+        "Action": "\ud83d\udd35 Wait",
         "Hold Days": "\u2014",
-        "Learned Prob %": 17.2,
+        "Learned Prob %": 42.4,
         "Advanced Trap": "NONE",
         "Expected Move": "+5% to +10%",
         "Adjusted Signal": "STRONG BUY",
@@ -3420,10 +3423,10 @@
         "Gate 20D Return %": 7.2604,
         "Gate 60D Return %": 5.2602,
         "Gate Vol Ratio": 3.6653,
-        "Decision Score": 54.7,
-        "Why This Stock?": "Meta 56.0% | Calibrated 52.0% | Regime fit 55.0% | Accuracy history 55.0%",
-        "Tomorrow Pick Score": 52.9,
-        "Tomorrow Pick Reason": "Momentum Continuation | Structure MEDIUM | Trap LOW | Score 67.9",
+        "Decision Score": 48.3,
+        "Why This Stock?": "Meta 43.6% | Calibrated 48.2% | Regime fit 55.0% | Accuracy history 55.0%",
+        "Tomorrow Pick Score": 52.3,
+        "Tomorrow Pick Reason": "Momentum Continuation | Structure MEDIUM | Trap LOW | Score 67.3",
         "Chart": "https://www.tradingview.com/chart/?symbol=NSE:RUBFILA",
         "AI Direction": "Sideways",
         "AI Confidence": 37.9,
@@ -3431,9 +3434,10 @@
         "AI Risk": "LOW",
         "AI Hold": "-",
         "AI Key Signal": "Candle Direction",
-        "AI Regime": "Trending Down"
+        "AI Regime": "Trending Down",
+        "Gate Warning": "Top 3 share one AI key signal; capped at 75"
       }
     }
   ],
-  "updated_at": "2026-05-18T14:24:19"
+  "updated_at": "2026-05-18T14:26:48"
 }
