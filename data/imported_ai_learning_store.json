@@ -3079,7 +3079,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-18T14:17:27",
+      "last_imported_at": "2026-05-18T14:17:35",
       "snapshot": {
         "Symbol": "GRAPHITE",
         "Price (\u20b9)": 761.05,
@@ -3169,7 +3169,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-18T14:17:27",
+      "last_imported_at": "2026-05-18T14:17:35",
       "snapshot": {
         "Symbol": "SAIL",
         "Price (\u20b9)": 192.73,
@@ -3259,7 +3259,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-18T14:17:27",
+      "last_imported_at": "2026-05-18T14:17:35",
       "snapshot": {
         "Symbol": "POLICYBZR",
         "Price (\u20b9)": 1748.3,
@@ -3339,5 +3339,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-18T14:17:27"
+  "updated_at": "2026-05-18T14:17:35"
 }
