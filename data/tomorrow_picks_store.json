@@ -2,7 +2,9 @@
   "picks": [
     "GRAPHITE",
     "SAIL",
-    "POLICYBZR"
+    "POLICYBZR",
+    "BLISSGVS",
+    "RUBFILA"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +13,10 @@
       "SAIL",
       "POLICYBZR"
     ],
-    "swing": [],
+    "swing": [
+      "BLISSGVS",
+      "RUBFILA"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
