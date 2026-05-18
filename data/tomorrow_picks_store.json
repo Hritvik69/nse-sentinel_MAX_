@@ -1,36 +1,11 @@
 {
-  "picks": [
-    "BLISSGVS",
-    "GULPOLY",
-    "BUILDPRO",
-    "GMRP&UI",
-    "DRREDDY",
-    "ASKAUTOLTD",
-    "DHANUKA",
-    "KIRLOSENG",
-    "INSECTICID",
-    "ALPA"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "BLISSGVS",
-      "GULPOLY"
-    ],
-    "swing": [
-      "BUILDPRO",
-      "GMRP&UI",
-      "DRREDDY"
-    ],
+    "relax": [],
+    "swing": [],
     "intraday": [],
-    "momentum": [
-      "ASKAUTOLTD",
-      "DHANUKA"
-    ],
-    "breakout": [
-      "KIRLOSENG",
-      "INSECTICID",
-      "ALPA"
-    ]
+    "momentum": [],
+    "breakout": []
   }
 }
