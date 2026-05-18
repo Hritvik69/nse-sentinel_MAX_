@@ -8,7 +8,10 @@
     "GANESHHOU",
     "TAINWALCHM",
     "JSWSTEEL",
-    "NYKAA"
+    "NYKAA",
+    "IMPAL",
+    "SIYSIL",
+    "MONARCH"
   ],
   "notes": "",
   "sections": {
@@ -29,6 +32,10 @@
       "JSWSTEEL",
       "NYKAA"
     ],
-    "breakout": []
+    "breakout": [
+      "IMPAL",
+      "SIYSIL",
+      "MONARCH"
+    ]
   }
 }
