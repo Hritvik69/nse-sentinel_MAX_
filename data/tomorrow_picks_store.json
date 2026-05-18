@@ -4,7 +4,9 @@
     "SAIL",
     "POLICYBZR",
     "BLISSGVS",
-    "RUBFILA"
+    "RUBFILA",
+    "GANESHHOU",
+    "TAINWALCHM"
   ],
   "notes": "",
   "sections": {
@@ -17,7 +19,10 @@
       "BLISSGVS",
       "RUBFILA"
     ],
-    "intraday": [],
+    "intraday": [
+      "GANESHHOU",
+      "TAINWALCHM"
+    ],
     "momentum": [],
     "breakout": []
   }
