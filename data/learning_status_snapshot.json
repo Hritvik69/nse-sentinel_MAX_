@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-05-18T10:36:24",
+  "saved_at": "2026-05-18T10:36:49",
   "signature": [
     "2026-05-18",
-    1779100565.344,
+    1779100604.15,
     1779100514.182
   ],
   "learning_status": {
@@ -55,8 +55,8 @@
       "false_bearish_pct": 36.83
     },
     "brain_status": {
-      "started_at": "2026-05-18T10:35:59",
-      "completed_at": "2026-05-18T10:36:24",
+      "started_at": "2026-05-18T10:36:24",
+      "completed_at": "2026-05-18T10:36:49",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -425,7 +425,7 @@
               "EMA50": 520.94,
               "Close": 527.6
             },
-            "computed_at": "2026-05-18T10:36:21"
+            "computed_at": "2026-05-18T10:36:46"
           },
           {
             "ticker": "MONARCH",
@@ -492,7 +492,7 @@
               "EMA50": 292.54,
               "Close": 315.15
             },
-            "computed_at": "2026-05-18T10:36:22"
+            "computed_at": "2026-05-18T10:36:47"
           },
           {
             "ticker": "MARATHON",
@@ -559,7 +559,7 @@
               "EMA50": 470.01,
               "Close": 475.2
             },
-            "computed_at": "2026-05-18T10:36:23"
+            "computed_at": "2026-05-18T10:36:48"
           },
           {
             "ticker": "SURYALAXMI",
@@ -626,7 +626,7 @@
               "EMA50": 57.26,
               "Close": 57.05
             },
-            "computed_at": "2026-05-18T10:36:19"
+            "computed_at": "2026-05-18T10:36:44"
           },
           {
             "ticker": "EMAMIPAP",
@@ -693,7 +693,7 @@
               "EMA50": 76.75,
               "Close": 74.85
             },
-            "computed_at": "2026-05-18T10:36:23"
+            "computed_at": "2026-05-18T10:36:49"
           },
           {
             "ticker": "SAKAR",
@@ -760,7 +760,7 @@
               "EMA50": 575.24,
               "Close": 779.95
             },
-            "computed_at": "2026-05-18T10:36:22"
+            "computed_at": "2026-05-18T10:36:47"
           },
           {
             "ticker": "JISLDVREQS",
@@ -827,7 +827,7 @@
               "EMA50": 23.35,
               "Close": 22.75
             },
-            "computed_at": "2026-05-18T10:36:24"
+            "computed_at": "2026-05-18T10:36:49"
           },
           {
             "ticker": "SENORES",
@@ -894,7 +894,7 @@
               "EMA50": 879.18,
               "Close": 1129.5
             },
-            "computed_at": "2026-05-18T10:36:19"
+            "computed_at": "2026-05-18T10:36:44"
           },
           {
             "ticker": "VENKEYS",
@@ -961,7 +961,7 @@
               "EMA50": 1504.46,
               "Close": 1504.0
             },
-            "computed_at": "2026-05-18T10:36:21"
+            "computed_at": "2026-05-18T10:36:47"
           },
           {
             "ticker": "SUVEN",
@@ -1028,7 +1028,7 @@
               "EMA50": 190.24,
               "Close": 252.57
             },
-            "computed_at": "2026-05-18T10:36:23"
+            "computed_at": "2026-05-18T10:36:48"
           },
           {
             "ticker": "PALREDTEC",
@@ -1095,7 +1095,7 @@
               "EMA50": 36.48,
               "Close": 37.5
             },
-            "computed_at": "2026-05-18T10:36:17"
+            "computed_at": "2026-05-18T10:36:42"
           },
           {
             "ticker": "NARMADA",
@@ -1162,7 +1162,7 @@
               "EMA50": 33.84,
               "Close": 34.92
             },
-            "computed_at": "2026-05-18T10:36:18"
+            "computed_at": "2026-05-18T10:36:43"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 159 tickers computed"
