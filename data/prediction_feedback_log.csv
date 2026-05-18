@@ -3627,3 +3627,8 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-18T10:47:14+05:30,2026-05-18,cd4a1da3ec4a7c6d997d763c,TIIL,UNMAPPED,4,A-I-L IN ONE,Master Ranking,Bearish,stock_next_session_v2,39.9400,48.2200,WATCH,Medium,Bearish bias,Trending Down,60.3900,6.3400,,LOW,0,,,
 2026-05-18T10:47:14+05:30,2026-05-18,d2fb3a9d2e630483f99eec43,KEEPLEARN,UNMAPPED,4,A-I-L IN ONE,Master Ranking,Bearish,stock_next_session_v2,49.6700,68.5600,WATCH,Medium,Bearish bias,Trending Down,57.9600,1.7600,,LOW,0,,,
 2026-05-18T10:47:14+05:30,2026-05-18,f7c59867fe306e655ae028f9,MTEDUCARE,UNMAPPED,4,A-I-L IN ONE,Master Ranking,Bearish,stock_next_session_v2,49.4800,68.4000,WATCH,Medium,Bearish bias,Trending Down,58.9800,1.9600,,LOW,0,,,
+2026-05-13T15:17:45+05:30,2026-05-13,c91692157d3384819faa4701,ASIANPAINT,CONSUMER_DURABLES,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,100.0000,LIVE BREAKOUT,nan,,,65.1000,3.5500,,nan,0,,,
+2026-05-13T15:17:45+05:30,2026-05-13,f63b2d4260d9d38525d5969d,BAIDFIN,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,96.0000,LIVE BREAKOUT,nan,,,58.3000,3.0200,,nan,0,,,
+2026-05-14T16:00:53+05:30,2026-05-14,017265c5aef791a4e08c1f32,TATACOMM,TELECOM,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,95.0000,LIVE BREAKOUT,nan,,,64.4000,2.5100,,nan,0,,,
+2026-05-14T16:00:53+05:30,2026-05-14,e882e766e4a0bd9b8b9b2371,SKMEGGPROD,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,91.0000,LIVE BREAKOUT,nan,,,59.1000,2.1000,,nan,0,,,
+2026-05-17T12:38:48+05:30,2026-05-17,3180a4b234a437f1e3a469a2,KIRLOSENG,,0,Live Breakout Pulse Top 3,Breakout Pulse,Bearish,stock_next_session_v2,,96.0000,LIVE BREAKOUT,nan,,,61.8000,5.4800,,nan,0,,,
