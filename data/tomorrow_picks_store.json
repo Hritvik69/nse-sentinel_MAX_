@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "GRAPHITE",
+    "SAIL",
+    "POLICYBZR"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "GRAPHITE",
+      "SAIL",
+      "POLICYBZR"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
