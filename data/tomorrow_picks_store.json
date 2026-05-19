@@ -3,7 +3,10 @@
     "MEDANTA",
     "SCHAND",
     "JUBLPHARMA",
-    "SUPRIYA"
+    "SUPRIYA",
+    "TMPV",
+    "MOTHERSON",
+    "TIIL"
   ],
   "notes": "",
   "sections": {
@@ -15,7 +18,11 @@
     "swing": [
       "SUPRIYA"
     ],
-    "intraday": [],
+    "intraday": [
+      "TMPV",
+      "MOTHERSON",
+      "TIIL"
+    ],
     "momentum": [],
     "breakout": []
   }
