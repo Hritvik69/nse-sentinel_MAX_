@@ -2,7 +2,8 @@
   "picks": [
     "MEDANTA",
     "SCHAND",
-    "JUBLPHARMA"
+    "JUBLPHARMA",
+    "SUPRIYA"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +12,9 @@
       "SCHAND",
       "JUBLPHARMA"
     ],
-    "swing": [],
+    "swing": [
+      "SUPRIYA"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
