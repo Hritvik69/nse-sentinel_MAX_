@@ -6,7 +6,9 @@
     "SUPRIYA",
     "TMPV",
     "MOTHERSON",
-    "TIIL"
+    "TIIL",
+    "GPTHEALTH",
+    "SILGO"
   ],
   "notes": "",
   "sections": {
@@ -23,7 +25,10 @@
       "MOTHERSON",
       "TIIL"
     ],
-    "momentum": [],
+    "momentum": [
+      "GPTHEALTH",
+      "SILGO"
+    ],
     "breakout": []
   }
 }
