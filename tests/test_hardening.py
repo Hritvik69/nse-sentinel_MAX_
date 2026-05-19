@@ -42,10 +42,15 @@ class HardeningRegressionTests(unittest.TestCase):
 
         original_all_data = dict(eu.ALL_DATA)
         original_is_fresh = getattr(eu, "_is_data_fresh")
+        original_download = getattr(eu, "download_history")
+        original_scan_plan = getattr(eu, "_get_scan_data_plan")
         try:
             eu.ALL_DATA.clear()
             eu._is_data_fresh = lambda df: True  # type: ignore[assignment]
+            eu.download_history = lambda *_args, **_kwargs: None  # type: ignore[assignment]
+            eu._get_scan_data_plan = lambda: {"force_live_refresh": False, "use_snapshot": False}  # type: ignore[assignment]
             live_df = _sample_ohlcv(periods=45)
+            eu.ALL_DATA["TEST"] = live_df
             eu.ALL_DATA["TEST.NS"] = live_df
             tt.clear_cache()
 
@@ -78,6 +83,8 @@ class HardeningRegressionTests(unittest.TestCase):
             eu.ALL_DATA.clear()
             eu.ALL_DATA.update(original_all_data)
             eu._is_data_fresh = original_is_fresh  # type: ignore[assignment]
+            eu.download_history = original_download  # type: ignore[assignment]
+            eu._get_scan_data_plan = original_scan_plan  # type: ignore[assignment]
 
     def test_model_pickle_requires_trusted_sha(self) -> None:
         import model_persistence as mp
@@ -858,6 +865,195 @@ class HardeningRegressionTests(unittest.TestCase):
             le.MODEL, le.SCALER = old_model, old_scaler
             le.REGIME_ENCODER = old_regime
             le.SECTOR_ENCODER = old_sector
+
+    def test_expanded_imported_learning_trains_with_recency_weights(self) -> None:
+        import learning_engine as le
+        import prediction_feedback_store as pfs
+
+        if not le.SKLEARN_OK:
+            self.skipTest("scikit-learn unavailable")
+
+        tmp = Path(tempfile.mkdtemp())
+        old_log_path = pfs.LOG_PATH
+        old_model, old_scaler = le.MODEL, le.SCALER
+        old_regime, old_sector = dict(le.REGIME_ENCODER), dict(le.SECTOR_ENCODER)
+        old_features = {key: dict(value) for key, value in le.FEATURE_ENCODERS.items()}
+        old_status = dict(le.TRAINING_STATUS)
+        old_save = le._save_model
+        try:
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            rows = []
+            for idx in range(42):
+                correct = idx % 3 != 0
+                bullish = idx % 2 == 0
+                rows.append(
+                    {
+                        "logged_at": f"2026-05-{(idx % 20) + 1:02d}T15:30:00+05:30",
+                        "market_date": f"2026-05-{(idx % 20) + 1:02d}",
+                        "prediction_id": f"imp-{idx}",
+                        "symbol": f"AAA{idx}",
+                        "sector": "IT" if idx % 2 == 0 else "BANK",
+                        "mode": 7 if idx % 2 == 0 else 3,
+                        "import_source": "Tomorrow's Picks - Momentum",
+                        "import_category": "Momentum" if idx % 2 == 0 else "Relax",
+                        "strategy_strip": "Momentum" if idx % 2 == 0 else "Relax",
+                        "prediction_direction": "Bullish" if bullish else "Bearish",
+                        "target_policy_version": "stock_next_session_v2",
+                        "prediction_score": 68 + (idx % 8),
+                        "final_score": 62 + (idx % 10),
+                        "signal": "BUY" if bullish else "AVOID",
+                        "conviction_tier": "High" if idx % 2 == 0 else "Medium",
+                        "market_bias": "Bullish",
+                        "regime": "TRENDING_UP",
+                        "rsi": 52 + (idx % 20),
+                        "vol_avg_ratio": 1.1 + ((idx % 5) * 0.1),
+                        "delta_ema20_pct": -2 + (idx % 5),
+                        "trap_risk": "LOW" if idx % 4 else "MEDIUM",
+                        "pred_bullish": "1" if bullish else "0",
+                        "actual_next_return_pct": "1.4" if correct else "-1.1",
+                        "correct": "True" if correct else "False",
+                        "outcome_label": "correct" if correct else "incorrect",
+                        "outcome_quality": "WIN" if correct else "LOSS",
+                    }
+                )
+            pd.DataFrame(rows).to_csv(pfs.LOG_PATH, index=False)
+            le.MODEL = None
+            le.SCALER = None
+            le.REGIME_ENCODER = {}
+            le.SECTOR_ENCODER = {}
+            le.FEATURE_ENCODERS = {}
+            le.TRAINING_STATUS = dict(old_status)
+            le._save_model = lambda *_args, **_kwargs: True  # type: ignore[assignment]
+
+            result = le.train_learning_model()
+            status = result.get("status", {})
+
+            self.assertTrue(status.get("trained"))
+            self.assertGreaterEqual(int(status.get("imported_ai_samples", 0)), 40)
+            self.assertGreater(int(status.get("active_feature_count", 0)), 6)
+            self.assertTrue(bool(status.get("recency_weighting_active")))
+            prob = le.predict_success({"Prediction Score": 70, "Sector": "NEW", "Regime": "UNKNOWN"})
+            self.assertGreaterEqual(prob, 0.0)
+            self.assertLessEqual(prob, 100.0)
+        finally:
+            pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            le.MODEL, le.SCALER = old_model, old_scaler
+            le.REGIME_ENCODER = old_regime
+            le.SECTOR_ENCODER = old_sector
+            le.FEATURE_ENCODERS = old_features
+            le.TRAINING_STATUS = old_status
+            le._save_model = old_save
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_imported_ai_performance_summary_buckets(self) -> None:
+        import prediction_feedback_store as pfs
+
+        tmp = Path(tempfile.mkdtemp())
+        old_log_path = pfs.LOG_PATH
+        try:
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            rows = [
+                {
+                    "logged_at": "2026-05-10T15:30:00+05:30",
+                    "market_date": "2026-05-10",
+                    "prediction_id": "p1",
+                    "symbol": "AAA",
+                    "sector": "IT",
+                    "mode": 7,
+                    "import_source": "Tomorrow's Picks - Momentum",
+                    "import_category": "Momentum",
+                    "strategy_strip": "Momentum",
+                    "prediction_direction": "Bullish",
+                    "target_policy_version": "stock_next_session_v2",
+                    "prediction_score": 72,
+                    "final_score": 70,
+                    "signal": "BUY",
+                    "conviction_tier": "High",
+                    "market_bias": "Bullish",
+                    "regime": "TRENDING_UP",
+                    "rsi": 61,
+                    "vol_avg_ratio": 1.4,
+                    "delta_ema20_pct": 2.0,
+                    "trap_risk": "LOW",
+                    "pred_bullish": "1",
+                    "actual_next_return_pct": 2.5,
+                    "correct": "True",
+                    "outcome_label": "correct",
+                    "outcome_quality": "BIG_WIN",
+                },
+                {
+                    "logged_at": "2026-05-11T15:30:00+05:30",
+                    "market_date": "2026-05-11",
+                    "prediction_id": "p2",
+                    "symbol": "BBB",
+                    "sector": "AUTO",
+                    "mode": 3,
+                    "import_source": "Tomorrow's Picks - Relax",
+                    "import_category": "Relax",
+                    "strategy_strip": "Relax",
+                    "prediction_direction": "Bullish",
+                    "target_policy_version": "stock_next_session_v2",
+                    "prediction_score": 66,
+                    "final_score": 64,
+                    "signal": "BUY",
+                    "conviction_tier": "Medium",
+                    "market_bias": "Bullish",
+                    "regime": "RANGE_BOUND",
+                    "rsi": 54,
+                    "vol_avg_ratio": 1.1,
+                    "delta_ema20_pct": 0.5,
+                    "trap_risk": "HIGH",
+                    "pred_bullish": "1",
+                    "actual_next_return_pct": -2.2,
+                    "correct": "False",
+                    "outcome_label": "incorrect",
+                    "outcome_quality": "BIG_LOSS",
+                },
+            ]
+            pd.DataFrame(rows).to_csv(pfs.LOG_PATH, index=False)
+
+            summary = pfs.summarize_imported_ai_performance()
+
+            self.assertEqual(summary["total_logged"], 2)
+            self.assertEqual(summary["validated"], 2)
+            self.assertEqual(summary["accuracy_pct"], 50.0)
+            self.assertEqual(summary["best_category"]["bucket"], "Momentum")
+            self.assertEqual(summary["worst_category"]["bucket"], "Relax")
+            self.assertFalse(summary["recent"].empty)
+        finally:
+            pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_tomorrow_prediction_accepts_expanded_learning_features(self) -> None:
+        import prediction_feedback_store as pfs
+        import tomorrow_prediction_engine as tpe
+
+        tmp = Path(tempfile.mkdtemp())
+        old_log_path = pfs.LOG_PATH
+        old_cache = dict(tpe._IMPORTED_PERFORMANCE_CACHE)
+        try:
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            tpe._IMPORTED_PERFORMANCE_CACHE.clear()
+            tpe._IMPORTED_PERFORMANCE_CACHE.update({"summary": None})
+
+            hist = _sample_ohlcv(periods=60)
+            result = tpe.get_tomorrow_prediction("TEST", {"TEST": hist, "TEST.NS": hist}, 7)
+
+            self.assertEqual(result["ticker"], "TEST")
+            self.assertIn(result["direction"], {"Bullish", "Bearish", "Sideways"})
+            self.assertGreaterEqual(float(result["learned_probability"]), 0.0)
+            self.assertLessEqual(float(result["learned_probability"]), 100.0)
+        finally:
+            pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            tpe._IMPORTED_PERFORMANCE_CACHE.clear()
+            tpe._IMPORTED_PERFORMANCE_CACHE.update(old_cache)
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def test_compare_import_prefers_saved_tomorrow_store_over_stale_visible_symbols(self) -> None:
         from app_compare_stocks_section import select_compare_tomorrow_import_symbols

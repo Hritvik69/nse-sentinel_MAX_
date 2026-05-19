@@ -44,6 +44,7 @@ _FIELDNAMES = [
     "mode",
     "import_source",
     "import_category",
+    "strategy_strip",
     "prediction_direction",
     "target_policy_version",
     "prediction_score",
@@ -60,6 +61,7 @@ _FIELDNAMES = [
     "actual_next_return_pct",
     "correct",
     "outcome_label",
+    "outcome_quality",
 ]
 
 _LOG_CACHE_SIG: tuple[int, int] | None = None
@@ -228,6 +230,36 @@ def _outcome_from_correct(correct: object) -> str:
     return ""
 
 
+def _outcome_quality_from_return(next_return_pct: object) -> str:
+    try:
+        value = _to_float(next_return_pct)
+        if value is None:
+            return ""
+        if value >= 2.0:
+            return "BIG_WIN"
+        if value <= -2.0:
+            return "BIG_LOSS"
+        if -0.25 <= value <= 0.25:
+            return "FLAT"
+        if value > 0:
+            return "WIN"
+        return "LOSS"
+    except Exception:
+        return ""
+
+
+def _strategy_strip_from_text(*values: object) -> str:
+    text = " ".join(str(value or "") for value in values).strip().lower()
+    if not text:
+        return ""
+    for label in ("relax", "swing", "intraday", "momentum", "breakout"):
+        if label in text:
+            return label.title()
+    if "pulse" in text or "radar" in text:
+        return "Breakout"
+    return ""
+
+
 def _coerce_logged_at(value: object, fallback: str) -> str:
     try:
         text = str(value or "").strip()
@@ -307,6 +339,25 @@ def _coerce_schema(df: pd.DataFrame | None) -> pd.DataFrame:
             out["outcome_label"].apply(_is_blank),
             derived_outcome,
             out["outcome_label"],
+        )
+        derived_strip = [
+            _strategy_strip_from_text(strip, category, source)
+            for strip, category, source in zip(
+                out.get("strategy_strip", ""),
+                out.get("import_category", ""),
+                out.get("import_source", ""),
+            )
+        ]
+        out["strategy_strip"] = np.where(
+            out["strategy_strip"].apply(_is_blank),
+            derived_strip,
+            out["strategy_strip"],
+        )
+        derived_quality = out["actual_next_return_pct"].apply(_outcome_quality_from_return)
+        out["outcome_quality"] = np.where(
+            out["outcome_quality"].apply(_is_blank),
+            derived_quality,
+            out["outcome_quality"],
         )
         return out[_FIELDNAMES]
     except Exception:
@@ -457,6 +508,14 @@ def log_scan_predictions(
                         "mode": row_mode,
                         "import_source": import_source,
                         "import_category": str(row.get("Import Category", "") or "")[:80],
+                        "strategy_strip": str(
+                            _first_present(
+                                row,
+                                ["Strategy Strip", "Tomorrow Strip", "Strip", "strategy_strip"],
+                                "",
+                            )
+                            or _strategy_strip_from_text(row.get("Import Category", ""), import_source)
+                        )[:80],
                         "prediction_direction": direction,
                         "target_policy_version": _TARGET_POLICY_VERSION,
                         "prediction_score": f"{ps_f:.4f}" if np.isfinite(ps_f) else "",
@@ -476,6 +535,7 @@ def log_scan_predictions(
                         "actual_next_return_pct": "",
                         "correct": "",
                         "outcome_label": "",
+                        "outcome_quality": "",
                     }
                 )
             except Exception:
@@ -630,6 +690,10 @@ def backfill_actual_returns(all_data: dict) -> int:
                         if str(df.at[idx, "outcome_label"]).strip().lower() != outcome:
                             df.at[idx, "outcome_label"] = outcome
                             changed = True
+                        quality = _outcome_quality_from_return(ret_pct)
+                        if "outcome_quality" in df.columns and str(df.at[idx, "outcome_quality"]).strip() != quality:
+                            df.at[idx, "outcome_quality"] = quality
+                            changed = True
                         if "target_policy_version" in df.columns and _is_blank(df.at[idx, "target_policy_version"]):
                             df.at[idx, "target_policy_version"] = _TARGET_POLICY_VERSION
                             changed = True
@@ -647,3 +711,158 @@ def backfill_actual_returns(all_data: dict) -> int:
     except Exception:
         _LOG.exception("prediction_feedback_store: backfill_actual_returns failed")
         return 0
+
+
+def _is_imported_ai_row(row: pd.Series | dict) -> bool:
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    source = str(getter("import_source", "") or "").strip().lower()
+    category = str(getter("import_category", "") or "").strip().lower()
+    strip = str(getter("strategy_strip", "") or "").strip().lower()
+    if not any((source, category, strip)):
+        return False
+    if source in {"scan", "scanner", "main scan"} and not category and not strip:
+        return False
+    return True
+
+
+def _bucket_performance(df: pd.DataFrame, column: str, *, min_rows: int = 1) -> list[dict[str, object]]:
+    if df.empty or column not in df.columns:
+        return []
+    rows: list[dict[str, object]] = []
+    work = df.copy()
+    work[column] = work[column].fillna("").astype(str).str.strip().replace("", "UNKNOWN")
+    for bucket, group in work.groupby(column, dropna=False):
+        total = int(len(group))
+        if total < min_rows:
+            continue
+        correct = int(group["_correct_bool"].sum())
+        avg_return = float(group["_actual_return"].mean()) if total else 0.0
+        false_bull = 0.0
+        bull_group = group[group["_bullish_bool"]]
+        if not bull_group.empty:
+            false_bull = round(100.0 * float((~bull_group["_correct_bool"]).sum()) / float(len(bull_group)), 2)
+        rows.append(
+            {
+                "bucket": str(bucket or "UNKNOWN"),
+                "rows": total,
+                "correct": correct,
+                "accuracy_pct": round(100.0 * float(correct) / float(total), 2),
+                "avg_return_pct": round(avg_return, 4),
+                "false_bullish_pct": false_bull,
+            }
+        )
+    return sorted(rows, key=lambda item: (float(item["accuracy_pct"]), float(item["avg_return_pct"]), int(item["rows"])), reverse=True)
+
+
+def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows: int = 1) -> dict[str, object]:
+    default: dict[str, object] = {
+        "total_logged": 0,
+        "validated": 0,
+        "accuracy_pct": None,
+        "avg_return_pct": None,
+        "false_bullish_pct": None,
+        "best_category": {},
+        "worst_category": {},
+        "best_sector": {},
+        "worst_sector": {},
+        "by_import_category": [],
+        "by_import_source": [],
+        "by_mode": [],
+        "by_sector": [],
+        "by_trap_risk": [],
+        "by_strategy_strip": [],
+        "recent": pd.DataFrame(),
+    }
+    try:
+        df = read_feedback_log()
+        if df.empty:
+            return default
+        work = df.copy()
+        import_mask = work.apply(_is_imported_ai_row, axis=1)
+        work = work[import_mask].copy()
+        default["total_logged"] = int(len(work))
+        if work.empty:
+            return default
+
+        work["_actual_return"] = pd.to_numeric(work.get("actual_next_return_pct", ""), errors="coerce")
+        work = work[work["_actual_return"].notna()].copy()
+        work["_correct_text"] = work.get("correct", "").astype(str).str.strip()
+        work = work[work["_correct_text"].isin(["True", "False"])].copy()
+        default["validated"] = int(len(work))
+        if work.empty:
+            return default
+
+        work["_correct_bool"] = work["_correct_text"].eq("True")
+        work["_bullish_bool"] = work.get("pred_bullish", "").astype(str).str.strip().str.lower().isin(
+            ["1", "1.0", "true", "bullish", "yes", "y"]
+        )
+        work["strategy_strip"] = [
+            strip if not _is_blank(strip) else _strategy_strip_from_text(category, source)
+            for strip, category, source in zip(
+                work.get("strategy_strip", ""),
+                work.get("import_category", ""),
+                work.get("import_source", ""),
+            )
+        ]
+        work["outcome_quality"] = [
+            quality if not _is_blank(quality) else _outcome_quality_from_return(ret)
+            for quality, ret in zip(work.get("outcome_quality", ""), work["_actual_return"])
+        ]
+
+        default["accuracy_pct"] = round(100.0 * float(work["_correct_bool"].sum()) / float(len(work)), 2)
+        default["avg_return_pct"] = round(float(work["_actual_return"].mean()), 4)
+        bull_rows = work[work["_bullish_bool"]]
+        if not bull_rows.empty:
+            default["false_bullish_pct"] = round(
+                100.0 * float((~bull_rows["_correct_bool"]).sum()) / float(len(bull_rows)),
+                2,
+            )
+
+        bucket_columns = {
+            "by_import_category": "import_category",
+            "by_import_source": "import_source",
+            "by_mode": "mode",
+            "by_sector": "sector",
+            "by_trap_risk": "trap_risk",
+            "by_strategy_strip": "strategy_strip",
+        }
+        for key, column in bucket_columns.items():
+            default[key] = _bucket_performance(work, column, min_rows=min_bucket_rows)
+
+        categories = list(default.get("by_import_category", []) or [])
+        sectors = list(default.get("by_sector", []) or [])
+        if categories:
+            default["best_category"] = categories[0]
+            default["worst_category"] = sorted(
+                categories,
+                key=lambda item: (float(item["accuracy_pct"]), float(item["avg_return_pct"]), -int(item["rows"])),
+            )[0]
+        if sectors:
+            default["best_sector"] = sectors[0]
+            default["worst_sector"] = sorted(
+                sectors,
+                key=lambda item: (float(item["accuracy_pct"]), float(item["avg_return_pct"]), -int(item["rows"])),
+            )[0]
+
+        if "logged_at" in work.columns:
+            work["_logged_dt"] = pd.to_datetime(work["logged_at"], errors="coerce")
+            work = work.sort_values("_logged_dt", ascending=False, na_position="last")
+        recent_cols = [
+            "logged_at",
+            "symbol",
+            "mode",
+            "import_category",
+            "import_source",
+            "strategy_strip",
+            "sector",
+            "trap_risk",
+            "prediction_score",
+            "final_score",
+            "actual_next_return_pct",
+            "outcome_quality",
+            "correct",
+        ]
+        default["recent"] = work[[col for col in recent_cols if col in work.columns]].head(recent_limit).reset_index(drop=True)
+        return default
+    except Exception:
+        return default

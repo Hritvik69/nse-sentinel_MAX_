@@ -66,6 +66,8 @@ try:
 except Exception:
     _GLOBAL_ALL_DATA = {}
 
+_IMPORTED_PERFORMANCE_CACHE: dict[str, object] = {"summary": None}
+
 
 def _safe_float(value: object, default: float = 0.0) -> float:
     try:
@@ -203,7 +205,7 @@ def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
 
 
 def _resolve_mode(mode: int | str | None) -> int:
-    if isinstance(mode, int) and mode in {1, 2, 3, 4, 5, 6}:
+    if isinstance(mode, int) and mode in {1, 2, 3, 4, 5, 6, 7}:
         return mode
     text = str(mode or "").strip().lower()
     mapping = {
@@ -221,8 +223,67 @@ def _resolve_mode(mode: int | str | None) -> int:
         "aura": 6,
         "stock_aura": 6,
         "tomorrow_picks": 5,
+        "momentum_sr": 7,
+        "mode7": 7,
     }
     return mapping.get(text, 2)
+
+
+def _strategy_strip_for_mode(mode) -> str:
+    mode_int = _resolve_mode(mode)
+    return {
+        1: "Momentum",
+        3: "Relax",
+        5: "Intraday",
+        6: "Swing",
+        7: "Momentum",
+    }.get(mode_int, "UNKNOWN")
+
+
+def _normalise_bucket_text(value: object) -> str:
+    return str(value or "").strip().upper()
+
+
+def _find_performance_bucket(rows: object, *candidates: object) -> dict:
+    try:
+        wanted = {_normalise_bucket_text(candidate) for candidate in candidates if str(candidate or "").strip()}
+        for row in list(rows or []):
+            if _normalise_bucket_text(row.get("bucket")) in wanted:
+                return dict(row)
+    except Exception:
+        return {}
+    return {}
+
+
+def _imported_history_adjustment(mode, trap_risk: object) -> dict[str, float]:
+    out = {"score": 0.0, "confidence": 0.0}
+    try:
+        summary = _IMPORTED_PERFORMANCE_CACHE.get("summary")
+        if not isinstance(summary, dict):
+            from prediction_feedback_store import summarize_imported_ai_performance
+
+            summary = summarize_imported_ai_performance(min_bucket_rows=3)
+            _IMPORTED_PERFORMANCE_CACHE["summary"] = summary
+
+        mode_int = _resolve_mode(mode)
+        mode_bucket = _find_performance_bucket(summary.get("by_mode", []), str(mode_int), f"M{mode_int}")
+        strip_bucket = _find_performance_bucket(summary.get("by_strategy_strip", []), _strategy_strip_for_mode(mode))
+        trap_bucket = _find_performance_bucket(summary.get("by_trap_risk", []), trap_risk)
+        for bucket in (mode_bucket, strip_bucket, trap_bucket):
+            rows = int(bucket.get("rows", 0) or 0)
+            if rows < 3:
+                continue
+            accuracy = _safe_float(bucket.get("accuracy_pct"), 50.0)
+            avg_return = _safe_float(bucket.get("avg_return_pct"), 0.0)
+            if accuracy < 45.0 or avg_return < -0.35:
+                out["confidence"] -= 4.0
+                out["score"] -= 1.5
+            elif accuracy >= 62.0 and avg_return > 0.35:
+                out["confidence"] += 2.0
+                out["score"] += 0.8
+        return out
+    except Exception:
+        return out
 
 
 def _predict_mode_ml(row: dict, mode: int | str | None) -> float:
@@ -424,10 +485,28 @@ def get_tomorrow_prediction(ticker, all_data, mode):
         learn_row["conviction_tier"] = (
             "High" if base_direction_score >= 65.0 else "Medium" if base_direction_score >= 50.0 else "Low"
         )
+        learn_row["mode"] = _resolve_mode(mode)
+        learn_row["strategy_strip"] = _strategy_strip_for_mode(mode)
+        learn_row["trap_risk"] = trap_risk
+        learn_row["regime"] = regime_name
+        learn_row["market_bias"] = regime_name
+        learn_row["sector"] = "UNKNOWN"
+        learn_row["import_category"] = learn_row["strategy_strip"]
+        learn_row["import_source"] = "Tomorrow Prediction"
+        learn_row["delta_ema20_pct"] = round(delta_ema20, 2)
+        learn_row["vol_avg_ratio"] = round(vol_ratio, 2)
+        learn_row["rsi"] = round(rsi_value, 2)
         learned_probability = _safe_float(predict_success(learn_row), 50.0)
+        history_adjustment = _imported_history_adjustment(mode, trap_risk)
 
         direction_sign = 1.0 if base_direction_score >= 50.0 else -1.0
-        corrected_score = base_direction_score + (direction_sign * (learned_probability - 50.0) * 0.30)
+        learned_edge = learned_probability - 50.0
+        learned_adjustment = direction_sign * learned_edge * 0.24
+        if learned_probability >= 60.0:
+            learned_adjustment += direction_sign * min((learned_probability - 60.0) * 0.15, 3.0)
+        elif learned_probability <= 45.0:
+            learned_adjustment -= direction_sign * min((45.0 - learned_probability) * 0.10, 2.0)
+        corrected_score = base_direction_score + learned_adjustment + _safe_float(history_adjustment.get("score"), 0.0)
         if trap_risk == "HIGH":
             corrected_score -= 4.0 if corrected_score >= 50.0 else -4.0
         corrected_score = _clamp(corrected_score)
@@ -439,10 +518,16 @@ def get_tomorrow_prediction(ticker, all_data, mode):
             + 0.20 * learned_probability
             + 0.10 * mtf_score
         )
+        confidence += _safe_float(history_adjustment.get("confidence"), 0.0)
+        if learned_probability >= 60.0:
+            confidence += min((learned_probability - 60.0) * 0.18, 4.0)
+        elif learned_probability <= 45.0:
+            confidence -= min((45.0 - learned_probability) * 0.28, 6.0)
         if mtf_agreement:
             confidence += 4.0
         if trap_risk == "HIGH":
             confidence -= 7.0
+            confidence = min(confidence, 58.0)
         elif trap_risk == "MEDIUM":
             confidence -= 3.0
         confidence = _clamp(confidence)

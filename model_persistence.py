@@ -61,6 +61,7 @@ def save_model(
     scaler,
     regime_encoder: dict | None = None,
     sector_encoder: dict | None = None,
+    feature_encoders: dict | None = None,
 ) -> bool:
     try:
         _DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -69,6 +70,7 @@ def save_model(
             "scaler": scaler,
             "regime_encoder": regime_encoder or {},
             "sector_encoder": sector_encoder or {},
+            "feature_encoders": feature_encoders or {},
         }
         data = pickle.dumps(payload, protocol=4)
         atomic_write_bytes(_MODEL_PATH, data)
