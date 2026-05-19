@@ -4081,3 +4081,6 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-19T15:57:04+05:30,2026-05-19,e121536c10d0379cfc92a477,ECLERX,,3,,,,Bearish,stock_next_session_v2,49.3600,0.0000,AVOID,High,Sideways / no edge,Ranging,51.9300,4.8000,,LOW,0,,,,
 2026-05-19T15:57:04+05:30,2026-05-19,d1630dfd60a3093dcd48108a,SAKSOFT,,3,,,,Bearish,stock_next_session_v2,47.3000,0.0000,AVOID,High,Sideways / no edge,Ranging,53.8800,21.9000,,LOW,0,,,,
 2026-05-19T15:57:04+05:30,2026-05-19,6cb76bf7a145bcec66ea080a,MPHASIS,IT,3,,,,Bearish,stock_next_session_v2,40.0100,0.0000,AVOID,Low,Sideways / no edge,Ranging,49.9900,2.0900,,LOW,0,,,,
+2026-05-19T10:36:28+05:30,2026-05-19,18006f20f1fa0a30d420d7c0,MEDANTA,,3,Mode 1 Top 3,Relax,Relax,Bearish,stock_next_session_v2,49.5100,58.9400,WATCH,Medium,Sideways / no edge,Ranging,66.7000,1.4500,,LOW,0,,,,
+2026-05-19T10:36:28+05:30,2026-05-19,674301f0f41ffa56fa296403,SCHAND,,3,Mode 1 Top 3,Relax,Relax,Bearish,stock_next_session_v2,50.7200,57.7800,WATCH,Medium,Sideways / no edge,Ranging,65.6500,2.2000,,LOW,0,,,,
+2026-05-19T10:36:28+05:30,2026-05-19,5e51d94269a52a0534337287,JUBLPHARMA,,3,Mode 1 Top 3,Relax,Relax,Bearish,stock_next_session_v2,50.0600,57.2400,WATCH,Medium,Sideways / no edge,Ranging,69.1600,2.4100,,LOW,0,,,,
