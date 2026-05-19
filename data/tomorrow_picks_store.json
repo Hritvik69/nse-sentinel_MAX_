@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "MEDANTA",
+    "SCHAND",
+    "JUBLPHARMA"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "MEDANTA",
+      "SCHAND",
+      "JUBLPHARMA"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
