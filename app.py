@@ -42,7 +42,10 @@ def _default_learning_status() -> dict:
         "trained": False,
         "samples": 0,
         "stock_samples": 0,
+        "imported_ai_samples": 0,
         "sector_samples": 0,
+        "active_feature_count": 0,
+        "recency_weighting_active": False,
         "accuracy_pct": None,
         "validation_accuracy_pct": None,
         "training_accuracy_pct": None,
@@ -51,6 +54,7 @@ def _default_learning_status() -> dict:
         "message": "Learning engine unavailable.",
         "regime_encoder": {},
         "sector_encoder": {},
+        "feature_encoders": {},
     }
 
 
@@ -3765,6 +3769,101 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
             )
 
 
+def _format_perf_bucket(bucket: object) -> str:
+    if not isinstance(bucket, dict) or not bucket:
+        return "n/a"
+    name = str(bucket.get("bucket", "n/a") or "n/a")
+    rows = int(bucket.get("rows", 0) or 0)
+    accuracy = bucket.get("accuracy_pct")
+    avg_return = bucket.get("avg_return_pct")
+    try:
+        return f"{name} | {float(accuracy):.1f}% | avg {float(avg_return):.2f}% | {rows} rows"
+    except Exception:
+        return f"{name} | {rows} rows"
+
+
+def _render_imported_ai_self_learning_intelligence() -> None:
+    try:
+        from prediction_feedback_store import summarize_imported_ai_performance
+
+        perf = summarize_imported_ai_performance(recent_limit=20, min_bucket_rows=1)
+    except Exception:
+        perf = {}
+
+    if not isinstance(perf, dict) or int(perf.get("total_logged", 0) or 0) <= 0:
+        st.info("Self Learning Intelligence will appear after Imported AI picks are logged and validated.")
+        return
+
+    st.subheader("Self Learning Intelligence")
+    _p1, _p2, _p3, _p4 = st.columns(4)
+    with _p1:
+        st.metric("Imported Logged", f"{int(perf.get('total_logged', 0) or 0):,}")
+    with _p2:
+        st.metric("Validated", f"{int(perf.get('validated', 0) or 0):,}")
+    with _p3:
+        acc = perf.get("accuracy_pct")
+        st.metric("Imported Accuracy", "n/a" if acc is None else f"{float(acc):.1f}%")
+    with _p4:
+        avg_ret = perf.get("avg_return_pct")
+        st.metric("Avg Next Return", "n/a" if avg_ret is None else f"{float(avg_ret):.2f}%")
+
+    _b1, _b2 = st.columns(2)
+    with _b1:
+        st.caption("Best Category")
+        st.write(_format_perf_bucket(perf.get("best_category")))
+        st.caption("Best Sector")
+        st.write(_format_perf_bucket(perf.get("best_sector")))
+    with _b2:
+        st.caption("Worst Category")
+        st.write(_format_perf_bucket(perf.get("worst_category")))
+        st.caption("Worst Sector")
+        st.write(_format_perf_bucket(perf.get("worst_sector")))
+
+    false_bull = perf.get("false_bullish_pct")
+    st.caption(
+        "False bullish rate: "
+        + ("n/a" if false_bull is None else f"{float(false_bull):.1f}%")
+    )
+
+    recent = perf.get("recent")
+    if isinstance(recent, pd.DataFrame) and not recent.empty:
+        display = recent.rename(
+            columns={
+                "logged_at": "Logged At",
+                "symbol": "Ticker",
+                "mode": "Mode",
+                "import_category": "Category",
+                "import_source": "Source",
+                "strategy_strip": "Strip",
+                "sector": "Sector",
+                "trap_risk": "Trap",
+                "prediction_score": "Pred Score",
+                "final_score": "Final Score",
+                "actual_next_return_pct": "Next Return %",
+                "outcome_quality": "Outcome",
+                "correct": "Correct",
+            }
+        )
+        st.dataframe(
+            display,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Ticker"),
+                "Mode": st.column_config.TextColumn("Mode"),
+                "Category": st.column_config.TextColumn("Category", width="medium"),
+                "Strip": st.column_config.TextColumn("Strip"),
+                "Sector": st.column_config.TextColumn("Sector"),
+                "Trap": st.column_config.TextColumn("Trap"),
+                "Pred Score": st.column_config.TextColumn("Pred Score"),
+                "Final Score": st.column_config.TextColumn("Final Score"),
+                "Next Return %": st.column_config.TextColumn("Next Return %"),
+                "Outcome": st.column_config.TextColumn("Outcome"),
+                "Correct": st.column_config.TextColumn("Correct"),
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
 def render_imported_ai_learning_panel() -> None:
     if not st.session_state.get("imported_ai_learning_show_panel", False):
         return
@@ -3899,6 +3998,7 @@ def render_imported_ai_learning_panel() -> None:
         )
 
     _render_imported_ai_top3_prompt_panel(panel)
+    _render_imported_ai_self_learning_intelligence()
 
     if not table.empty:
         st.dataframe(
@@ -9709,8 +9809,13 @@ with st.sidebar:
                 f'<div style="font-size:12px;color:#8ab4d8;line-height:1.8;">'
                 f'Predictions logged: <span style="color:#ccd9e8;">{_logged}</span><br>'
                 f'Validated: <span style="color:#ccd9e8;">{_validated} ({_validated_pct:.1f}%)</span><br>'
+                f'Stock samples: <span style="color:#ccd9e8;">{int(_ls.get("stock_samples", 0) or 0)}</span><br>'
+                f'Imported AI samples: <span style="color:#ccd9e8;">{int(_ls.get("imported_ai_samples", 0) or 0)}</span><br>'
+                f'Sector samples: <span style="color:#ccd9e8;">{int(_ls.get("sector_samples", 0) or 0)}</span><br>'
                 f'Filled today: <span style="color:#00d4ff;">{int(_ls.get("validated_today", 0) or 0) + int(_ls.get("sector_validated_today", 0) or 0)}</span><br>'
-                f'Meta accuracy: <span style="color:#00d4ff;">{_train_acc_txt}</span><br>'
+                f'Validation accuracy: <span style="color:#00d4ff;">{_train_acc_txt}</span><br>'
+                f'Active features: <span style="color:#ccd9e8;">{int(_ls.get("active_feature_count", 0) or 0)}</span><br>'
+                f'Recency weighting: <span style="color:#ccd9e8;">{"ON" if bool(_ls.get("recency_weighting_active", False)) else "OFF"}</span><br>'
                 f'Best mode: <span style="color:#ccd9e8;">{html.escape(_best_mode_txt)}</span><br>'
                 f'Worst mode: <span style="color:#ccd9e8;">{html.escape(_worst_mode_txt)}</span><br>'
                 f'Calibration: <span style="color:#ccd9e8;">{html.escape(_calibration_txt)}</span><br>'
