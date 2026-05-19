@@ -15,7 +15,7 @@
         3,
         6
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:38",
       "snapshot": {
         "ticker": "MEDANTA",
         "direction": "Sideways",
@@ -79,7 +79,7 @@
         6,
         7
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:38",
       "snapshot": {
         "ticker": "",
         "direction": "",
@@ -137,7 +137,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:38",
       "snapshot": {
         "ticker": "JUBLPHARMA",
         "direction": "Sideways",
@@ -195,7 +195,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:39",
       "snapshot": {
         "ticker": "SUPRIYA",
         "direction": "Sideways",
@@ -253,7 +253,7 @@
       "modes": [
         5
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:39",
       "snapshot": {
         "ticker": "TMPV",
         "direction": "Bearish",
@@ -311,7 +311,7 @@
       "modes": [
         5
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:39",
       "snapshot": {
         "ticker": "MOTHERSON",
         "direction": "Sideways",
@@ -369,7 +369,7 @@
       "modes": [
         5
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:39",
       "snapshot": {
         "ticker": "TIIL",
         "direction": "Sideways",
@@ -427,7 +427,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:40",
       "snapshot": {
         "ticker": "GPTHEALTH",
         "direction": "Sideways",
@@ -485,7 +485,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:40",
       "snapshot": {
         "ticker": "SILGO",
         "direction": "Sideways",
@@ -542,7 +542,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:40",
       "snapshot": {
         "ticker": "PAGEIND",
         "direction": "Sideways",
@@ -599,7 +599,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-19T14:25:17",
+      "last_imported_at": "2026-05-19T14:25:40",
       "snapshot": {
         "ticker": "JKPAPER",
         "direction": "Sideways",
@@ -646,5 +646,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-19T14:25:17"
+  "updated_at": "2026-05-19T14:25:40"
 }
