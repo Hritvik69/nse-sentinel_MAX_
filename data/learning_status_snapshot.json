@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-05-19T10:31:05",
+  "saved_at": "2026-05-19T10:34:45",
   "signature": [
     "2026-05-19",
-    1779186448.846,
+    1779186689.194,
     1779186218.913
   ],
   "learning_status": {
@@ -16,7 +16,7 @@
     "accuracy_pct": 67.48,
     "validation_accuracy_pct": 67.48,
     "training_accuracy_pct": 66.12,
-    "last_trained": "2026-05-19T10:27",
+    "last_trained": "2026-05-19T10:31",
     "source": "stock_feedback",
     "message": "Model trained on 3883 samples.",
     "regime_encoder": {
@@ -153,7 +153,7 @@
         "UNMAPPED": 18
       }
     },
-    "validated_today": 271,
+    "validated_today": 0,
     "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 4082,
@@ -165,14 +165,14 @@
       "false_bearish_pct": 38.28
     },
     "brain_status": {
-      "started_at": "2026-05-19T10:27:11",
-      "completed_at": "2026-05-19T10:31:04",
+      "started_at": "2026-05-19T10:31:06",
+      "completed_at": "2026-05-19T10:34:44",
       "feedback": {
-        "filled_stock": 271,
+        "filled_stock": 0,
         "filled_sector": 0,
-        "pending_stock": 470,
+        "pending_stock": 199,
         "pending_sector": 8,
-        "message": "\u2705 Closed feedback loop: 271 outcomes filled"
+        "message": "\u2705 Closed feedback loop: 0 outcomes filled"
       },
       "feedback_summary": {
         "total_logged": 4082,
@@ -194,7 +194,7 @@
         "accuracy_pct": 67.48,
         "validation_accuracy_pct": 67.48,
         "training_accuracy_pct": 66.12,
-        "last_trained": "2026-05-19T10:27",
+        "last_trained": "2026-05-19T10:31",
         "source": "stock_feedback",
         "message": "Model trained on 3883 samples.",
         "regime_encoder": {
@@ -645,7 +645,7 @@
               "EMA50": 536.27,
               "Close": 337.65
             },
-            "computed_at": "2026-05-19T10:30:54"
+            "computed_at": "2026-05-19T10:34:34"
           },
           {
             "ticker": "PARSVNATH",
@@ -712,7 +712,7 @@
               "EMA50": 7.22,
               "Close": 4.88
             },
-            "computed_at": "2026-05-19T10:29:56"
+            "computed_at": "2026-05-19T10:33:37"
           },
           {
             "ticker": "OSIAHYPER",
@@ -779,7 +779,7 @@
               "EMA50": 6.32,
               "Close": 4.29
             },
-            "computed_at": "2026-05-19T10:29:54"
+            "computed_at": "2026-05-19T10:33:35"
           },
           {
             "ticker": "MBEL",
@@ -846,7 +846,7 @@
               "EMA50": 313.81,
               "Close": 301.1
             },
-            "computed_at": "2026-05-19T10:29:35"
+            "computed_at": "2026-05-19T10:33:17"
           },
           {
             "ticker": "AARTECH",
@@ -913,7 +913,7 @@
               "EMA50": 45.32,
               "Close": 42.55
             },
-            "computed_at": "2026-05-19T10:27:43"
+            "computed_at": "2026-05-19T10:31:28"
           },
           {
             "ticker": "SHIVAUM",
@@ -980,7 +980,7 @@
               "EMA50": 330.02,
               "Close": 334.85
             },
-            "computed_at": "2026-05-19T10:30:25"
+            "computed_at": "2026-05-19T10:34:05"
           },
           {
             "ticker": "DDEVPLSTIK",
@@ -1047,7 +1047,7 @@
               "EMA50": 245.87,
               "Close": 237.9
             },
-            "computed_at": "2026-05-19T10:28:27"
+            "computed_at": "2026-05-19T10:32:11"
           },
           {
             "ticker": "KRITI",
@@ -1114,7 +1114,7 @@
               "EMA50": 79.83,
               "Close": 69.39
             },
-            "computed_at": "2026-05-19T10:29:23"
+            "computed_at": "2026-05-19T10:33:05"
           },
           {
             "ticker": "AUSOMENT",
@@ -1181,7 +1181,7 @@
               "EMA50": 125.08,
               "Close": 121.0
             },
-            "computed_at": "2026-05-19T10:28:01"
+            "computed_at": "2026-05-19T10:31:46"
           },
           {
             "ticker": "TCC",
@@ -1248,7 +1248,7 @@
               "EMA50": 388.23,
               "Close": 360.1
             },
-            "computed_at": "2026-05-19T10:30:41"
+            "computed_at": "2026-05-19T10:34:22"
           },
           {
             "ticker": "AMIRCHAND",
@@ -1315,7 +1315,7 @@
               "EMA50": 146.25,
               "Close": 130.57
             },
-            "computed_at": "2026-05-19T10:27:53"
+            "computed_at": "2026-05-19T10:31:38"
           },
           {
             "ticker": "KAYNES",
@@ -1382,7 +1382,7 @@
               "EMA50": 3912.57,
               "Close": 3091.6
             },
-            "computed_at": "2026-05-19T10:29:15"
+            "computed_at": "2026-05-19T10:32:56"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 1664 tickers computed"
