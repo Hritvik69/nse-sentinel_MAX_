@@ -4140,3 +4140,6 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-19T16:10:33+05:30,2026-05-19,37802042696a1020ada90b20,ZYDUSLIFE,PHARMA,6,,,,Bearish,stock_next_session_v2,16.6400,23.4800,AVOID,Low,Sideways / no edge,Ranging,67.9300,5.6000,,HIGH,0,,,,
 2026-05-19T16:10:33+05:30,2026-05-19,ac02176ffe95b05e34a77f37,PAGEIND,,6,,,,Bearish,stock_next_session_v2,27.2300,23.4000,AVOID,Low,Sideways / no edge,Ranging,66.0800,2.5100,,MEDIUM,0,,,,
 2026-05-19T16:10:33+05:30,2026-05-19,da286658f369ab749543e8f5,MEDICO,,6,,,,Bearish,stock_next_session_v2,24.7800,21.9600,AVOID,Low,Sideways / no edge,Ranging,67.1900,3.2000,,LOW,0,,,,
+2026-05-19T10:41:58+05:30,2026-05-19,332300627fa31c8bf9b291ae,MEDANTA,,3,Mode 1 Top 3 | Mode 2 Top 3,Relax | Swing,Relax,Bearish,stock_next_session_v2,44.6400,52.9200,AVOID,Medium,Sideways / no edge,Ranging,66.7000,1.4500,,LOW,0,,,,
+2026-05-19T10:41:58+05:30,2026-05-19,bc62073c2c2f4849f3d09685,SCHAND,,3,Mode 1 Top 3 | Mode 2 Top 3,Relax | Swing,Relax,Bearish,stock_next_session_v2,44.4100,49.0600,AVOID,Medium,Sideways / no edge,Ranging,65.6500,2.2000,,LOW,0,,,,
+2026-05-19T10:41:58+05:30,2026-05-19,2b89f2d57d05585f1f6ddcb6,SUPRIYA,,6,Mode 2 Top 3,Swing,Swing,Bearish,stock_next_session_v2,40.7100,41.1400,AVOID,Low,Sideways / no edge,Ranging,63.4900,2.7000,,LOW,0,,,,
