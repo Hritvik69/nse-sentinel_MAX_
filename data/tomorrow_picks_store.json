@@ -8,7 +8,9 @@
     "MOTHERSON",
     "TIIL",
     "GPTHEALTH",
-    "SILGO"
+    "SILGO",
+    "PAGEIND",
+    "JKPAPER"
   ],
   "notes": "",
   "sections": {
@@ -29,6 +31,9 @@
       "GPTHEALTH",
       "SILGO"
     ],
-    "breakout": []
+    "breakout": [
+      "PAGEIND",
+      "JKPAPER"
+    ]
   }
 }
