@@ -2988,6 +2988,350 @@ def _run_imported_ai_self_improve_update(*, include_outcome_refresh: bool = True
     return summary
 
 
+def _tomorrow_import_mode_for_bucket(bucket: object) -> int:
+    bucket_key = _normalize_tomorrow_bucket(bucket)
+    return {
+        "relax": 3,
+        "swing": 6,
+        "intraday": 5,
+        "momentum": 7,
+        "breakout": 0,
+    }.get(bucket_key, 0)
+
+
+def _tomorrow_import_value_is_blank(value: object) -> bool:
+    try:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return value.strip().lower() in {"", "nan", "none", "nat"}
+        if isinstance(value, (dict, list, tuple, set)):
+            return False
+        return bool(pd.isna(value))
+    except Exception:
+        return False
+
+
+def _first_tomorrow_import_value(row: dict[str, object], *keys: str, default: object = "") -> object:
+    if not isinstance(row, dict):
+        return default
+    lower_key_map = {str(key).strip().lower(): key for key in row.keys()}
+    for key in keys:
+        lookup = str(key).strip()
+        candidates = [lookup]
+        lower_match = lower_key_map.get(lookup.lower())
+        if lower_match and lower_match not in candidates:
+            candidates.append(lower_match)
+        for candidate in candidates:
+            if candidate not in row:
+                continue
+            value = row.get(candidate)
+            if not _tomorrow_import_value_is_blank(value):
+                return value
+    return default
+
+
+def _extract_tomorrow_indicator_value(indicators: object, *aliases: str) -> object:
+    try:
+        if isinstance(indicators, dict):
+            for alias in aliases:
+                value = _first_tomorrow_import_value(indicators, alias)
+                if not _tomorrow_import_value_is_blank(value):
+                    return value
+        text = str(indicators or "")
+        if not text:
+            return ""
+        for alias in aliases:
+            pattern = (
+                r"['\"]"
+                + re.escape(alias)
+                + r"['\"]\s*:\s*(?:np\.float64\()?['\"]?([-+]?\d+(?:\.\d+)?)"
+            )
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
+    except Exception:
+        return ""
+    return ""
+
+
+def _tomorrow_confidence_tier(confidence: object, score: object = "") -> str:
+    try:
+        value = float(confidence)
+    except Exception:
+        try:
+            value = float(score)
+        except Exception:
+            return ""
+    if not np.isfinite(value):
+        return ""
+    if value >= 70:
+        return "High"
+    if value >= 55:
+        return "Medium"
+    return "Low"
+
+
+def _tomorrow_import_symbol_col(df: pd.DataFrame) -> str:
+    for col in ("Symbol", "Ticker", "symbol", "ticker"):
+        if col in df.columns:
+            return col
+    return ""
+
+
+def _tomorrow_import_row_map_from_frame(
+    df: pd.DataFrame,
+    symbols: list[str],
+) -> dict[str, dict[str, object]]:
+    if not isinstance(df, pd.DataFrame) or df.empty or not symbols:
+        return {}
+    symbol_col = _tomorrow_import_symbol_col(df)
+    if not symbol_col:
+        return {}
+    try:
+        wanted = set(_normalize_tomorrow_symbols(symbols, limit=40))
+        working = df.copy()
+        working["_tmr_import_symbol"] = working[symbol_col].map(_normalize_tomorrow_symbol)
+        working = working[working["_tmr_import_symbol"].isin(wanted)].copy()
+        if working.empty:
+            return {}
+        for dt_col in ("computed_at", "Computed At", "Logged At", "Imported At"):
+            if dt_col in working.columns:
+                working["_tmr_import_dt"] = pd.to_datetime(working[dt_col], errors="coerce")
+                working = working.sort_values("_tmr_import_dt", ascending=False, na_position="last")
+                break
+        working = working.drop_duplicates(subset=["_tmr_import_symbol"], keep="first")
+        out: dict[str, dict[str, object]] = {}
+        for _, row in working.iterrows():
+            symbol = _normalize_tomorrow_symbol(row.get("_tmr_import_symbol"))
+            if symbol:
+                out[symbol] = row.drop(labels=["_tmr_import_symbol", "_tmr_import_dt"], errors="ignore").to_dict()
+        return out
+    except Exception:
+        return {}
+
+
+def _load_tomorrow_prediction_import_frames() -> list[pd.DataFrame]:
+    frames: list[pd.DataFrame] = []
+    cached = st.session_state.get("tomorrow_predictions")
+    if isinstance(cached, pd.DataFrame) and not cached.empty:
+        frames.append(cached.copy())
+    try:
+        master_path = Path(_HERE) / "data" / "tomorrow_master_predictions.csv"
+        if master_path.exists():
+            master_df = pd.read_csv(master_path)
+            if isinstance(master_df, pd.DataFrame) and not master_df.empty:
+                frames.append(master_df)
+    except Exception:
+        pass
+    return frames
+
+
+def _collect_tomorrow_import_source_map(symbols: list[str]) -> dict[str, dict[str, object]]:
+    normalized = _normalize_tomorrow_symbols(symbols, limit=40)
+    source_map: dict[str, dict[str, object]] = {}
+
+    scan_df = st.session_state.get("last_scan_df")
+    for frame in [scan_df] + _load_tomorrow_prediction_import_frames():
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        frame_map = _tomorrow_import_row_map_from_frame(frame, normalized)
+        for symbol in normalized:
+            if symbol not in source_map and symbol in frame_map:
+                source_map[symbol] = dict(frame_map[symbol])
+    return source_map
+
+
+def _normalize_tomorrow_pick_import_row(
+    symbol: str,
+    bucket: object,
+    source_row: dict[str, object] | None,
+) -> dict[str, object]:
+    row = dict(source_row or {})
+    bucket_key = _normalize_tomorrow_bucket(bucket)
+    bucket_label = _tomorrow_section_label(bucket_key)
+    indicators = _first_tomorrow_import_value(row, "indicators", "Indicators", default={})
+    prediction_score = _first_tomorrow_import_value(
+        row,
+        "Prediction Score",
+        "Tomorrow Pick Score",
+        "score",
+        "raw_score",
+        "mode_score",
+    )
+    final_score = _first_tomorrow_import_value(
+        row,
+        "Final Score",
+        "confidence",
+        "AI Confidence",
+        "score",
+    )
+    signal = _first_tomorrow_import_value(
+        row,
+        "Signal",
+        "Adjusted Signal",
+        "Next-Day Signal",
+        "Action",
+        "AI Action",
+        "action",
+        "label_tag",
+        default="Buy Tomorrow",
+    )
+    confidence_tier = _first_tomorrow_import_value(
+        row,
+        "Conviction Tier",
+        "conviction_tier",
+        "label_tag",
+        default=_tomorrow_confidence_tier(final_score, prediction_score),
+    )
+
+    normalized = dict(row)
+    normalized.update(
+        {
+            "Symbol": symbol,
+            "Ticker": symbol,
+            "Tomorrow Strip": bucket_label,
+            "Prediction Score": prediction_score,
+            "Tomorrow Pick Score": _first_tomorrow_import_value(
+                row,
+                "Tomorrow Pick Score",
+                "Prediction Score",
+                "score",
+                "raw_score",
+                default=prediction_score,
+            ),
+            "Final Score": final_score,
+            "Signal": signal,
+            "Conviction Tier": confidence_tier,
+            "Trap Risk": _first_tomorrow_import_value(row, "Trap Risk", "Trap Check", "risk", default=""),
+            "Sector": _first_tomorrow_import_value(row, "Sector", "sector", default=""),
+            "AI Direction": _first_tomorrow_import_value(row, "AI Direction", "direction", default=""),
+            "AI Confidence": _first_tomorrow_import_value(row, "AI Confidence", "confidence", default=final_score),
+            "AI Action": _first_tomorrow_import_value(row, "AI Action", "action", default=signal),
+            "AI Key Signal": _first_tomorrow_import_value(row, "AI Key Signal", "key_signal", default=""),
+        }
+    )
+    normalized.setdefault(
+        "RSI",
+        _extract_tomorrow_indicator_value(indicators, "RSI"),
+    )
+    normalized.setdefault(
+        "Vol / Avg",
+        _extract_tomorrow_indicator_value(indicators, "Vol / Avg", "Volume Ratio"),
+    )
+    normalized.setdefault(
+        "Delta vs EMA20 (%)",
+        _extract_tomorrow_indicator_value(
+            indicators,
+            "Delta vs EMA20 (%)",
+            "EMA Distance (%)",
+            "Î” vs EMA20 (%)",
+            "Δ vs EMA20 (%)",
+        ),
+    )
+    if "computed_at" in row and "Market Date" not in normalized:
+        normalized["Market Date"] = row.get("computed_at")
+    return normalized
+
+
+def _build_tomorrow_picks_import_source_rows(
+    symbols: list[str],
+    sections: dict[str, list[object]] | None,
+) -> pd.DataFrame:
+    normalized = _normalize_tomorrow_symbols(symbols, limit=40)
+    if not normalized:
+        return pd.DataFrame()
+    membership = _tomorrow_section_membership(sections)
+    source_map = _collect_tomorrow_import_source_map(normalized)
+    rows = [
+        _normalize_tomorrow_pick_import_row(
+            symbol,
+            membership.get(symbol, "relax"),
+            source_map.get(symbol),
+        )
+        for symbol in normalized
+    ]
+    return pd.DataFrame(rows)
+
+
+def _import_tomorrow_picks_to_imported_ai_learning() -> dict[str, object]:
+    result: dict[str, object] = {
+        "symbols": [],
+        "added": 0,
+        "updated": 0,
+        "logged": 0,
+        "kind": "info",
+        "message": "",
+    }
+    try:
+        store, _storage_mode = _load_tomorrow_store()
+        sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        symbols = _tomorrow_flatten_sections(sections, limit=20)
+        if not symbols:
+            symbols = _normalize_tomorrow_symbols(store.get("picks", []), limit=20)
+        if not symbols:
+            result["message"] = "No Tomorrow's Picks are saved yet. Add picks first, then import them into Imported AI Stocks."
+            return result
+
+        source_df = _build_tomorrow_picks_import_source_rows(symbols, sections)
+        added_total = 0
+        updated_total = 0
+        for bucket in _TOMORROW_SECTION_ORDER:
+            bucket_symbols = [
+                symbol
+                for symbol in _normalize_tomorrow_symbols(sections.get(bucket, []), limit=20)
+                if symbol in symbols
+            ]
+            if not bucket_symbols:
+                continue
+            bucket_rows = pd.DataFrame()
+            if isinstance(source_df, pd.DataFrame) and not source_df.empty and "Symbol" in source_df.columns:
+                bucket_rows = source_df[source_df["Symbol"].isin(bucket_symbols)].copy()
+            summary = _store_symbols_in_imported_ai_learning(
+                bucket_symbols,
+                mode_value=_tomorrow_import_mode_for_bucket(bucket),
+                source_label=f"Tomorrow's Picks - {_tomorrow_section_label(bucket)}",
+                source_bucket=bucket,
+                source_rows=bucket_rows,
+            )
+            added_total += int(summary.get("added", 0) or 0)
+            updated_total += int(summary.get("updated", 0) or 0)
+
+        tracking_summary = _run_imported_ai_self_improve_update()
+        logged = int(tracking_summary.get("added", 0) or 0)
+        already_logged = int(tracking_summary.get("already_logged", 0) or 0)
+        action_bits: list[str] = []
+        if added_total:
+            noun = "pick" if added_total == 1 else "picks"
+            action_bits.append(f"added {added_total} new {noun}")
+        if updated_total:
+            noun = "pick" if updated_total == 1 else "picks"
+            action_bits.append(f"refreshed {updated_total} existing {noun}")
+        if not action_bits:
+            action_bits.append("all picks were already in Imported AI Stocks")
+
+        learning_message = str(tracking_summary.get("message", "") or "").strip()
+        result.update(
+            {
+                "symbols": symbols,
+                "added": added_total,
+                "updated": updated_total,
+                "logged": logged,
+                "already_logged": already_logged,
+                "kind": "success" if added_total or updated_total or logged else "info",
+                "message": (
+                    f"Imported {len(symbols)} Tomorrow's Picks into Imported AI Stocks; "
+                    f"{', '.join(action_bits)}. {learning_message}"
+                ).strip(),
+            }
+        )
+        return result
+    except Exception as exc:
+        result["kind"] = "error"
+        result["message"] = f"Import failed: {exc}"
+        return result
+
+
 def _render_sidebar_imported_ai_learning_button() -> None:
     records = _get_imported_ai_learning_records()
     imported = [
@@ -5021,7 +5365,7 @@ def render_tomorrow_picks_panel() -> None:
             )
             st.markdown(picks_status_html, unsafe_allow_html=True)
 
-        bulk_text_col, bulk_button_col = st.columns([2.7, 1], gap="small")
+        bulk_text_col, import_picks_col, bulk_button_col = st.columns([2.05, 1.15, 1], gap="small")
         with bulk_text_col:
             st.markdown(
                 (
@@ -5033,6 +5377,16 @@ def render_tomorrow_picks_panel() -> None:
                 ),
                 unsafe_allow_html=True,
             )
+        with import_picks_col:
+            st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+            import_picks_clicked = st.button(
+                "Import Picks",
+                key="tmr_v2_import_picks_to_ai",
+                width="stretch",
+                disabled=saved_count <= 0,
+                type="primary",
+                help="Import every saved Tomorrow's Pick into Imported AI Stocks, then log them for self-learning.",
+            )
         with bulk_button_col:
             st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
             clear_all_clicked = st.button(
@@ -5041,6 +5395,21 @@ def render_tomorrow_picks_panel() -> None:
                 width="stretch",
                 disabled=saved_count <= 0,
             )
+
+        if import_picks_clicked:
+            import_summary = _import_tomorrow_picks_to_imported_ai_learning()
+            import_kind = str(import_summary.get("kind", "info") or "info")
+            import_message = str(import_summary.get("message", "") or "Import finished.").strip()
+            _set_tomorrow_picks_feedback(import_kind, import_message)
+            if list(import_summary.get("symbols", []) or []):
+                st.session_state["_imported_ai_outcome_refresh_msg"] = import_message
+                try:
+                    st.toast(import_message)
+                except Exception:
+                    pass
+                _activate_sidebar_panel("imported_ai_learning_show_panel")
+            else:
+                st.rerun()
 
         if clear_all_clicked:
             removed_count = _clear_tomorrow_picks_store(store)
