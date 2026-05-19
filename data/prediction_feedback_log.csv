@@ -4201,3 +4201,6 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-05-19T19:47:57+05:30,2026-05-19,20e0abe0406ddf8026168dd4,CHEMCON,,5,,,,Bearish,stock_next_session_v2,17.5200,26.0400,AVOID,Low,Sideways / no edge,Ranging,64.3800,3.4600,,MEDIUM,0,,,,
 2026-05-19T19:47:57+05:30,2026-05-19,30e7d8c045385df8deb762b7,SIYSIL,,5,,,,Bearish,stock_next_session_v2,22.0800,25.6800,AVOID,Low,Sideways / no edge,Ranging,63.6400,3.0400,,MEDIUM,0,,,,
 2026-05-19T19:47:57+05:30,2026-05-19,1169100198cdd44e7ccaf101,SBCL,,5,,,,Bearish,stock_next_session_v2,8.8000,21.1600,AVOID,Low,Sideways / no edge,Ranging,63.8200,1.1300,,MEDIUM,0,,,,
+2026-05-19T14:18:23+05:30,2026-05-19,574cf10dd26b5341709be922,TMPV,,5,Mode 3 Top 3,Intraday,Intraday,Bearish,stock_next_session_v2,49.9000,48.0800,AVOID,High,Sideways / no edge,Ranging,58.7000,1.4600,,LOW,0,,,,
+2026-05-19T14:18:23+05:30,2026-05-19,b4a8fc50ceabae7f23d6defe,MOTHERSON,AUTO,5,Mode 3 Top 3,Intraday,Intraday,Bearish,stock_next_session_v2,48.8500,47.1200,AVOID,Medium,Sideways / no edge,Ranging,59.5200,1.3100,,LOW,0,,,,
+2026-05-19T14:18:23+05:30,2026-05-19,108f66ae8c0ec9f5a8ef95c0,TIIL,,5,Mode 3 Top 3,Intraday,Intraday,Bearish,stock_next_session_v2,49.1800,44.7400,AVOID,Medium,Sideways / no edge,Ranging,62.1400,3.1200,,LOW,0,,,,
