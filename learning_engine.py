@@ -16,10 +16,13 @@ except ImportError:
     SKLEARN_OK = False
 
 try:
-    from prediction_feedback_store import read_feedback_log
+    from prediction_feedback_store import enrich_imported_ai_feedback_frame, read_feedback_log
 except Exception:
     def read_feedback_log() -> pd.DataFrame:  # type: ignore[misc]
         return pd.DataFrame()
+
+    def enrich_imported_ai_feedback_frame(df: pd.DataFrame | None) -> pd.DataFrame:  # type: ignore[misc]
+        return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
 
 try:
     from sector_prediction_tracker import read_log as read_sector_prediction_log
@@ -413,10 +416,14 @@ def _derive_strategy_strip(row) -> str:
 
 
 def _is_imported_training_row(row) -> bool:
-    source = str(_first_present(row, ["import_source", "Import Source"], "") or "").strip()
-    category = str(_first_present(row, ["import_category", "Import Category"], "") or "").strip()
-    strip = str(_first_present(row, ["strategy_strip", "Strategy Strip", "Tomorrow Strip"], "") or "").strip()
-    return bool(source or category or strip)
+    def _present(value) -> bool:
+        text = str(value or "").strip().lower()
+        return text not in {"", "nan", "none", "null", "unknown", "-", "n/a", "na"}
+
+    source = _first_present(row, ["import_source", "Import Source"], "")
+    category = _first_present(row, ["import_category", "Import Category"], "")
+    strip = _first_present(row, ["strategy_strip", "Strategy Strip", "Tomorrow Strip"], "")
+    return any(_present(value) for value in (source, category, strip))
 
 
 def _coerce_training_frame_columns(out: pd.DataFrame) -> pd.DataFrame:
@@ -445,7 +452,7 @@ def _build_stock_training_rows() -> pd.DataFrame:
         if df is None or df.empty:
             return pd.DataFrame(columns=_RAW_FEATURE_COLUMNS + ["target", "source", "sample_date", "actual_next_return_pct", "is_imported_ai"])
 
-        out = df.copy()
+        out = enrich_imported_ai_feedback_frame(df)
         out["_correct"] = out.get("correct", "").apply(_to_target_flag)
         missing_correct = out["_correct"].isna()
         if missing_correct.any() and "actual_next_return_pct" in out.columns:

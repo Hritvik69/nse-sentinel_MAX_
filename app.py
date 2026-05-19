@@ -3782,6 +3782,108 @@ def _format_perf_bucket(bucket: object) -> str:
         return f"{name} | {rows} rows"
 
 
+def _ui_clean_text(value: object, default: str = "-") -> str:
+    try:
+        if value is None:
+            return default
+        if isinstance(value, float) and np.isnan(value):
+            return default
+        text = str(value).strip()
+        if text.lower() in {"", "none", "nan", "null", "unknown", "n/a", "na"}:
+            return default
+        return text
+    except Exception:
+        return default
+
+
+def _ui_percent(value: object, decimals: int = 1) -> str:
+    try:
+        if value is None:
+            return "n/a"
+        value_f = float(value)
+        if not np.isfinite(value_f):
+            return "n/a"
+        return f"{value_f:.{decimals}f}%"
+    except Exception:
+        return "n/a"
+
+
+def _perf_bucket_title(bucket: object) -> str:
+    if not isinstance(bucket, dict) or not bucket:
+        return "n/a"
+    return _ui_clean_text(bucket.get("bucket", "n/a"), "n/a")
+
+
+def _perf_bucket_caption(bucket: object) -> str:
+    if not isinstance(bucket, dict) or not bucket:
+        return "No validated rows yet"
+    rows = int(bucket.get("rows", 0) or 0)
+    accuracy = _ui_percent(bucket.get("accuracy_pct"))
+    avg_return = _ui_percent(bucket.get("avg_return_pct"), decimals=2)
+    return f"{accuracy} accuracy | {avg_return} avg | {rows} rows"
+
+
+def _perf_bucket_frame(buckets: object) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for item in list(buckets or []) if isinstance(buckets, (list, tuple)) else []:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "Bucket": _ui_clean_text(item.get("bucket"), "UNKNOWN"),
+                "Rows": int(item.get("rows", 0) or 0),
+                "Accuracy %": float(item.get("accuracy_pct", 0) or 0),
+                "Avg Return %": float(item.get("avg_return_pct", 0) or 0),
+                "False Bull %": float(item.get("false_bullish_pct", 0) or 0),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _clean_display_frame(df: pd.DataFrame, *, columns: list[str] | None = None) -> pd.DataFrame:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    if columns:
+        out = out[[column for column in columns if column in out.columns]].copy()
+    for column in out.columns:
+        if pd.api.types.is_numeric_dtype(out[column]):
+            continue
+        out[column] = out[column].map(lambda value: _ui_clean_text(value))
+    return out
+
+
+def _coerce_display_numbers(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    out = df.copy()
+    for column in columns:
+        if column in out.columns:
+            out[column] = pd.to_numeric(out[column], errors="coerce")
+    return out
+
+
+def _render_bucket_table(title: str, buckets: object) -> None:
+    frame = _perf_bucket_frame(buckets)
+    st.caption(title)
+    if frame.empty:
+        st.info("No validated bucket history yet.")
+        return
+    st.dataframe(
+        frame,
+        column_config={
+            "Bucket": st.column_config.TextColumn("Bucket", width="medium"),
+            "Rows": st.column_config.NumberColumn("Rows", format="%d"),
+            "Accuracy %": st.column_config.NumberColumn("Accuracy %", format="%.1f"),
+            "Avg Return %": st.column_config.NumberColumn("Avg Return %", format="%.2f"),
+            "False Bull %": st.column_config.NumberColumn("False Bull %", format="%.1f"),
+        },
+        use_container_width=True,
+        hide_index=True,
+        height=min(280, 38 + (len(frame) + 1) * 36),
+    )
+
+
 def _render_imported_ai_self_learning_intelligence() -> None:
     try:
         from prediction_feedback_store import summarize_imported_ai_performance
@@ -3807,61 +3909,87 @@ def _render_imported_ai_self_learning_intelligence() -> None:
         avg_ret = perf.get("avg_return_pct")
         st.metric("Avg Next Return", "n/a" if avg_ret is None else f"{float(avg_ret):.2f}%")
 
-    _b1, _b2 = st.columns(2)
-    with _b1:
-        st.caption("Best Category")
-        st.write(_format_perf_bucket(perf.get("best_category")))
-        st.caption("Best Sector")
-        st.write(_format_perf_bucket(perf.get("best_sector")))
-    with _b2:
-        st.caption("Worst Category")
-        st.write(_format_perf_bucket(perf.get("worst_category")))
-        st.caption("Worst Sector")
-        st.write(_format_perf_bucket(perf.get("worst_sector")))
-
-    false_bull = perf.get("false_bullish_pct")
-    st.caption(
-        "False bullish rate: "
-        + ("n/a" if false_bull is None else f"{float(false_bull):.1f}%")
-    )
+    _best_cat, _worst_cat, _best_strip, _false_bull = st.columns(4)
+    with _best_cat:
+        st.metric("Best Category", _perf_bucket_title(perf.get("best_category")))
+        st.caption(_perf_bucket_caption(perf.get("best_category")))
+    with _worst_cat:
+        st.metric("Weak Category", _perf_bucket_title(perf.get("worst_category")))
+        st.caption(_perf_bucket_caption(perf.get("worst_category")))
+    with _best_strip:
+        strips = list(perf.get("by_strategy_strip", []) or [])
+        st.metric("Best Strip", _perf_bucket_title(strips[0] if strips else {}))
+        st.caption(_perf_bucket_caption(strips[0] if strips else {}))
+    with _false_bull:
+        st.metric("False Bullish", _ui_percent(perf.get("false_bullish_pct")))
+        st.caption("Bullish imports that later failed")
 
     recent = perf.get("recent")
-    if isinstance(recent, pd.DataFrame) and not recent.empty:
-        display = recent.rename(
-            columns={
-                "logged_at": "Logged At",
-                "symbol": "Ticker",
-                "mode": "Mode",
-                "import_category": "Category",
-                "import_source": "Source",
-                "strategy_strip": "Strip",
-                "sector": "Sector",
-                "trap_risk": "Trap",
-                "prediction_score": "Pred Score",
-                "final_score": "Final Score",
-                "actual_next_return_pct": "Next Return %",
-                "outcome_quality": "Outcome",
-                "correct": "Correct",
-            }
-        )
-        st.dataframe(
-            display,
-            column_config={
-                "Ticker": st.column_config.TextColumn("Ticker"),
-                "Mode": st.column_config.TextColumn("Mode"),
-                "Category": st.column_config.TextColumn("Category", width="medium"),
-                "Strip": st.column_config.TextColumn("Strip"),
-                "Sector": st.column_config.TextColumn("Sector"),
-                "Trap": st.column_config.TextColumn("Trap"),
-                "Pred Score": st.column_config.TextColumn("Pred Score"),
-                "Final Score": st.column_config.TextColumn("Final Score"),
-                "Next Return %": st.column_config.TextColumn("Next Return %"),
-                "Outcome": st.column_config.TextColumn("Outcome"),
-                "Correct": st.column_config.TextColumn("Correct"),
-            },
-            use_container_width=True,
-            hide_index=True,
-        )
+    _recent_tab, _edge_tab, _risk_tab = st.tabs(["Recent 20", "What Works", "Source / Risk"])
+    with _recent_tab:
+        if isinstance(recent, pd.DataFrame) and not recent.empty:
+            display = recent.rename(
+                columns={
+                    "symbol": "Ticker",
+                    "mode": "Mode",
+                    "import_category": "Category",
+                    "strategy_strip": "Strip",
+                    "sector": "Sector",
+                    "trap_risk": "Trap",
+                    "final_score": "Score",
+                    "actual_next_return_pct": "Return %",
+                    "outcome_quality": "Outcome",
+                    "correct": "Correct",
+                }
+            )
+            display = _clean_display_frame(
+                display,
+                columns=["Ticker", "Mode", "Strip", "Category", "Sector", "Trap", "Score", "Return %", "Outcome", "Correct"],
+            )
+            display = _coerce_display_numbers(display, ["Score", "Return %"])
+            st.dataframe(
+                display,
+                column_config={
+                    "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "Mode": st.column_config.TextColumn("Mode", width="small"),
+                    "Strip": st.column_config.TextColumn("Strip", width="small"),
+                    "Category": st.column_config.TextColumn("Category", width="medium"),
+                    "Sector": st.column_config.TextColumn("Sector", width="small"),
+                    "Trap": st.column_config.TextColumn("Trap", width="small"),
+                    "Score": st.column_config.NumberColumn("Score", format="%.1f"),
+                    "Return %": st.column_config.NumberColumn("Return %", format="%.2f"),
+                    "Outcome": st.column_config.TextColumn("Outcome", width="small"),
+                    "Correct": st.column_config.TextColumn("Correct", width="small"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                height=min(440, 38 + (len(display) + 1) * 36),
+            )
+        else:
+            st.info("Recent imported performance will show after outcomes are validated.")
+
+    with _edge_tab:
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _render_bucket_table("Accuracy by category", perf.get("by_import_category"))
+        with _c2:
+            _render_bucket_table("Accuracy by strategy strip", perf.get("by_strategy_strip"))
+        _s1, _s2 = st.columns(2)
+        with _s1:
+            st.caption("Best Sector")
+            st.write(_format_perf_bucket(perf.get("best_sector")))
+        with _s2:
+            st.caption("Weak Sector")
+            st.write(_format_perf_bucket(perf.get("worst_sector")))
+
+    with _risk_tab:
+        _r1, _r2, _r3 = st.columns(3)
+        with _r1:
+            _render_bucket_table("By source", perf.get("by_import_source"))
+        with _r2:
+            _render_bucket_table("By mode", perf.get("by_mode"))
+        with _r3:
+            _render_bucket_table("By trap risk", perf.get("by_trap_risk"))
 
 
 def render_imported_ai_learning_panel() -> None:
@@ -3997,32 +4125,81 @@ def render_imported_ai_learning_panel() -> None:
             f"Stored row data is still missing for some imported symbols: {_missing_preview}"
         )
 
-    _render_imported_ai_top3_prompt_panel(panel)
     _render_imported_ai_self_learning_intelligence()
 
     if not table.empty:
-        st.dataframe(
-            table,
-            column_config={
-                "Ticker": st.column_config.TextColumn("Ticker"),
-                "Categories": st.column_config.TextColumn("Categories", width="medium"),
-                "Sources": st.column_config.TextColumn("Sources", width="large"),
-                "Modes": st.column_config.TextColumn("Modes"),
-                "Imported At": st.column_config.TextColumn("Imported At", width="medium"),
-                "Stored Data": st.column_config.TextColumn("Stored Data"),
-                "Sector": st.column_config.TextColumn("Sector"),
-                "Final Score": st.column_config.NumberColumn("Final Score", format="%.1f"),
-                "Pred Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
-                "Signal": st.column_config.TextColumn("Signal"),
-                "Conviction": st.column_config.TextColumn("Conviction"),
-                "Trap": st.column_config.TextColumn("Trap"),
-                "Logged Today": st.column_config.TextColumn("Logged Today"),
-                "Last Outcome": st.column_config.TextColumn("Last Outcome"),
-                "Correct": st.column_config.TextColumn("Correct"),
-            },
-            width="stretch",
-            hide_index=True,
-        )
+        st.subheader("Saved Imported Basket")
+        _basket_tab, _outcome_tab, _detail_tab = st.tabs(["Watchlist", "Outcomes", "Full Details"])
+        with _basket_tab:
+            basket = _clean_display_frame(
+                table,
+                columns=["Ticker", "Categories", "Modes", "Signal", "Conviction", "Trap", "Final Score", "Pred Score"],
+            )
+            basket = _coerce_display_numbers(basket, ["Final Score", "Pred Score"])
+            st.dataframe(
+                basket,
+                column_config={
+                    "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "Categories": st.column_config.TextColumn("Category", width="medium"),
+                    "Modes": st.column_config.TextColumn("Mode", width="small"),
+                    "Signal": st.column_config.TextColumn("Signal", width="small"),
+                    "Conviction": st.column_config.TextColumn("Conviction", width="small"),
+                    "Trap": st.column_config.TextColumn("Trap", width="small"),
+                    "Final Score": st.column_config.NumberColumn("Final", format="%.1f"),
+                    "Pred Score": st.column_config.NumberColumn("Pred", format="%.1f"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                height=min(460, 38 + (len(basket) + 1) * 36),
+            )
+        with _outcome_tab:
+            outcomes = _clean_display_frame(
+                table,
+                columns=["Ticker", "Categories", "Sources", "Logged Today", "Last Outcome", "Correct", "Stored Data"],
+            )
+            st.dataframe(
+                outcomes,
+                column_config={
+                    "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "Categories": st.column_config.TextColumn("Category", width="medium"),
+                    "Sources": st.column_config.TextColumn("Source", width="large"),
+                    "Logged Today": st.column_config.TextColumn("Logged", width="small"),
+                    "Last Outcome": st.column_config.TextColumn("Last Outcome", width="small"),
+                    "Correct": st.column_config.TextColumn("Correct", width="small"),
+                    "Stored Data": st.column_config.TextColumn("Stored Data", width="medium"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                height=min(460, 38 + (len(outcomes) + 1) * 36),
+            )
+        with _detail_tab:
+            detail = _clean_display_frame(table)
+            detail = _coerce_display_numbers(detail, ["Final Score", "Pred Score"])
+            st.dataframe(
+                detail,
+                column_config={
+                    "Ticker": st.column_config.TextColumn("Ticker"),
+                    "Categories": st.column_config.TextColumn("Categories", width="medium"),
+                    "Sources": st.column_config.TextColumn("Sources", width="large"),
+                    "Modes": st.column_config.TextColumn("Modes"),
+                    "Imported At": st.column_config.TextColumn("Imported At", width="medium"),
+                    "Stored Data": st.column_config.TextColumn("Stored Data"),
+                    "Sector": st.column_config.TextColumn("Sector"),
+                    "Final Score": st.column_config.NumberColumn("Final Score", format="%.1f"),
+                    "Pred Score": st.column_config.NumberColumn("Pred Score", format="%.1f"),
+                    "Signal": st.column_config.TextColumn("Signal"),
+                    "Conviction": st.column_config.TextColumn("Conviction"),
+                    "Trap": st.column_config.TextColumn("Trap"),
+                    "Logged Today": st.column_config.TextColumn("Logged Today"),
+                    "Last Outcome": st.column_config.TextColumn("Last Outcome"),
+                    "Correct": st.column_config.TextColumn("Correct"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                height=min(520, 38 + (len(detail) + 1) * 36),
+            )
+
+    _render_imported_ai_top3_prompt_panel(panel)
 
     st.write("")
     if st.button(

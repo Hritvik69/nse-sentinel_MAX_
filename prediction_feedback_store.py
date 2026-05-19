@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import json
 import logging
 import threading
 from datetime import datetime, timedelta, timezone
@@ -30,6 +31,7 @@ except Exception:
 _HERE = Path(__file__).resolve().parent
 DATA_DIR = _HERE / "data"
 LOG_PATH = DATA_DIR / "prediction_feedback_log.csv"
+_IMPORTED_AI_STORE_PATH = DATA_DIR / "imported_ai_learning_store.json"
 _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else timezone(timedelta(hours=5, minutes=30))
 _LOG_LOCK = threading.RLock()
 _LOG = logging.getLogger(__name__)
@@ -66,6 +68,8 @@ _FIELDNAMES = [
 
 _LOG_CACHE_SIG: tuple[int, int] | None = None
 _LOG_CACHE_DF: pd.DataFrame | None = None
+_IMPORTED_META_CACHE_SIG: tuple[int, int] | None = None
+_IMPORTED_META_CACHE: dict[str, dict[str, str]] = {}
 
 
 def _ensure_data_dir() -> None:
@@ -175,9 +179,48 @@ def _is_blank(value: object) -> bool:
             return True
         if isinstance(value, float) and np.isnan(value):
             return True
-        return str(value).strip() in ("", "nan", "None")
+        return str(value).strip().lower() in ("", "nan", "none", "null")
     except Exception:
         return True
+
+
+def _is_missing_label(value: object) -> bool:
+    try:
+        if _is_blank(value):
+            return True
+        return str(value).strip().lower() in {"-", "unknown", "n/a", "na"}
+    except Exception:
+        return True
+
+
+def _clean_label(value: object, default: str = "") -> str:
+    if _is_missing_label(value):
+        return default
+    return str(value).strip()
+
+
+def _metadata_text_list(value: object) -> list[str]:
+    raw_items: list[object]
+    if isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in raw_items:
+        text = _clean_label(item)
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
+def _join_metadata_values(value: object) -> str:
+    return " | ".join(_metadata_text_list(value))
 
 
 def _to_float(value: object) -> float | None:
@@ -258,6 +301,121 @@ def _strategy_strip_from_text(*values: object) -> str:
     if "pulse" in text or "radar" in text:
         return "Breakout"
     return ""
+
+
+def _mode_import_defaults(mode: object) -> dict[str, str]:
+    text = _clean_label(mode).upper().replace("MODE", "").replace("M", "").strip()
+    try:
+        mode_int = int(float(text))
+    except Exception:
+        mode_int = -1
+    if mode_int == 7:
+        return {
+            "import_category": "Momentum",
+            "import_source": "Mode 7 / Tomorrow Picks",
+            "strategy_strip": "Momentum",
+        }
+    return {}
+
+
+def _snapshot_value(snapshot: dict, *keys: str) -> str:
+    for key in keys:
+        value = _clean_label(snapshot.get(key, ""))
+        if value:
+            return value
+    return ""
+
+
+def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
+    global _IMPORTED_META_CACHE_SIG, _IMPORTED_META_CACHE
+    try:
+        sig = _file_signature(_IMPORTED_AI_STORE_PATH)
+        if sig is not None and sig == _IMPORTED_META_CACHE_SIG:
+            return {key: dict(value) for key, value in _IMPORTED_META_CACHE.items()}
+        meta: dict[str, dict[str, str]] = {}
+        if sig is None or not _IMPORTED_AI_STORE_PATH.exists():
+            _IMPORTED_META_CACHE_SIG = sig
+            _IMPORTED_META_CACHE = {}
+            return {}
+
+        payload = json.loads(_IMPORTED_AI_STORE_PATH.read_text(encoding="utf-8"))
+        records = payload.get("records", []) if isinstance(payload, dict) else []
+        try:
+            from sector_master import get_sector
+        except Exception:
+            def get_sector(symbol: str) -> str | None:  # type: ignore[misc]
+                return None
+
+        for item in records if isinstance(records, list) else []:
+            if not isinstance(item, dict):
+                continue
+            symbol = _normalize_symbol_key(item.get("ticker") or item.get("symbol"))
+            if not symbol:
+                continue
+            snapshot = item.get("snapshot", {})
+            snapshot = snapshot if isinstance(snapshot, dict) else {}
+            categories = _metadata_text_list(item.get("categories", item.get("category", [])))
+            sources = _metadata_text_list(item.get("sources", item.get("source", [])))
+            modes = _metadata_text_list(item.get("modes", item.get("mode", [])))
+            mode_defaults = _mode_import_defaults(modes[0] if modes else "")
+            category_text = " | ".join(categories) or mode_defaults.get("import_category", "")
+            source_text = " | ".join(sources) or mode_defaults.get("import_source", "")
+            strip_text = (
+                _strategy_strip_from_text(category_text, source_text, _snapshot_value(snapshot, "Setup Type", "Mode"))
+                or mode_defaults.get("strategy_strip", "")
+            )
+            sector_text = _snapshot_value(snapshot, "Sector", "sector") or (get_sector(symbol) or "")
+            trap_text = _snapshot_value(snapshot, "Trap Risk", "Trap", "trap_risk")
+            meta[symbol] = {
+                "import_category": category_text,
+                "import_source": source_text,
+                "strategy_strip": strip_text,
+                "sector": sector_text,
+                "trap_risk": trap_text,
+                "mode": " | ".join([f"M{int(float(mode))}" if str(mode).replace('.', '', 1).isdigit() else str(mode) for mode in modes]),
+            }
+
+        _IMPORTED_META_CACHE_SIG = sig
+        _IMPORTED_META_CACHE = {key: dict(value) for key, value in meta.items()}
+        return meta
+    except Exception:
+        return {}
+
+
+def enrich_imported_ai_feedback_frame(df: pd.DataFrame | None) -> pd.DataFrame:
+    try:
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
+        out = df.copy()
+        for column in ("import_category", "import_source", "strategy_strip", "sector", "trap_risk", "mode"):
+            if column not in out.columns:
+                out[column] = ""
+        meta_map = _load_imported_ai_metadata_map()
+        for idx, row in out.iterrows():
+            symbol = _normalize_symbol_key(row.get("symbol", ""))
+            meta = dict(meta_map.get(symbol, {}))
+            has_meta = bool(meta)
+            has_import_hint = any(
+                not _is_missing_label(row.get(column, ""))
+                for column in ("import_category", "import_source", "strategy_strip")
+            )
+            mode_defaults = _mode_import_defaults(row.get("mode", "")) if has_meta or has_import_hint else {}
+            meta = {**mode_defaults, **{key: value for key, value in meta.items() if _clean_label(value)}}
+            for column in ("import_category", "import_source", "strategy_strip", "sector", "trap_risk"):
+                if _is_missing_label(row.get(column, "")) and _clean_label(meta.get(column, "")):
+                    out.at[idx, column] = meta[column]
+            if _is_missing_label(out.at[idx, "strategy_strip"]):
+                strip = _strategy_strip_from_text(
+                    out.at[idx, "import_category"],
+                    out.at[idx, "import_source"],
+                )
+                if strip:
+                    out.at[idx, "strategy_strip"] = strip
+        for column in ("import_category", "import_source", "strategy_strip", "sector", "trap_risk"):
+            out[column] = out[column].map(lambda value: _clean_label(value, ""))
+        return out
+    except Exception:
+        return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
 
 
 def _coerce_logged_at(value: object, fallback: str) -> str:
@@ -715,12 +873,12 @@ def backfill_actual_returns(all_data: dict) -> int:
 
 def _is_imported_ai_row(row: pd.Series | dict) -> bool:
     getter = row.get if hasattr(row, "get") else lambda key, default=None: default
-    source = str(getter("import_source", "") or "").strip().lower()
-    category = str(getter("import_category", "") or "").strip().lower()
-    strip = str(getter("strategy_strip", "") or "").strip().lower()
+    source = _clean_label(getter("import_source", ""))
+    category = _clean_label(getter("import_category", ""))
+    strip = _clean_label(getter("strategy_strip", ""))
     if not any((source, category, strip)):
         return False
-    if source in {"scan", "scanner", "main scan"} and not category and not strip:
+    if source.lower() in {"scan", "scanner", "main scan"} and not category and not strip:
         return False
     return True
 
@@ -730,7 +888,7 @@ def _bucket_performance(df: pd.DataFrame, column: str, *, min_rows: int = 1) -> 
         return []
     rows: list[dict[str, object]] = []
     work = df.copy()
-    work[column] = work[column].fillna("").astype(str).str.strip().replace("", "UNKNOWN")
+    work[column] = work[column].map(lambda value: _clean_label(value, "UNKNOWN"))
     for bucket, group in work.groupby(column, dropna=False):
         total = int(len(group))
         if total < min_rows:
@@ -777,8 +935,8 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
         df = read_feedback_log()
         if df.empty:
             return default
-        work = df.copy()
-        import_mask = work.apply(_is_imported_ai_row, axis=1)
+        import_mask = df.apply(_is_imported_ai_row, axis=1)
+        work = enrich_imported_ai_feedback_frame(df)
         work = work[import_mask].copy()
         default["total_logged"] = int(len(work))
         if work.empty:
@@ -797,7 +955,7 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
             ["1", "1.0", "true", "bullish", "yes", "y"]
         )
         work["strategy_strip"] = [
-            strip if not _is_blank(strip) else _strategy_strip_from_text(category, source)
+            _clean_label(strip) or _strategy_strip_from_text(category, source) or "UNKNOWN"
             for strip, category, source in zip(
                 work.get("strategy_strip", ""),
                 work.get("import_category", ""),
@@ -805,9 +963,12 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
             )
         ]
         work["outcome_quality"] = [
-            quality if not _is_blank(quality) else _outcome_quality_from_return(ret)
+            _clean_label(quality) or _outcome_quality_from_return(ret)
             for quality, ret in zip(work.get("outcome_quality", ""), work["_actual_return"])
         ]
+        for column in ("import_category", "import_source", "sector", "trap_risk"):
+            if column in work.columns:
+                work[column] = work[column].map(lambda value: _clean_label(value, "UNKNOWN"))
 
         default["accuracy_pct"] = round(100.0 * float(work["_correct_bool"].sum()) / float(len(work)), 2)
         default["avg_return_pct"] = round(float(work["_actual_return"].mean()), 4)
