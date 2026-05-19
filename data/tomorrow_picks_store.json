@@ -1,41 +1,11 @@
 {
-  "picks": [
-    "GRAPHITE",
-    "SAIL",
-    "POLICYBZR",
-    "BLISSGVS",
-    "RUBFILA",
-    "GANESHHOU",
-    "TAINWALCHM",
-    "JSWSTEEL",
-    "NYKAA",
-    "IMPAL",
-    "SIYSIL",
-    "MONARCH"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "GRAPHITE",
-      "SAIL",
-      "POLICYBZR"
-    ],
-    "swing": [
-      "BLISSGVS",
-      "RUBFILA"
-    ],
-    "intraday": [
-      "GANESHHOU",
-      "TAINWALCHM"
-    ],
-    "momentum": [
-      "JSWSTEEL",
-      "NYKAA"
-    ],
-    "breakout": [
-      "IMPAL",
-      "SIYSIL",
-      "MONARCH"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
