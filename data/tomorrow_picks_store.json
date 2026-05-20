@@ -2,7 +2,9 @@
   "picks": [
     "TIRUMALCHM",
     "INGERRAND",
-    "SEAMECLTD"
+    "SEAMECLTD",
+    "PREMEXPLN",
+    "CENTENKA"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +13,10 @@
       "INGERRAND",
       "SEAMECLTD"
     ],
-    "swing": [],
+    "swing": [
+      "PREMEXPLN",
+      "CENTENKA"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
