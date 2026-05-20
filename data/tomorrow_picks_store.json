@@ -6,7 +6,10 @@
     "PREMEXPLN",
     "CENTENKA",
     "CONSOFINVT",
-    "AIIL"
+    "AIIL",
+    "GRASIM",
+    "KICL",
+    "HINDALCO"
   ],
   "notes": "",
   "sections": {
@@ -23,7 +26,11 @@
       "CONSOFINVT",
       "AIIL"
     ],
-    "momentum": [],
+    "momentum": [
+      "GRASIM",
+      "KICL",
+      "HINDALCO"
+    ],
     "breakout": []
   }
 }
