@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "TIRUMALCHM",
+    "INGERRAND",
+    "SEAMECLTD"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "TIRUMALCHM",
+      "INGERRAND",
+      "SEAMECLTD"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
