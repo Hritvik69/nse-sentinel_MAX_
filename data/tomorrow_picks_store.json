@@ -9,7 +9,10 @@
     "AIIL",
     "GRASIM",
     "KICL",
-    "HINDALCO"
+    "HINDALCO",
+    "WANBURY",
+    "ELGIEQUIP",
+    "SMLT"
   ],
   "notes": "",
   "sections": {
@@ -31,6 +34,10 @@
       "KICL",
       "HINDALCO"
     ],
-    "breakout": []
+    "breakout": [
+      "WANBURY",
+      "ELGIEQUIP",
+      "SMLT"
+    ]
   }
 }
