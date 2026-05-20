@@ -1,39 +1,11 @@
 {
-  "picks": [
-    "MEDANTA",
-    "SCHAND",
-    "JUBLPHARMA",
-    "SUPRIYA",
-    "TMPV",
-    "MOTHERSON",
-    "TIIL",
-    "GPTHEALTH",
-    "SILGO",
-    "PAGEIND",
-    "JKPAPER"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "MEDANTA",
-      "SCHAND",
-      "JUBLPHARMA"
-    ],
-    "swing": [
-      "SUPRIYA"
-    ],
-    "intraday": [
-      "TMPV",
-      "MOTHERSON",
-      "TIIL"
-    ],
-    "momentum": [
-      "GPTHEALTH",
-      "SILGO"
-    ],
-    "breakout": [
-      "PAGEIND",
-      "JKPAPER"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
