@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-05-20T15:02:36",
+  "saved_at": "2026-05-20T15:03:10",
   "signature": [
     "2026-05-20",
-    1779289320.496,
+    1779289382.959,
     1779289264.06
   ],
   "learning_status": {
@@ -175,8 +175,8 @@
       "false_bearish_pct": 39.25
     },
     "brain_status": {
-      "started_at": "2026-05-20T15:01:53",
-      "completed_at": "2026-05-20T15:02:36",
+      "started_at": "2026-05-20T15:02:36",
+      "completed_at": "2026-05-20T15:03:10",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -665,7 +665,7 @@
               "EMA50": 1059.0,
               "Close": 1094.0
             },
-            "computed_at": "2026-05-20T15:02:31"
+            "computed_at": "2026-05-20T15:03:05"
           },
           {
             "ticker": "MALUPAPER",
@@ -732,7 +732,7 @@
               "EMA50": 32.56,
               "Close": 32.12
             },
-            "computed_at": "2026-05-20T15:02:32"
+            "computed_at": "2026-05-20T15:03:06"
           },
           {
             "ticker": "NAHARCAP",
@@ -799,7 +799,7 @@
               "EMA50": 246.0,
               "Close": 248.9
             },
-            "computed_at": "2026-05-20T15:02:35"
+            "computed_at": "2026-05-20T15:03:10"
           },
           {
             "ticker": "NIBL",
@@ -866,7 +866,7 @@
               "EMA50": 30.82,
               "Close": 30.68
             },
-            "computed_at": "2026-05-20T15:02:29"
+            "computed_at": "2026-05-20T15:03:03"
           },
           {
             "ticker": "APCOTEXIND",
@@ -933,7 +933,7 @@
               "EMA50": 417.6,
               "Close": 503.7
             },
-            "computed_at": "2026-05-20T15:02:35"
+            "computed_at": "2026-05-20T15:03:09"
           },
           {
             "ticker": "BORORENEW",
@@ -1000,7 +1000,7 @@
               "EMA50": 496.38,
               "Close": 515.25
             },
-            "computed_at": "2026-05-20T15:02:36"
+            "computed_at": "2026-05-20T15:03:10"
           },
           {
             "ticker": "MMTC",
@@ -1067,7 +1067,7 @@
               "EMA50": 62.95,
               "Close": 63.93
             },
-            "computed_at": "2026-05-20T15:02:34"
+            "computed_at": "2026-05-20T15:03:09"
           },
           {
             "ticker": "CONSOFINVT",
@@ -1134,7 +1134,7 @@
               "EMA50": 220.6,
               "Close": 232.38
             },
-            "computed_at": "2026-05-20T15:02:26"
+            "computed_at": "2026-05-20T15:03:01"
           },
           {
             "ticker": "BOROSCI",
@@ -1201,7 +1201,7 @@
               "EMA50": 115.55,
               "Close": 142.49
             },
-            "computed_at": "2026-05-20T15:02:26"
+            "computed_at": "2026-05-20T15:03:00"
           },
           {
             "ticker": "GEECEE",
@@ -1268,7 +1268,7 @@
               "EMA50": 297.1,
               "Close": 337.15
             },
-            "computed_at": "2026-05-20T15:02:34"
+            "computed_at": "2026-05-20T15:03:08"
           },
           {
             "ticker": "ORIENTBELL",
@@ -1335,7 +1335,7 @@
               "EMA50": 306.13,
               "Close": 341.75
             },
-            "computed_at": "2026-05-20T15:02:32"
+            "computed_at": "2026-05-20T15:03:07"
           },
           {
             "ticker": "VIYASH",
@@ -1402,7 +1402,7 @@
               "EMA50": 211.41,
               "Close": 251.69
             },
-            "computed_at": "2026-05-20T15:02:28"
+            "computed_at": "2026-05-20T15:03:02"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 127 tickers computed"
