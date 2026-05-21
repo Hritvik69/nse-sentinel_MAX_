@@ -379,7 +379,7 @@ def _render_aura_verdict(
             import_clicked = st.button(
                 "Import To Tomorrow Picks",
                 key="ail_final_aura_import_tomorrow_picks",
-                width="stretch",
+                use_container_width=True,
                 disabled=aura_df.empty or not callable(import_to_tomorrow_picks_fn),
                 type="primary",
                 help="Save eligible Final Aura Verdict rows into Tomorrow's Picks as AI picks.",
@@ -388,7 +388,7 @@ def _render_aura_verdict(
             open_clicked = st.button(
                 "Tomorrow's Picks",
                 key="ail_final_aura_open_tomorrow_picks",
-                width="stretch",
+                use_container_width=True,
                 disabled=not callable(open_tomorrow_picks_fn),
             )
         with spacer_col:
@@ -439,7 +439,7 @@ def _render_best_buy_tomorrow(aura_df: pd.DataFrame, result: AILPipelineResult) 
         unsafe_allow_html=True,
     )
     if chart_url:
-        st.link_button("Open Chart", chart_url, width="stretch")
+        st.link_button("Open Chart", chart_url, use_container_width=True)
 
 
 def _render_risk_sector_confidence_learning(result: AILPipelineResult) -> None:
@@ -541,10 +541,10 @@ def render_ail_in_one_panel(
         )
     with bcol:
         st.write("")
-        rerun_clicked = st.button("Run Again", key="ail_in_one_run_again_btn", width="stretch")
+        rerun_clicked = st.button("Run Again", key="ail_in_one_run_again_btn", use_container_width=True)
     with ccol:
         st.write("")
-        if st.button("Close", key="ail_in_one_close_btn", width="stretch"):
+        if st.button("Close", key="ail_in_one_close_btn", use_container_width=True):
             st.session_state["ail_in_one_show_panel"] = False
             st.session_state.pop("ail_in_one_run_requested", None)
             st.rerun()

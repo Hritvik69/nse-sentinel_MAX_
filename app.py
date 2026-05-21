@@ -2453,14 +2453,14 @@ def _render_add_in_picks_actions(
         add_clicked = st.button(
             "ADD IN PICKS",
             key=f"{key_prefix}_add_in_picks",
-            width="stretch",
+            use_container_width=True,
             disabled=not normalized,
         )
     with open_col:
         open_clicked = st.button(
             "OPEN PICKS",
             key=f"{key_prefix}_open_picks",
-            width="stretch",
+            use_container_width=True,
         )
 
     if add_clicked:
@@ -3932,7 +3932,7 @@ def _render_sidebar_imported_ai_learning_button() -> None:
     if st.button(
         "🧠 Use Imported Stocks For Self-Learning",
         key="sidebar_imported_ai_learning_btn",
-        width="stretch",
+        use_container_width=True,
         disabled=not imported,
         type="secondary",
     ):
@@ -3993,14 +3993,14 @@ def _render_sidebar_imported_ai_learning_entry_button() -> None:
     if st.button(
         "Open Imported AI Stocks",
         key="sidebar_imported_ai_learning_entry_btn",
-        width="stretch",
+        use_container_width=True,
         type="secondary",
     ):
         _activate_sidebar_panel("imported_ai_learning_show_panel")
     if st.button(
         "Refresh Last Outcome And Correct",
         key="sidebar_imported_ai_learning_refresh_outcome_btn",
-        width="stretch",
+        use_container_width=True,
         type="primary",
         disabled=not imported,
     ):
@@ -4296,7 +4296,7 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
                         file_name=f"nse_tomorrow_top3_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
                         mime="text/plain",
                         key="imported_ai_top3_output_download",
-                        width="stretch",
+                        use_container_width=True,
                     )
                 except Exception as exc:
                     st.warning(f"Tomorrow accuracy picker could not run right now: {exc}")
@@ -4314,7 +4314,7 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
                 file_name="nse_tomorrow_accuracy_prompt.txt",
                 mime="text/plain",
                 key="imported_ai_top3_prompt_download",
-                width="stretch",
+                use_container_width=True,
             )
             st.text_area(
                 "Tomorrow accuracy prompt",
@@ -4603,7 +4603,7 @@ def render_imported_ai_learning_panel() -> None:
         )
     with _close_col:
         st.write("")
-        if st.button("Close", key="imported_ai_learning_close_btn", width="stretch"):
+        if st.button("Close", key="imported_ai_learning_close_btn", use_container_width=True):
             _activate_sidebar_panel(None)
 
     _mode_value = panel.get("mode", 0)
@@ -4649,19 +4649,19 @@ def render_imported_ai_learning_panel() -> None:
         _self_improve_clicked = st.button(
             "Self Improve",
             key="imported_ai_learning_self_improve_btn",
-            width="stretch",
+            use_container_width=True,
             type="primary",
             help="Logs this imported basket into the self-learning feedback log and refreshes available next-session outcomes.",
         )
     with _action2:
-        if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", width="stretch"):
+        if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", use_container_width=True):
             summary = _sync_imported_ai_store_to_prediction_chart(source_filter=selected_source)
             if list(summary.get("symbols", []) or []):
                 _activate_sidebar_panel("pred_chart_show_panel")
             else:
                 st.info("No imported AI stocks are stored yet in the permanent basket.")
     with _action3:
-        if st.button("Clear Imported", key="imported_ai_learning_clear_btn", width="stretch"):
+        if st.button("Clear Imported", key="imported_ai_learning_clear_btn", use_container_width=True):
             _persist_imported_ai_learning_store([], updated_at="", replace=True)
             for key in (
                 "imported_ai_learning_records",
@@ -4681,7 +4681,7 @@ def render_imported_ai_learning_panel() -> None:
                 st.session_state.pop(key, None)
             st.rerun()
     with _action4:
-        if st.button("Back To Scanner", key="imported_ai_learning_back_btn", width="stretch"):
+        if st.button("Back To Scanner", key="imported_ai_learning_back_btn", use_container_width=True):
             _activate_sidebar_panel(None)
 
     if _self_improve_clicked:
@@ -4802,7 +4802,7 @@ def render_imported_ai_learning_panel() -> None:
     if st.button(
         _intelligence_label,
         key="imported_ai_intelligence_toggle_btn",
-        width="stretch",
+        use_container_width=True,
         type="secondary",
     ):
         st.session_state["imported_ai_intelligence_visible"] = not _show_intelligence
@@ -4818,7 +4818,7 @@ def render_imported_ai_learning_panel() -> None:
     if st.button(
         _top3_picker_label,
         key="imported_ai_top3_prompt_toggle_btn",
-        width="stretch",
+        use_container_width=True,
         type="secondary",
     ):
         st.session_state["imported_ai_top3_prompt_visible"] = not _show_top3_picker
@@ -4830,7 +4830,7 @@ def render_imported_ai_learning_panel() -> None:
     if st.button(
         "Refresh Last Outcome And Correct",
         key="imported_ai_learning_refresh_last_outcome_wide_btn",
-        width="stretch",
+        use_container_width=True,
         type="primary",
         help="Fetch and fill the Last Outcome and Correct columns using the latest next-session data by imported date.",
     ):
@@ -4942,7 +4942,7 @@ def _render_ai_prediction_import_action(
     import_clicked = st.button(
         "ADD TO IMPORTED AI STOCKS",
         key=f"{key_prefix}_import_ai_prediction",
-        width="stretch",
+        use_container_width=True,
         disabled=not normalized,
         type="primary",
     )
@@ -5512,7 +5512,7 @@ def render_stock_aura_panel() -> None:
             with button_col:
                 analyze_clicked = st.form_submit_button(
                     "Analyze Aura",
-                    width="stretch",
+                    use_container_width=True,
                 )
     with close_col:
         if st.button("Close", key="aura_close_btn"):
@@ -6316,7 +6316,7 @@ def render_tomorrow_picks_panel() -> None:
             import_picks_clicked = st.button(
                 "Import Picks",
                 key="tmr_v2_import_picks_to_ai",
-                width="stretch",
+                use_container_width=True,
                 disabled=saved_count <= 0,
                 type="primary",
                 help="Import the currently visible Tomorrow's Picks source view into Imported AI Stocks, then log them for self-learning.",
@@ -6326,7 +6326,7 @@ def render_tomorrow_picks_panel() -> None:
             clear_all_clicked = st.button(
                 "Delete All Stocks",
                 key="tmr_v2_clear_all_stocks",
-                width="stretch",
+                use_container_width=True,
                 disabled=all_saved_count <= 0,
             )
 
@@ -6390,7 +6390,7 @@ def render_tomorrow_picks_panel() -> None:
                         st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
                         add_clicked = st.form_submit_button(
                             "Add",
-                            width="stretch",
+                            use_container_width=True,
                             disabled=all_saved_count >= 20,
                         )
 
@@ -6478,7 +6478,7 @@ def render_tomorrow_picks_panel() -> None:
                             remove_clicked = st.button(
                                 "Remove",
                                 key=f"tmr_v2_remove_{bucket}_{idx}",
-                                width="stretch",
+                                use_container_width=True,
                             )
                         if remove_clicked:
                             updated_sections = {
@@ -6557,12 +6557,12 @@ def render_tomorrow_picks_panel() -> None:
                     with notes_btn_col:
                         save_notes_clicked = st.form_submit_button(
                             "Save Notes",
-                            width="stretch",
+                            use_container_width=True,
                         )
                     with notes_reset_col:
                         reset_notes_clicked = st.form_submit_button(
                             "Revert Saved",
-                            width="stretch",
+                            use_container_width=True,
                         )
 
                 if reset_notes_clicked:
@@ -6592,7 +6592,7 @@ def render_tomorrow_picks_panel() -> None:
         st.button(
             "Close",
             key="tmr_picks_close_btn_v2",
-            width="stretch",
+            use_container_width=True,
             on_click=_close_tomorrow_picks_panel,
         )
 
@@ -8973,7 +8973,7 @@ def _render_scan_diagnostics_panel() -> None:
             if reason in data_problem_reasons
         ]
         if rows:
-            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         else:
             st.success("No data-quality failures were recorded in the last scan.")
 
@@ -8981,7 +8981,7 @@ def _render_scan_diagnostics_panel() -> None:
         with st.expander("Failed Tickers", expanded=False):
             fail_df = pd.DataFrame(failed_tickers, columns=["Ticker", "Reason"])
             fail_df["Meaning"] = fail_df["Reason"].map(lambda reason: _SCAN_REASON_MEANINGS.get(reason, reason))
-            st.dataframe(fail_df, width="stretch", hide_index=True)
+            st.dataframe(fail_df, use_container_width=True, hide_index=True)
 
 
 def _build_ready_scan_tickers(tickers, *, strict: bool = True) -> tuple[list[str], dict[str, int]]:
@@ -10791,7 +10791,7 @@ main_scan_clicked = False
 if _show_home_scanner:
     _scan_cta_cols = st.columns([1.5, 3.2, 1.5])
     with _scan_cta_cols[1]:
-        main_scan_clicked = st.button("▶  SCAN MARKET NOW", key="main_panel_scan_btn", width="stretch")
+        main_scan_clicked = st.button("▶  SCAN MARKET NOW", key="main_panel_scan_btn", use_container_width=True)
 
 # ── SCAN ──────────────────────────────────────────────────────────────
 
@@ -11178,7 +11178,7 @@ if st.session_state.get("battle_show_panel", False):
         st.caption("This panel now opens in the main UI. Enter up to 19 stocks and run the full comparison here.")
     with _battle_close_col:
         st.write("")
-        _battle_close_panel = st.button("Close", key="battle_close_panel_btn", width="stretch")
+        _battle_close_panel = st.button("Close", key="battle_close_panel_btn", use_container_width=True)
 
     if _battle_close_panel:
         st.session_state["battle_show_panel"] = False
@@ -11190,7 +11190,7 @@ if st.session_state.get("battle_show_panel", False):
         st.button(
             "📥 Import All Tomorrow Picks",
             key="battle_import_tomorrow_picks_btn",
-            width="stretch",
+            use_container_width=True,
             on_click=_import_compare_tomorrow_picks_to_form,
         )
     with _battle_spacer_col:
@@ -11228,7 +11228,7 @@ if st.session_state.get("battle_show_panel", False):
                     )
                 )
 
-        _battle_main_run = st.form_submit_button("Run Battle Analysis", width="stretch")
+        _battle_main_run = st.form_submit_button("Run Battle Analysis", use_container_width=True)
     if _battle_main_run:
         _battle_tickers = [t.strip() for t in _battle_inputs if t and t.strip()][:_COMPARE_STOCK_LIMIT]
         if not _battle_tickers:
@@ -11649,7 +11649,7 @@ if _show_home_scanner and "results" in st.session_state:
                     f'</div>{_sl_tgt_html}{trap_html}</div>',
                     unsafe_allow_html=True,
                 )
-                st.link_button("📈 TradingView", tv_link, width="stretch")
+                st.link_button("📈 TradingView", tv_link, use_container_width=True)
 
         st.write("")
         st.write("")
@@ -11712,7 +11712,7 @@ if _show_home_scanner and "results" in st.session_state:
                 "Action": st.column_config.TextColumn("Action"),
                 "Hold Days": st.column_config.TextColumn("Hold Days"),
             },
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
 
@@ -11844,7 +11844,7 @@ if _show_home_scanner and "results" in st.session_state:
                 data=_csv_buf.getvalue().encode("utf-8-sig"),
                 file_name=f"nse_scan_{datetime.now().strftime('%Y%m%d_%H%M')}_mode{stored_mode_display['display_num']}.csv",
                 mime="text/csv",
-                width="stretch",
+                use_container_width=True,
                 key="main_scan_csv_download",
             )
 
@@ -12031,7 +12031,7 @@ if _show_home_scanner and "results" in st.session_state:
                     "Action": st.column_config.TextColumn("Action"),
                     "Hold Days": st.column_config.TextColumn("Hold Days"),
                 },
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
             )
             _render_add_in_picks_actions(
@@ -12211,7 +12211,7 @@ else:
                         "Action":           st.column_config.TextColumn("Action"),
                         "Hold Days":        st.column_config.TextColumn("Hold Days"),
                     },
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                 )
             elif not csv_last_error:
@@ -12450,11 +12450,11 @@ else:
                 "Tags":         st.column_config.TextColumn("Tags"),
                 "Why":          st.column_config.TextColumn("Why", width="large"),
             },
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
         with st.expander("🧾 Full Battle Diagnostics", expanded=False):
-            st.dataframe(_battle_df, width="stretch", hide_index=True)
+            st.dataframe(_battle_df, use_container_width=True, hide_index=True)
 
         # ── ⚠️ Trap Warnings ─────────────────────────────
         _trap_stocks = [

@@ -1303,7 +1303,7 @@ def _render_feedback_overlay(symbol: str, latest_prediction: dict) -> None:
             display = recent[["Date", "_direction", "Confidence", "Return %", "Correct"]].rename(
                 columns={"_direction": "Direction"}
             )
-            st.dataframe(display, hide_index=True, width="stretch")
+            st.dataframe(display, hide_index=True, use_container_width=True)
 
             st.markdown(
                 f"""
@@ -1824,11 +1824,11 @@ def render_prediction_chart_section(
         )
         quick_cols = st.columns(len(visible_imports) + 1, gap="small")
         for idx, symbol in enumerate(visible_imports):
-            if quick_cols[idx].button(symbol, key=f"pc_imported_quick_{symbol}", width="stretch"):
+            if quick_cols[idx].button(symbol, key=f"pc_imported_quick_{symbol}", use_container_width=True):
                 st.session_state["pc_loaded_symbol"] = symbol
                 st.session_state["prediction_chart_focus_symbol"] = symbol
                 st.rerun()
-        if quick_cols[-1].button("Clear Imported", key="pc_imported_clear_btn", width="stretch"):
+        if quick_cols[-1].button("Clear Imported", key="pc_imported_clear_btn", use_container_width=True):
             for key in (
                 "prediction_chart_imported_symbols",
                 "prediction_chart_import_origin",
@@ -1873,7 +1873,7 @@ def render_prediction_chart_section(
         load_btn = st.button(
             "Load Chart",
             key="pc_load_btn",
-            width="stretch",
+            use_container_width=True,
             type="primary",
         )
 
@@ -1922,7 +1922,7 @@ def render_prediction_chart_section(
     if _get_feature_window() == "LIVE":
         refresh_col, note_col = st.columns([1.2, 3.0])
         with refresh_col:
-            force_refresh = st.button("Refresh Data", key=f"pc_refresh_{symbol_ns}", width="stretch")
+            force_refresh = st.button("Refresh Data", key=f"pc_refresh_{symbol_ns}", use_container_width=True)
         with note_col:
             st.caption("Live window: refresh clears the chart cache and reloads the latest shared market data.")
         if force_refresh:
@@ -2045,7 +2045,7 @@ def render_prediction_chart_section(
 
     st.plotly_chart(
         fig,
-        width="stretch",
+        use_container_width=True,
         config={
             "displayModeBar": True,
             "modeBarButtonsToRemove": [
