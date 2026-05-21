@@ -1286,7 +1286,7 @@
         0,
         7
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "ELGIEQUIP",
         "direction": "Sideways",
@@ -1403,7 +1403,7 @@
         5,
         3
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "GMRP&UI",
         "direction": "Sideways",
@@ -1461,7 +1461,7 @@
       "modes": [
         5
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "RSWM",
         "direction": "Sideways",
@@ -1519,7 +1519,7 @@
       "modes": [
         5
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "SHALBY",
         "direction": "Sideways",
@@ -1576,7 +1576,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "BLISSGVS",
         "direction": "Sideways",
@@ -1633,7 +1633,7 @@
       "modes": [
         3
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "MANKIND",
         "direction": "Sideways",
@@ -1690,7 +1690,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "RUCHIRA",
         "direction": "Sideways",
@@ -1747,7 +1747,7 @@
       "modes": [
         6
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "PGHL",
         "direction": "Sideways",
@@ -1804,7 +1804,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "JBCHEPHARM",
         "direction": "Sideways",
@@ -1861,7 +1861,7 @@
       "modes": [
         7
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "HONASA",
         "direction": "Sideways",
@@ -1918,7 +1918,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "CAPTRUST",
         "direction": "Sideways",
@@ -1975,7 +1975,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "APOLLOHOSP",
         "direction": "Sideways",
@@ -2032,7 +2032,7 @@
       "modes": [
         0
       ],
-      "last_imported_at": "2026-05-21T15:34:25",
+      "last_imported_at": "2026-05-21T15:35:11",
       "snapshot": {
         "ticker": "ORKLAINDIA",
         "direction": "Sideways",
@@ -2079,5 +2079,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-21T15:34:25"
+  "updated_at": "2026-05-21T15:35:11"
 }
