@@ -9,7 +9,10 @@
     "SHALBY",
     "JBCHEPHARM",
     "HONASA",
-    "ELGIEQUIP"
+    "ELGIEQUIP",
+    "CAPTRUST",
+    "APOLLOHOSP",
+    "ORKLAINDIA"
   ],
   "notes": "",
   "sections": {
@@ -31,6 +34,10 @@
       "HONASA",
       "ELGIEQUIP"
     ],
-    "breakout": []
+    "breakout": [
+      "CAPTRUST",
+      "APOLLOHOSP",
+      "ORKLAINDIA"
+    ]
   }
 }
