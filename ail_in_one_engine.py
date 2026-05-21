@@ -1310,6 +1310,33 @@ def build_health_summary(result: AILPipelineResult, *, logged_predictions: int =
     }
 
 
+def _structured_strip_for_ail_log(row: pd.Series) -> str:
+    text = " ".join(
+        str(row.get(key, "") or "")
+        for key in ("AIL Category", "AIL Categories", "Mode Name", "Mode Label", "AI Verdict", "Final Verdict")
+    ).lower()
+    if "breakout" in text:
+        return "Breakout"
+    if "intraday" in text or "open entry" in text:
+        return "Intraday"
+    if "swing" in text or "tomorrow" in text:
+        return "Swing"
+    if "momentum" in text:
+        return "Momentum"
+    if "relax" in text:
+        return "Relax"
+    try:
+        mode_int = resolve_mode_id(row.get("Mode ID", row.get("Mode", "")), 0)
+    except Exception:
+        mode_int = 0
+    return {
+        3: "Relax",
+        5: "Intraday",
+        6: "Swing",
+        7: "Momentum",
+    }.get(int(mode_int or 0), "Relax")
+
+
 def log_ail_predictions(
     final_df: pd.DataFrame,
     *,
@@ -1321,6 +1348,11 @@ def log_ail_predictions(
     log_df = final_df.copy()
     log_df["Import Source"] = "A-I-L IN ONE"
     log_df["Import Category"] = "Master Ranking"
+    log_df["Import Source Mode"] = "AI"
+    log_df["Strategy Strip"] = [
+        _structured_strip_for_ail_log(row)
+        for _, row in log_df.iterrows()
+    ]
     log_df["Logged At"] = datetime.now().isoformat(timespec="seconds")
     if "Mode ID" in log_df.columns:
         log_df["Import Mode"] = log_df["Mode ID"]
