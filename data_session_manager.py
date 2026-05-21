@@ -56,6 +56,12 @@ def _restore_snapshot_archive_if_available() -> None:
         archive_sig = (int(archive_stat.st_mtime_ns), int(archive_stat.st_size))
         if _SNAPSHOT_RESTORE_SIG == archive_sig:
             return
+        try:
+            if _SNAPSHOT_ROOT.exists() and any(child.is_dir() for child in _SNAPSHOT_ROOT.iterdir()):
+                _SNAPSHOT_RESTORE_SIG = archive_sig
+                return
+        except Exception:
+            pass
         with _SNAPSHOT_RESTORE_LOCK:
             if _SNAPSHOT_RESTORE_SIG == archive_sig:
                 return

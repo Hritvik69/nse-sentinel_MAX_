@@ -47,6 +47,7 @@ _FIELDNAMES = [
     "import_source",
     "import_category",
     "strategy_strip",
+    "source_mode",
     "prediction_direction",
     "target_policy_version",
     "prediction_score",
@@ -68,6 +69,7 @@ _FIELDNAMES = [
 
 _LOG_CACHE_SIG: tuple[int, int] | None = None
 _LOG_CACHE_DF: pd.DataFrame | None = None
+_LOG_SCHEMA_SIG: tuple[int, int] | None = None
 _IMPORTED_META_CACHE_SIG: tuple[int, int] | None = None
 _IMPORTED_META_CACHE: dict[str, dict[str, str]] = {}
 
@@ -160,17 +162,19 @@ def _file_signature(path: Path) -> tuple[int, int] | None:
 
 
 def _set_cached_log(df: pd.DataFrame | None) -> pd.DataFrame:
-    global _LOG_CACHE_SIG, _LOG_CACHE_DF
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF, _LOG_SCHEMA_SIG
     cached = _coerce_schema(df)
     _LOG_CACHE_SIG = _file_signature(LOG_PATH)
+    _LOG_SCHEMA_SIG = _LOG_CACHE_SIG
     _LOG_CACHE_DF = cached.copy()
     return cached.copy()
 
 
 def _invalidate_cache() -> None:
-    global _LOG_CACHE_SIG, _LOG_CACHE_DF
+    global _LOG_CACHE_SIG, _LOG_CACHE_DF, _LOG_SCHEMA_SIG
     _LOG_CACHE_SIG = None
     _LOG_CACHE_DF = None
+    _LOG_SCHEMA_SIG = None
 
 
 def _is_blank(value: object) -> bool:
@@ -357,6 +361,7 @@ def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
             categories = _metadata_text_list(item.get("categories", item.get("category", [])))
             sources = _metadata_text_list(item.get("sources", item.get("source", [])))
             modes = _metadata_text_list(item.get("modes", item.get("mode", [])))
+            source_modes = _metadata_text_list(item.get("source_modes", item.get("source_mode", [])))
             mode_defaults = _mode_import_defaults(modes[0] if modes else "")
             category_text = " | ".join(categories) or mode_defaults.get("import_category", "")
             source_text = " | ".join(sources) or mode_defaults.get("import_source", "")
@@ -373,6 +378,7 @@ def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
                 "sector": sector_text,
                 "trap_risk": trap_text,
                 "mode": " | ".join([f"M{int(float(mode))}" if str(mode).replace('.', '', 1).isdigit() else str(mode) for mode in modes]),
+                "source_mode": " | ".join(source_modes),
             }
 
         _IMPORTED_META_CACHE_SIG = sig
@@ -387,7 +393,7 @@ def enrich_imported_ai_feedback_frame(df: pd.DataFrame | None) -> pd.DataFrame:
         if not isinstance(df, pd.DataFrame) or df.empty:
             return df.copy() if isinstance(df, pd.DataFrame) else pd.DataFrame()
         out = df.copy()
-        for column in ("import_category", "import_source", "strategy_strip", "sector", "trap_risk", "mode"):
+        for column in ("import_category", "import_source", "strategy_strip", "source_mode", "sector", "trap_risk", "mode"):
             if column not in out.columns:
                 out[column] = ""
         meta_map = _load_imported_ai_metadata_map()
@@ -401,7 +407,7 @@ def enrich_imported_ai_feedback_frame(df: pd.DataFrame | None) -> pd.DataFrame:
             )
             mode_defaults = _mode_import_defaults(row.get("mode", "")) if has_meta or has_import_hint else {}
             meta = {**mode_defaults, **{key: value for key, value in meta.items() if _clean_label(value)}}
-            for column in ("import_category", "import_source", "strategy_strip", "sector", "trap_risk"):
+            for column in ("import_category", "import_source", "strategy_strip", "source_mode", "sector", "trap_risk"):
                 if _is_missing_label(row.get(column, "")) and _clean_label(meta.get(column, "")):
                     out.at[idx, column] = meta[column]
             if _is_missing_label(out.at[idx, "strategy_strip"]):
@@ -411,7 +417,7 @@ def enrich_imported_ai_feedback_frame(df: pd.DataFrame | None) -> pd.DataFrame:
                 )
                 if strip:
                     out.at[idx, "strategy_strip"] = strip
-        for column in ("import_category", "import_source", "strategy_strip", "sector", "trap_risk"):
+        for column in ("import_category", "import_source", "strategy_strip", "source_mode", "sector", "trap_risk"):
             out[column] = out[column].map(lambda value: _clean_label(value, ""))
         return out
     except Exception:
@@ -523,16 +529,22 @@ def _coerce_schema(df: pd.DataFrame | None) -> pd.DataFrame:
 
 
 def _ensure_schema() -> None:
+    global _LOG_SCHEMA_SIG
     try:
         _ensure_data_dir()
         if not LOG_PATH.exists():
             _invalidate_cache()
+            return
+        current_sig = _file_signature(LOG_PATH)
+        if current_sig is not None and _LOG_SCHEMA_SIG == current_sig:
             return
         with locked_path(LOG_PATH):
             current = pd.read_csv(LOG_PATH, dtype=str)
             upgraded = _coerce_schema(current)
             if list(current.columns) != _FIELDNAMES:
                 atomic_write_csv_df(LOG_PATH, upgraded, index=False)
+                current_sig = _file_signature(LOG_PATH)
+        _LOG_SCHEMA_SIG = current_sig
         _set_cached_log(upgraded)
     except Exception:
         pass
@@ -541,10 +553,13 @@ def _ensure_schema() -> None:
 def read_feedback_log() -> pd.DataFrame:
     global _LOG_CACHE_SIG, _LOG_CACHE_DF
     try:
-        _ensure_schema()
         if not LOG_PATH.exists():
             _invalidate_cache()
             return pd.DataFrame(columns=_FIELDNAMES)
+        current_sig = _file_signature(LOG_PATH)
+        if current_sig is not None and _LOG_CACHE_SIG == current_sig and isinstance(_LOG_CACHE_DF, pd.DataFrame):
+            return _LOG_CACHE_DF.copy()
+        _ensure_schema()
         current_sig = _file_signature(LOG_PATH)
         if current_sig is not None and _LOG_CACHE_SIG == current_sig and isinstance(_LOG_CACHE_DF, pd.DataFrame):
             return _LOG_CACHE_DF.copy()
@@ -674,6 +689,14 @@ def log_scan_predictions(
                             )
                             or _strategy_strip_from_text(row.get("Import Category", ""), import_source)
                         )[:80],
+                        "source_mode": str(
+                            _first_present(
+                                row,
+                                ["Import Source Mode", "Source Mode", "source_mode"],
+                                "",
+                            )
+                            or ""
+                        )[:40],
                         "prediction_direction": direction,
                         "target_policy_version": _TARGET_POLICY_VERSION,
                         "prediction_score": f"{ps_f:.4f}" if np.isfinite(ps_f) else "",
@@ -925,6 +948,7 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
         "worst_sector": {},
         "by_import_category": [],
         "by_import_source": [],
+        "by_source_mode": [],
         "by_mode": [],
         "by_sector": [],
         "by_trap_risk": [],
@@ -966,7 +990,7 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
             _clean_label(quality) or _outcome_quality_from_return(ret)
             for quality, ret in zip(work.get("outcome_quality", ""), work["_actual_return"])
         ]
-        for column in ("import_category", "import_source", "sector", "trap_risk"):
+        for column in ("import_category", "import_source", "source_mode", "sector", "trap_risk"):
             if column in work.columns:
                 work[column] = work[column].map(lambda value: _clean_label(value, "UNKNOWN"))
 
@@ -982,6 +1006,7 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
         bucket_columns = {
             "by_import_category": "import_category",
             "by_import_source": "import_source",
+            "by_source_mode": "source_mode",
             "by_mode": "mode",
             "by_sector": "sector",
             "by_trap_risk": "trap_risk",
@@ -1014,6 +1039,7 @@ def summarize_imported_ai_performance(*, recent_limit: int = 20, min_bucket_rows
             "mode",
             "import_category",
             "import_source",
+            "source_mode",
             "strategy_strip",
             "sector",
             "trap_risk",
