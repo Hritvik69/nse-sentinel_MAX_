@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-21T14:56:47",
+  "saved_at": "2026-05-21T15:00:51",
   "signature": [
     "2026-05-21",
     1779375253.182,
@@ -170,7 +170,7 @@
     "validated_today": 0,
     "sector_validated_today": 0,
     "feedback_summary": {
-      "total_logged": 4612,
+      "total_logged": 4614,
       "rows_with_outcome": 4611,
       "accuracy_pct": 52.94,
       "bullish_precision_pct": 36.13,
@@ -189,7 +189,7 @@
         "message": "\u2705 Closed feedback loop: 0 outcomes filled"
       },
       "feedback_summary": {
-        "total_logged": 4612,
+        "total_logged": 4614,
         "rows_with_outcome": 4611,
         "accuracy_pct": 52.94,
         "bullish_precision_pct": 36.13,
