@@ -22,11 +22,11 @@
         "confidence": 19.89,
         "raw_score": 44.94,
         "score": 44.94,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "volume_confirm",
         "sector": "UNKNOWN",
         "mode_score": 55.72,
@@ -39,7 +39,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 41.91,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 66.61, 'Vol / Avg': 0.5, '5D Return (%)': 3.69, '20D Return (%)': 14.69, '\u0394 vs EMA20 (%)': 4.69, '\u0394 vs 20D High (%)': -0.19, 'EMA20': 1184.51, 'EMA50': 1140.58, 'Close': 1240.1}",
+        "indicators": "{'RSI': 66.61, 'Vol / Avg': 0.5, '5D Return (%)': 3.69, '20D Return (%)': 14.69, 'Δ vs EMA20 (%)': 4.69, 'Δ vs 20D High (%)': -0.19, 'EMA20': 1184.51, 'EMA50': 1140.58, 'Close': 1240.1}",
         "computed_at": "2026-05-20T15:03:01",
         "Symbol": "MEDANTA",
         "Ticker": "MEDANTA",
@@ -47,19 +47,22 @@
         "Prediction Score": 44.94,
         "Tomorrow Pick Score": 44.94,
         "Final Score": 19.89,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 19.89,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "volume_confirm",
         "RSI": 66.61,
         "Vol / Avg": 0.5,
         "Delta vs EMA20 (%)": 4.69,
         "Market Date": "2026-05-20T15:03:01"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "SCHAND",
@@ -86,11 +89,11 @@
         "confidence": 20.6,
         "raw_score": 49.74,
         "score": 49.74,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 61.44,
@@ -103,7 +106,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 5.69,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 68.82, 'Vol / Avg': 1.53, '5D Return (%)': 4.64, '20D Return (%)': 7.69, '\u0394 vs EMA20 (%)': 5.93, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 166.41, 'EMA50': 161.08, 'Close': 176.27}",
+        "indicators": "{'RSI': 68.82, 'Vol / Avg': 1.53, '5D Return (%)': 4.64, '20D Return (%)': 7.69, 'Δ vs EMA20 (%)': 5.93, 'Δ vs 20D High (%)': 0.0, 'EMA20': 166.41, 'EMA50': 161.08, 'Close': 176.27}",
         "computed_at": "2026-05-20T15:03:02",
         "Symbol": "SCHAND",
         "Ticker": "SCHAND",
@@ -111,19 +114,22 @@
         "Prediction Score": 49.74,
         "Tomorrow Pick Score": 49.74,
         "Final Score": 20.6,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 20.6,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": 68.82,
         "Vol / Avg": 1.53,
         "Delta vs EMA20 (%)": 5.93,
         "Market Date": "2026-05-20T15:03:02"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "JUBLPHARMA",
@@ -144,11 +150,11 @@
         "confidence": 14.26,
         "raw_score": 50.14,
         "score": 50.14,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "MEDIUM",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "sector_strength",
         "sector": "UNKNOWN",
         "mode_score": 51.92,
@@ -161,7 +167,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 29.16,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 69.84, 'Vol / Avg': 0.64, '5D Return (%)': 1.89, '20D Return (%)': 11.83, '\u0394 vs EMA20 (%)': 4.45, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 970.99, 'EMA50': 938.54, 'Close': 1014.2}",
+        "indicators": "{'RSI': 69.84, 'Vol / Avg': 0.64, '5D Return (%)': 1.89, '20D Return (%)': 11.83, 'Δ vs EMA20 (%)': 4.45, 'Δ vs 20D High (%)': 0.0, 'EMA20': 970.99, 'EMA50': 938.54, 'Close': 1014.2}",
         "computed_at": "2026-05-20T15:03:02",
         "Symbol": "JUBLPHARMA",
         "Ticker": "JUBLPHARMA",
@@ -169,19 +175,22 @@
         "Prediction Score": 50.14,
         "Tomorrow Pick Score": 50.14,
         "Final Score": 14.26,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "MEDIUM",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 14.26,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "sector_strength",
         "RSI": 69.84,
         "Vol / Avg": 0.64,
         "Delta vs EMA20 (%)": 4.45,
         "Market Date": "2026-05-20T15:03:02"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "SUPRIYA",
@@ -202,11 +211,11 @@
         "confidence": 22.26,
         "raw_score": 47.32,
         "score": 47.32,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "sector_strength",
         "sector": "UNKNOWN",
         "mode_score": 44.87,
@@ -219,7 +228,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 27.18,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 64.5, 'Vol / Avg': 0.67, '5D Return (%)': 6.05, '20D Return (%)': 10.56, '\u0394 vs EMA20 (%)': 5.46, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 687.71, 'EMA50': 668.47, 'Close': 725.25}",
+        "indicators": "{'RSI': 64.5, 'Vol / Avg': 0.67, '5D Return (%)': 6.05, '20D Return (%)': 10.56, 'Δ vs EMA20 (%)': 5.46, 'Δ vs 20D High (%)': 0.0, 'EMA20': 687.71, 'EMA50': 668.47, 'Close': 725.25}",
         "computed_at": "2026-05-20T15:03:03",
         "Symbol": "SUPRIYA",
         "Ticker": "SUPRIYA",
@@ -227,19 +236,22 @@
         "Prediction Score": 47.32,
         "Tomorrow Pick Score": 47.32,
         "Final Score": 22.26,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 22.26,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "sector_strength",
         "RSI": 64.5,
         "Vol / Avg": 0.67,
         "Delta vs EMA20 (%)": 5.46,
         "Market Date": "2026-05-20T15:03:03"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "TMPV",
@@ -260,11 +272,11 @@
         "confidence": 14.89,
         "raw_score": 44.83,
         "score": 44.83,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 50.93,
@@ -277,7 +289,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 10.98,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 58.72, 'Vol / Avg': 0.9, '5D Return (%)': 7.24, '20D Return (%)': 1.5, '\u0394 vs EMA20 (%)': 3.41, '\u0394 vs 20D High (%)': -0.17, 'EMA20': 349.32, 'EMA50': 346.55, 'Close': 361.25}",
+        "indicators": "{'RSI': 58.72, 'Vol / Avg': 0.9, '5D Return (%)': 7.24, '20D Return (%)': 1.5, 'Δ vs EMA20 (%)': 3.41, 'Δ vs 20D High (%)': -0.17, 'EMA20': 349.32, 'EMA50': 346.55, 'Close': 361.25}",
         "computed_at": "2026-05-20T15:03:03",
         "Symbol": "TMPV",
         "Ticker": "TMPV",
@@ -285,19 +297,22 @@
         "Prediction Score": 44.83,
         "Tomorrow Pick Score": 44.83,
         "Final Score": 14.89,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 14.89,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": 58.72,
         "Vol / Avg": 0.9,
         "Delta vs EMA20 (%)": 3.41,
         "Market Date": "2026-05-20T15:03:03"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "MOTHERSON",
@@ -355,7 +370,10 @@
         "Vol / Avg": "",
         "Delta vs EMA20 (%)": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "TIIL",
@@ -376,11 +394,11 @@
         "confidence": 20.82,
         "raw_score": 48.23,
         "score": 48.23,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 61.29,
@@ -393,7 +411,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 107.2,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.19, 'Vol / Avg': 1.12, '5D Return (%)': 5.04, '20D Return (%)': 4.21, '\u0394 vs EMA20 (%)': 4.38, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 2500.2, 'EMA50': 2409.91, 'Close': 2609.6}",
+        "indicators": "{'RSI': 62.19, 'Vol / Avg': 1.12, '5D Return (%)': 5.04, '20D Return (%)': 4.21, 'Δ vs EMA20 (%)': 4.38, 'Δ vs 20D High (%)': 0.0, 'EMA20': 2500.2, 'EMA50': 2409.91, 'Close': 2609.6}",
         "computed_at": "2026-05-20T15:03:03",
         "Symbol": "TIIL",
         "Ticker": "TIIL",
@@ -401,19 +419,22 @@
         "Prediction Score": 48.23,
         "Tomorrow Pick Score": 48.23,
         "Final Score": 20.82,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 20.82,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": 62.19,
         "Vol / Avg": 1.12,
         "Delta vs EMA20 (%)": 4.38,
         "Market Date": "2026-05-20T15:03:03"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "GPTHEALTH",
@@ -434,11 +455,11 @@
         "confidence": 18.18,
         "raw_score": 47.54,
         "score": 47.54,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "volume_confirm",
         "sector": "UNKNOWN",
         "mode_score": 51.19,
@@ -451,7 +472,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 4.92,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 57.77, 'Vol / Avg': 0.7, '5D Return (%)': 0.09, '20D Return (%)': 4.78, '\u0394 vs EMA20 (%)': 1.71, '\u0394 vs 20D High (%)': -1.53, 'EMA20': 139.53, 'EMA50': 135.36, 'Close': 141.91}",
+        "indicators": "{'RSI': 57.77, 'Vol / Avg': 0.7, '5D Return (%)': 0.09, '20D Return (%)': 4.78, 'Δ vs EMA20 (%)': 1.71, 'Δ vs 20D High (%)': -1.53, 'EMA20': 139.53, 'EMA50': 135.36, 'Close': 141.91}",
         "computed_at": "2026-05-20T15:02:59",
         "Symbol": "GPTHEALTH",
         "Ticker": "GPTHEALTH",
@@ -459,19 +480,22 @@
         "Prediction Score": 47.54,
         "Tomorrow Pick Score": 47.54,
         "Final Score": 18.18,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 18.18,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "volume_confirm",
         "RSI": 57.77,
         "Vol / Avg": 0.7,
         "Delta vs EMA20 (%)": 1.71,
         "Market Date": "2026-05-20T15:02:59"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "SILGO",
@@ -492,11 +516,11 @@
         "confidence": 21.22,
         "raw_score": 49.37,
         "score": 49.37,
-        "action": "\ud83d\udd35 Wait",
+        "action": "🔵 Wait",
         "hold_days": "-",
         "risk": "MEDIUM",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 45.15,
@@ -509,7 +533,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 4.48,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 60.07, 'Vol / Avg': 1.09, '5D Return (%)': 10.52, '20D Return (%)': 4.96, '\u0394 vs EMA20 (%)': 4.67, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 76.57, 'EMA50': 75.54, 'Close': 80.15}",
+        "indicators": "{'RSI': 60.07, 'Vol / Avg': 1.09, '5D Return (%)': 10.52, '20D Return (%)': 4.96, 'Δ vs EMA20 (%)': 4.67, 'Δ vs 20D High (%)': 0.0, 'EMA20': 76.57, 'EMA50': 75.54, 'Close': 80.15}",
         "computed_at": "2026-05-20T15:03:05",
         "Symbol": "SILGO",
         "Ticker": "SILGO",
@@ -517,19 +541,22 @@
         "Prediction Score": 49.37,
         "Tomorrow Pick Score": 49.37,
         "Final Score": 21.22,
-        "Signal": "\ud83d\udd35 Wait",
+        "Signal": "🔵 Wait",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "MEDIUM",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 21.22,
-        "AI Action": "\ud83d\udd35 Wait",
+        "AI Action": "🔵 Wait",
         "AI Key Signal": "bullish_pct",
         "RSI": 60.07,
         "Vol / Avg": 1.09,
         "Delta vs EMA20 (%)": 4.67,
         "Market Date": "2026-05-20T15:03:05"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "PAGEIND",
@@ -549,11 +576,11 @@
         "confidence": 21.62,
         "raw_score": 48.82,
         "score": 48.82,
-        "action": "\ud83d\udd35 Wait",
+        "action": "🔵 Wait",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 46.73,
@@ -566,7 +593,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 1013.78,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.39, 'Vol / Avg': 1.02, '5D Return (%)': 8.36, '20D Return (%)': 0.86, '\u0394 vs EMA20 (%)': 3.81, '\u0394 vs 20D High (%)': -1.07, 'EMA20': 36881.16, 'EMA50': 35792.06, 'Close': 38285.0}",
+        "indicators": "{'RSI': 62.39, 'Vol / Avg': 1.02, '5D Return (%)': 8.36, '20D Return (%)': 0.86, 'Δ vs EMA20 (%)': 3.81, 'Δ vs 20D High (%)': -1.07, 'EMA20': 36881.16, 'EMA50': 35792.06, 'Close': 38285.0}",
         "computed_at": "2026-05-20T15:03:06",
         "Symbol": "PAGEIND",
         "Ticker": "PAGEIND",
@@ -574,19 +601,22 @@
         "Prediction Score": 48.82,
         "Tomorrow Pick Score": 48.82,
         "Final Score": 21.62,
-        "Signal": "\ud83d\udd35 Wait",
+        "Signal": "🔵 Wait",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 21.62,
-        "AI Action": "\ud83d\udd35 Wait",
+        "AI Action": "🔵 Wait",
         "AI Key Signal": "bullish_pct",
         "RSI": 62.39,
         "Vol / Avg": 1.02,
         "Delta vs EMA20 (%)": 3.81,
         "Market Date": "2026-05-20T15:03:06"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "JKPAPER",
@@ -606,11 +636,11 @@
         "confidence": 23.35,
         "raw_score": 44.73,
         "score": 44.73,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 41.59,
@@ -623,7 +653,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullis",
         "atr": 16.65,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 54.05, 'Vol / Avg': 1.08, '5D Return (%)': -1.04, '20D Return (%)': 5.56, '\u0394 vs EMA20 (%)': 1.36, '\u0394 vs 20D High (%)': -3.76, 'EMA20': 375.85, 'EMA50': 363.0, 'Close': 380.95}",
+        "indicators": "{'RSI': 54.05, 'Vol / Avg': 1.08, '5D Return (%)': -1.04, '20D Return (%)': 5.56, 'Δ vs EMA20 (%)': 1.36, 'Δ vs 20D High (%)': -3.76, 'EMA20': 375.85, 'EMA50': 363.0, 'Close': 380.95}",
         "computed_at": "2026-05-20T15:03:01",
         "Symbol": "JKPAPER",
         "Ticker": "JKPAPER",
@@ -631,19 +661,22 @@
         "Prediction Score": 44.73,
         "Tomorrow Pick Score": 44.73,
         "Final Score": 23.35,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 23.35,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": 54.05,
         "Vol / Avg": 1.08,
         "Delta vs EMA20 (%)": 1.36,
         "Market Date": "2026-05-20T15:03:01"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "TIRUMALCHM",
@@ -700,7 +733,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "INGERRAND",
@@ -757,7 +793,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "SEAMECLTD",
@@ -778,13 +817,13 @@
         "Prediction Score": 51.06,
         "Tomorrow Pick Score": 51.06,
         "Final Score": 22.62,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 22.62,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.26",
         "Vol / Avg": "1.68",
@@ -794,11 +833,11 @@
         "confidence": 22.62,
         "raw_score": 51.06,
         "score": 51.06,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 66.96,
@@ -811,10 +850,13 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 97.25,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.26, 'Vol / Avg': 1.68, '5D Return (%)': 7.01, '20D Return (%)': 6.46, '\u0394 vs EMA20 (%)': 5.76, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 1529.15, 'EMA50': 1467.69, 'Close': 1617.2}",
+        "indicators": "{'RSI': 62.26, 'Vol / Avg': 1.68, '5D Return (%)': 7.01, '20D Return (%)': 6.46, 'Δ vs EMA20 (%)': 5.76, 'Δ vs 20D High (%)': 0.0, 'EMA20': 1529.15, 'EMA50': 1467.69, 'Close': 1617.2}",
         "computed_at": "2026-05-20T15:03:09",
         "Market Date": "2026-05-20T15:03:09"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "PREMEXPLN",
@@ -871,7 +913,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "CENTENKA",
@@ -928,7 +973,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "CONSOFINVT",
@@ -949,13 +997,13 @@
         "Prediction Score": 56.68,
         "Tomorrow Pick Score": 56.68,
         "Final Score": 32.72,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Bullish",
         "AI Confidence": 32.72,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "61.0",
         "Vol / Avg": "1.73",
@@ -965,11 +1013,11 @@
         "confidence": 32.72,
         "raw_score": 56.68,
         "score": 56.68,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 91.23,
@@ -982,10 +1030,13 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 8.87,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 61.0, 'Vol / Avg': 1.73, '5D Return (%)': 1.44, '20D Return (%)': 4.16, '\u0394 vs EMA20 (%)': 3.01, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 225.59, 'EMA50': 220.6, 'Close': 232.38}",
+        "indicators": "{'RSI': 61.0, 'Vol / Avg': 1.73, '5D Return (%)': 1.44, '20D Return (%)': 4.16, 'Δ vs EMA20 (%)': 3.01, 'Δ vs 20D High (%)': 0.0, 'EMA20': 225.59, 'EMA50': 220.6, 'Close': 232.38}",
         "computed_at": "2026-05-20T15:03:01",
         "Market Date": "2026-05-20T15:03:01"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "AIIL",
@@ -1042,7 +1093,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "GRASIM",
@@ -1099,7 +1153,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "KICL",
@@ -1120,13 +1177,13 @@
         "Prediction Score": 53.66,
         "Tomorrow Pick Score": 53.66,
         "Final Score": 28.09,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 28.09,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "59.91",
         "Vol / Avg": "1.62",
@@ -1136,11 +1193,11 @@
         "confidence": 28.09,
         "raw_score": 53.66,
         "score": 53.66,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 85.13,
@@ -1153,10 +1210,13 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 199.41,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 59.91, 'Vol / Avg': 1.62, '5D Return (%)': 2.75, '20D Return (%)': 5.05, '\u0394 vs EMA20 (%)': 4.54, '\u0394 vs 20D High (%)': -0.72, 'EMA20': 4846.44, 'EMA50': 4773.46, 'Close': 5066.6}",
+        "indicators": "{'RSI': 59.91, 'Vol / Avg': 1.62, '5D Return (%)': 2.75, '20D Return (%)': 5.05, 'Δ vs EMA20 (%)': 4.54, 'Δ vs 20D High (%)': -0.72, 'EMA20': 4846.44, 'EMA50': 4773.46, 'Close': 5066.6}",
         "computed_at": "2026-05-20T15:03:04",
         "Market Date": "2026-05-20T15:03:04"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "HINDALCO",
@@ -1213,7 +1273,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "WANBURY",
@@ -1270,7 +1333,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "ELGIEQUIP",
@@ -1293,11 +1359,11 @@
         "confidence": 23.31,
         "raw_score": 44.86,
         "score": 44.86,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 55.72,
@@ -1310,7 +1376,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 19.99,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.76, 'Vol / Avg': 1.38, '5D Return (%)': 8.2, '20D Return (%)': 1.43, '\u0394 vs EMA20 (%)': 4.72, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 541.81, 'EMA50': 527.05, 'Close': 567.4}",
+        "indicators": "{'RSI': 62.76, 'Vol / Avg': 1.38, '5D Return (%)': 8.2, '20D Return (%)': 1.43, 'Δ vs EMA20 (%)': 4.72, 'Δ vs 20D High (%)': 0.0, 'EMA20': 541.81, 'EMA50': 527.05, 'Close': 567.4}",
         "computed_at": "2026-05-21T15:22:44",
         "Symbol": "ELGIEQUIP",
         "Ticker": "ELGIEQUIP",
@@ -1318,19 +1384,22 @@
         "Prediction Score": 44.86,
         "Tomorrow Pick Score": 44.86,
         "Final Score": 23.31,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 23.31,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.76",
         "Vol / Avg": "1.38",
         "Delta vs EMA20 (%)": "4.72",
         "Market Date": "2026-05-21T15:22:44"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "SMLT",
@@ -1387,7 +1456,10 @@
         "indicators": "",
         "computed_at": "",
         "Market Date": ""
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "GMRP&UI",
@@ -1410,11 +1482,11 @@
         "confidence": 24.36,
         "raw_score": 51.83,
         "score": 51.83,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 74.5,
@@ -1427,7 +1499,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 4.67,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.61, 'Vol / Avg': 1.55, '5D Return (%)': 2.36, '20D Return (%)': 7.15, '\u0394 vs EMA20 (%)': 5.42, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 110.16, 'EMA50': 108.21, 'Close': 116.13}",
+        "indicators": "{'RSI': 62.61, 'Vol / Avg': 1.55, '5D Return (%)': 2.36, '20D Return (%)': 7.15, 'Δ vs EMA20 (%)': 5.42, 'Δ vs 20D High (%)': 0.0, 'EMA20': 110.16, 'EMA50': 108.21, 'Close': 116.13}",
         "computed_at": "2026-05-21T15:24:01",
         "Symbol": "GMRP&UI",
         "Ticker": "GMRP&UI",
@@ -1435,19 +1507,22 @@
         "Prediction Score": 51.83,
         "Tomorrow Pick Score": 51.83,
         "Final Score": 24.36,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 24.36,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.61",
         "Vol / Avg": "1.55",
         "Delta vs EMA20 (%)": "5.42",
         "Market Date": "2026-05-21T15:24:01"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "RSWM",
@@ -1468,11 +1543,11 @@
         "confidence": 25.34,
         "raw_score": 50.1,
         "score": 50.1,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 61.87,
@@ -1485,7 +1560,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 7.45,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.54, 'Vol / Avg': 2.22, '5D Return (%)': 6.92, '20D Return (%)': 7.98, '\u0394 vs EMA20 (%)': 5.59, '\u0394 vs 20D High (%)': -3.39, 'EMA20': 160.63, 'EMA50': 155.01, 'Close': 169.61}",
+        "indicators": "{'RSI': 62.54, 'Vol / Avg': 2.22, '5D Return (%)': 6.92, '20D Return (%)': 7.98, 'Δ vs EMA20 (%)': 5.59, 'Δ vs 20D High (%)': -3.39, 'EMA20': 160.63, 'EMA50': 155.01, 'Close': 169.61}",
         "computed_at": "2026-05-21T15:27:49",
         "Symbol": "RSWM",
         "Ticker": "RSWM",
@@ -1493,19 +1568,22 @@
         "Prediction Score": 50.1,
         "Tomorrow Pick Score": 50.1,
         "Final Score": 25.34,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 25.34,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.54",
         "Vol / Avg": "2.22",
         "Delta vs EMA20 (%)": "5.59",
         "Market Date": "2026-05-21T15:27:49"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "SHALBY",
@@ -1526,11 +1604,11 @@
         "confidence": 24.79,
         "raw_score": 50.1,
         "score": 50.1,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 67.17,
@@ -1543,7 +1621,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 6.65,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.25, 'Vol / Avg': 1.53, '5D Return (%)': 6.72, '20D Return (%)': 7.11, '\u0394 vs EMA20 (%)': 5.11, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 162.2, 'EMA50': 159.79, 'Close': 170.49}",
+        "indicators": "{'RSI': 62.25, 'Vol / Avg': 1.53, '5D Return (%)': 6.72, '20D Return (%)': 7.11, 'Δ vs EMA20 (%)': 5.11, 'Δ vs 20D High (%)': 0.0, 'EMA20': 162.2, 'EMA50': 159.79, 'Close': 170.49}",
         "computed_at": "2026-05-21T15:28:26",
         "Symbol": "SHALBY",
         "Ticker": "SHALBY",
@@ -1551,19 +1629,22 @@
         "Prediction Score": 50.1,
         "Tomorrow Pick Score": 50.1,
         "Final Score": 24.79,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 24.79,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.25",
         "Vol / Avg": "1.53",
         "Delta vs EMA20 (%)": "5.11",
         "Market Date": "2026-05-21T15:28:26"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "BLISSGVS",
@@ -1583,11 +1664,11 @@
         "confidence": 22.34,
         "raw_score": 51.08,
         "score": 51.08,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 63.71,
@@ -1600,7 +1681,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 13.67,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 66.47, 'Vol / Avg': 1.51, '5D Return (%)': 2.0, '20D Return (%)': 9.83, '\u0394 vs EMA20 (%)': 6.99, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 275.91, 'EMA50': 254.55, 'Close': 295.2}",
+        "indicators": "{'RSI': 66.47, 'Vol / Avg': 1.51, '5D Return (%)': 2.0, '20D Return (%)': 9.83, 'Δ vs EMA20 (%)': 6.99, 'Δ vs 20D High (%)': 0.0, 'EMA20': 275.91, 'EMA50': 254.55, 'Close': 295.2}",
         "computed_at": "2026-05-21T15:23:35",
         "Symbol": "BLISSGVS",
         "Ticker": "BLISSGVS",
@@ -1608,19 +1689,22 @@
         "Prediction Score": 51.08,
         "Tomorrow Pick Score": 51.08,
         "Final Score": 22.34,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 22.34,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "66.47",
         "Vol / Avg": "1.51",
         "Delta vs EMA20 (%)": "6.99",
         "Market Date": "2026-05-21T15:23:35"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "MANKIND",
@@ -1640,11 +1724,11 @@
         "confidence": 23.88,
         "raw_score": 50.06,
         "score": 50.06,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "PHARMA",
         "mode_score": 66.44,
@@ -1657,7 +1741,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 90.55,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 66.76, 'Vol / Avg': 2.28, '5D Return (%)': 2.11, '20D Return (%)': 12.49, '\u0394 vs EMA20 (%)': 5.13, '\u0394 vs 20D High (%)': -2.7, 'EMA20': 2391.33, 'EMA50': 2271.12, 'Close': 2514.1}",
+        "indicators": "{'RSI': 66.76, 'Vol / Avg': 2.28, '5D Return (%)': 2.11, '20D Return (%)': 12.49, 'Δ vs EMA20 (%)': 5.13, 'Δ vs 20D High (%)': -2.7, 'EMA20': 2391.33, 'EMA50': 2271.12, 'Close': 2514.1}",
         "computed_at": "2026-05-21T15:26:42",
         "Symbol": "MANKIND",
         "Ticker": "MANKIND",
@@ -1665,19 +1749,22 @@
         "Prediction Score": 50.06,
         "Tomorrow Pick Score": 50.06,
         "Final Score": 23.88,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "PHARMA",
         "AI Direction": "Sideways",
         "AI Confidence": 23.88,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "66.76",
         "Vol / Avg": "2.28",
         "Delta vs EMA20 (%)": "5.13",
         "Market Date": "2026-05-21T15:26:42"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "RUCHIRA",
@@ -1697,11 +1784,11 @@
         "confidence": 32.98,
         "raw_score": 55.81,
         "score": 55.81,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 85.32,
@@ -1714,7 +1801,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 4.14,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 64.59, 'Vol / Avg': 2.39, '5D Return (%)': 4.02, '20D Return (%)': 6.56, '\u0394 vs EMA20 (%)': 4.92, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 119.73, 'EMA50': 115.72, 'Close': 125.62}",
+        "indicators": "{'RSI': 64.59, 'Vol / Avg': 2.39, '5D Return (%)': 4.02, '20D Return (%)': 6.56, 'Δ vs EMA20 (%)': 4.92, 'Δ vs 20D High (%)': 0.0, 'EMA20': 119.73, 'EMA50': 115.72, 'Close': 125.62}",
         "computed_at": "2026-05-21T15:22:45",
         "Symbol": "RUCHIRA",
         "Ticker": "RUCHIRA",
@@ -1722,19 +1809,22 @@
         "Prediction Score": 55.81,
         "Tomorrow Pick Score": 55.81,
         "Final Score": 32.98,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 32.98,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "64.59",
         "Vol / Avg": "2.39",
         "Delta vs EMA20 (%)": "4.92",
         "Market Date": "2026-05-21T15:22:45"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "PGHL",
@@ -1754,11 +1844,11 @@
         "confidence": 29.57,
         "raw_score": 54.21,
         "score": 54.21,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 79.96,
@@ -1771,7 +1861,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 127.72,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 65.48, 'Vol / Avg': 1.78, '5D Return (%)': 3.7, '20D Return (%)': 6.28, '\u0394 vs EMA20 (%)': 4.15, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 5237.51, 'EMA50': 5145.52, 'Close': 5455.0}",
+        "indicators": "{'RSI': 65.48, 'Vol / Avg': 1.78, '5D Return (%)': 3.7, '20D Return (%)': 6.28, 'Δ vs EMA20 (%)': 4.15, 'Δ vs 20D High (%)': 0.0, 'EMA20': 5237.51, 'EMA50': 5145.52, 'Close': 5455.0}",
         "computed_at": "2026-05-21T15:27:42",
         "Symbol": "PGHL",
         "Ticker": "PGHL",
@@ -1779,19 +1869,22 @@
         "Prediction Score": 54.21,
         "Tomorrow Pick Score": 54.21,
         "Final Score": 29.57,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 29.57,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "65.48",
         "Vol / Avg": "1.78",
         "Delta vs EMA20 (%)": "4.15",
         "Market Date": "2026-05-21T15:27:42"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "JBCHEPHARM",
@@ -1811,11 +1904,11 @@
         "confidence": 24.55,
         "raw_score": 50.91,
         "score": 50.91,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "PHARMA",
         "mode_score": 69.05,
@@ -1828,7 +1921,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 55.42,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.2, 'Vol / Avg': 1.42, '5D Return (%)': 1.92, '20D Return (%)': 8.32, '\u0394 vs EMA20 (%)': 2.97, '\u0394 vs 20D High (%)': -1.37, 'EMA20': 2116.06, 'EMA50': 2064.27, 'Close': 2178.9}",
+        "indicators": "{'RSI': 62.2, 'Vol / Avg': 1.42, '5D Return (%)': 1.92, '20D Return (%)': 8.32, 'Δ vs EMA20 (%)': 2.97, 'Δ vs 20D High (%)': -1.37, 'EMA20': 2116.06, 'EMA50': 2064.27, 'Close': 2178.9}",
         "computed_at": "2026-05-21T15:25:13",
         "Symbol": "JBCHEPHARM",
         "Ticker": "JBCHEPHARM",
@@ -1836,19 +1929,22 @@
         "Prediction Score": 50.91,
         "Tomorrow Pick Score": 50.91,
         "Final Score": 24.55,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "PHARMA",
         "AI Direction": "Sideways",
         "AI Confidence": 24.55,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.2",
         "Vol / Avg": "1.42",
         "Delta vs EMA20 (%)": "2.97",
         "Market Date": "2026-05-21T15:25:13"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "HONASA",
@@ -1868,11 +1964,11 @@
         "confidence": 27.71,
         "raw_score": 50.47,
         "score": 50.47,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 74.9,
@@ -1885,7 +1981,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 10.82,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 65.73, 'Vol / Avg': 1.63, '5D Return (%)': 2.15, '20D Return (%)': 4.18, '\u0394 vs EMA20 (%)': 3.52, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 348.24, 'EMA50': 331.61, 'Close': 360.5}",
+        "indicators": "{'RSI': 65.73, 'Vol / Avg': 1.63, '5D Return (%)': 2.15, '20D Return (%)': 4.18, 'Δ vs EMA20 (%)': 3.52, 'Δ vs 20D High (%)': 0.0, 'EMA20': 348.24, 'EMA50': 331.61, 'Close': 360.5}",
         "computed_at": "2026-05-21T15:24:25",
         "Symbol": "HONASA",
         "Ticker": "HONASA",
@@ -1893,19 +1989,22 @@
         "Prediction Score": 50.47,
         "Tomorrow Pick Score": 50.47,
         "Final Score": 27.71,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 27.71,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "65.73",
         "Vol / Avg": "1.63",
         "Delta vs EMA20 (%)": "3.52",
         "Market Date": "2026-05-21T15:24:25"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "CAPTRUST",
@@ -1925,11 +2024,11 @@
         "confidence": 32.15,
         "raw_score": 52.06,
         "score": 52.06,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 78.72,
@@ -1942,7 +2041,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 0.45,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 62.91, 'Vol / Avg': 3.06, '5D Return (%)': 5.75, '20D Return (%)': 3.94, '\u0394 vs EMA20 (%)': 5.29, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 13.28, 'EMA50': 13.1, 'Close': 13.98}",
+        "indicators": "{'RSI': 62.91, 'Vol / Avg': 3.06, '5D Return (%)': 5.75, '20D Return (%)': 3.94, 'Δ vs EMA20 (%)': 5.29, 'Δ vs 20D High (%)': 0.0, 'EMA20': 13.28, 'EMA50': 13.1, 'Close': 13.98}",
         "computed_at": "2026-05-21T15:23:39",
         "Symbol": "CAPTRUST",
         "Ticker": "CAPTRUST",
@@ -1950,19 +2049,22 @@
         "Prediction Score": 52.06,
         "Tomorrow Pick Score": 52.06,
         "Final Score": 32.15,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 32.15,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "62.91",
         "Vol / Avg": "3.06",
         "Delta vs EMA20 (%)": "5.29",
         "Market Date": "2026-05-21T15:23:39"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "APOLLOHOSP",
@@ -1982,11 +2084,11 @@
         "confidence": 27.9,
         "raw_score": 51.06,
         "score": 51.06,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 73.83,
@@ -1999,7 +2101,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 181.1,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 71.14, 'Vol / Avg': 3.29, '5D Return (%)': 2.33, '20D Return (%)': 6.78, '\u0394 vs EMA20 (%)': 4.6, '\u0394 vs 20D High (%)': 0.0, 'EMA20': 7943.12, 'EMA50': 7743.44, 'Close': 8308.5}",
+        "indicators": "{'RSI': 71.14, 'Vol / Avg': 3.29, '5D Return (%)': 2.33, '20D Return (%)': 6.78, 'Δ vs EMA20 (%)': 4.6, 'Δ vs 20D High (%)': 0.0, 'EMA20': 7943.12, 'EMA50': 7743.44, 'Close': 8308.5}",
         "computed_at": "2026-05-21T15:22:42",
         "Symbol": "APOLLOHOSP",
         "Ticker": "APOLLOHOSP",
@@ -2007,19 +2109,22 @@
         "Prediction Score": 51.06,
         "Tomorrow Pick Score": 51.06,
         "Final Score": 27.9,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 27.9,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "71.14",
         "Vol / Avg": "3.29",
         "Delta vs EMA20 (%)": "4.6",
         "Market Date": "2026-05-21T15:22:42"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     },
     {
       "ticker": "ORKLAINDIA",
@@ -2039,11 +2144,11 @@
         "confidence": 35.19,
         "raw_score": 53.73,
         "score": 53.73,
-        "action": "\ud83d\udd34 Avoid",
+        "action": "🔴 Avoid",
         "hold_days": "-",
         "risk": "LOW",
         "regime": "RANGE_BOUND",
-        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '\u25c6', 'ema_aligned': True}",
+        "regime_snapshot": "{'regime': 'Range Bound', 'description': 'Mean reversion regime. Breakouts need extra confirmation.', 'color': '#8ab4d8', 'emoji': '◆', 'ema_aligned': True}",
         "key_signal": "bullish_pct",
         "sector": "UNKNOWN",
         "mode_score": 86.43,
@@ -2056,7 +2161,7 @@
         "weights": "{'ema_slope': 0.061453, 'price_vs_ema': 0.107263, 'candle_direction': 0.078212, 'body_strength': 0.06257, 'consecutive': 0.046927, 'volume_confirm': 0.100559, 'volatility': 0.058101, 'momentum': 0.02905, 'sector_strength': 0.134078, 'bullish_pct': 0.134078, 'money_flow': 0.098324, 'participation': 0.089385}",
         "atr": 19.5,
         "label_tag": "Range-Bound Setup",
-        "indicators": "{'RSI': 58.9, 'Vol / Avg': 3.67, '5D Return (%)': 1.99, '20D Return (%)': -0.47, '\u0394 vs EMA20 (%)': 1.83, '\u0394 vs 20D High (%)': -0.45, 'EMA20': 635.51, 'EMA50': 622.12, 'Close': 647.15}",
+        "indicators": "{'RSI': 58.9, 'Vol / Avg': 3.67, '5D Return (%)': 1.99, '20D Return (%)': -0.47, 'Δ vs EMA20 (%)': 1.83, 'Δ vs 20D High (%)': -0.45, 'EMA20': 635.51, 'EMA50': 622.12, 'Close': 647.15}",
         "computed_at": "2026-05-21T15:22:48",
         "Symbol": "ORKLAINDIA",
         "Ticker": "ORKLAINDIA",
@@ -2064,19 +2169,22 @@
         "Prediction Score": 53.73,
         "Tomorrow Pick Score": 53.73,
         "Final Score": 35.19,
-        "Signal": "\ud83d\udd34 Avoid",
+        "Signal": "🔴 Avoid",
         "Conviction Tier": "Range-Bound Setup",
         "Trap Risk": "LOW",
         "Sector": "UNKNOWN",
         "AI Direction": "Sideways",
         "AI Confidence": 35.19,
-        "AI Action": "\ud83d\udd34 Avoid",
+        "AI Action": "🔴 Avoid",
         "AI Key Signal": "bullish_pct",
         "RSI": "58.9",
         "Vol / Avg": "3.67",
         "Delta vs EMA20 (%)": "1.83",
         "Market Date": "2026-05-21T15:22:48"
-      }
+      },
+      "source_modes": [
+        "Manual"
+      ]
     }
   ],
   "updated_at": "2026-05-21T15:35:11"

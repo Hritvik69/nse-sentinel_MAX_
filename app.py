@@ -2581,7 +2581,38 @@ def _imported_record_source_modes(record: dict[str, object] | None) -> list[str]
     if not isinstance(record, dict):
         return [_PICK_SOURCE_AI]
     raw_modes = record.get("source_modes", record.get("source_mode", record.get("pick_source_mode", [])))
-    return [_primary_pick_source_mode(raw_modes, default=_PICK_SOURCE_AI)]
+    explicit = _normalize_pick_source_mode_list(raw_modes, default="")
+    if explicit:
+        return [explicit[-1]]
+    return [_infer_imported_record_source_mode(record, _normalize_tomorrow_symbol(record.get("ticker") or record.get("symbol")))]
+
+
+def _infer_imported_record_source_mode(item: dict[str, object], ticker: str = "") -> str:
+    raw_modes = item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", [])))
+    explicit = _normalize_pick_source_mode_list(raw_modes, default="")
+    if explicit:
+        return explicit[-1]
+
+    sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
+    categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
+    source_text = " ".join(sources + categories).lower()
+    if any(token in source_text for token in ("a-i-l", "ail ", "ai prediction", "scanner", "top 3")):
+        if "tomorrow's picks" not in source_text:
+            return _PICK_SOURCE_AI
+
+    symbol = _normalize_tomorrow_symbol(ticker or item.get("ticker") or item.get("symbol"))
+    if symbol:
+        try:
+            cached_store, _cached_mode = _get_cached_tomorrow_store()
+            store = cached_store if isinstance(cached_store, dict) else _normalize_tomorrow_store(_load_local_tomorrow_store())
+            if symbol in set(_normalize_tomorrow_symbols(store.get("picks", []), limit=20)):
+                return _tomorrow_source_mode_for_symbol(store.get("source_modes", {}), symbol)
+        except Exception:
+            pass
+
+    if "tomorrow's picks" in source_text or "tomorrow picks" in source_text:
+        return _PICK_SOURCE_MANUAL
+    return _PICK_SOURCE_AI
 
 
 def _filter_imported_ai_records_by_source(
@@ -2740,12 +2771,7 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
             sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
             modes = _normalize_import_mode_list(item.get("modes", item.get("mode", [])))
-            source_modes = [
-                _primary_pick_source_mode(
-                    item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", []))),
-                    default=_PICK_SOURCE_AI,
-                )
-            ]
+            source_modes = [_infer_imported_record_source_mode(item, ticker)]
             if 7 in modes:
                 categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(item.get("last_imported_at", item.get("imported_at", "")) or "")
@@ -3846,6 +3872,8 @@ def _import_ail_aura_to_tomorrow_picks(
         moved_total = 0
         updated_total = 0
         overflow_total = 0
+        ai_basket_added = 0
+        ai_basket_updated = 0
         limit_remaining = 20
         for bucket in _TOMORROW_SECTION_ORDER:
             rows = grouped_rows.get(bucket, [])[:limit_remaining]
@@ -3867,6 +3895,20 @@ def _import_ail_aura_to_tomorrow_picks(
             overflow_total += int(summary.get("overflow", 0) or 0)
             if bool(summary.get("changed", False)) and not int(summary.get("added", 0) or 0) and not int(summary.get("moved", 0) or 0):
                 updated_total += len(saved_symbols)
+            if saved_symbols:
+                bucket_rows = pd.DataFrame(rows)
+                if not bucket_rows.empty and "Symbol" in bucket_rows.columns:
+                    bucket_rows = bucket_rows[bucket_rows["Symbol"].map(_normalize_tomorrow_symbol).isin(saved_symbols)].copy()
+                ai_summary = _store_symbols_in_imported_ai_learning(
+                    saved_symbols,
+                    mode_value=_tomorrow_import_mode_for_bucket(bucket),
+                    source_label="A-I-L IN ONE - Final Aura Verdict",
+                    source_bucket=bucket,
+                    source_rows=bucket_rows,
+                    source_mode=_PICK_SOURCE_AI,
+                )
+                ai_basket_added += int(ai_summary.get("added", 0) or 0)
+                ai_basket_updated += int(ai_summary.get("updated", 0) or 0)
             cached_after, _cached_mode = _get_cached_tomorrow_store()
             current_total = len(cached_after.get("picks", [])) if isinstance(cached_after, dict) else 0
             limit_remaining = max(0, 20 - current_total)
@@ -3884,6 +3926,7 @@ def _import_ail_aura_to_tomorrow_picks(
             return result
 
         st.session_state["tmr_picks_source_filter"] = _PICK_SOURCE_AI
+        st.session_state["imported_ai_source_filter"] = _PICK_SOURCE_AI
         result.update(
             {
                 "kind": "success",
@@ -3893,7 +3936,8 @@ def _import_ail_aura_to_tomorrow_picks(
                 "updated": updated_total,
                 "message": (
                     f"Imported {len(imported_symbols)} A-I-L Final Aura stock(s) into Tomorrow's Picks as AI. "
-                    f"Added {added_total}, moved {moved_total}, refreshed {updated_total}."
+                    f"Added {added_total}, moved {moved_total}, refreshed {updated_total}. "
+                    f"AI basket added {ai_basket_added}, refreshed {ai_basket_updated}."
                     + (f" Skipped {overflow_total} because Tomorrow's Picks is full." if overflow_total else "")
                 ),
             }
