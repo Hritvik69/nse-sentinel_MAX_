@@ -49,6 +49,10 @@ _TOMORROW_SECTION_META = {
     "momentum": ("Momentum", "#b08cff"),
     "breakout": ("Breakout", "#ff6b6b"),
 }
+_PICK_SOURCE_ALL = "All"
+_PICK_SOURCE_AI = "AI"
+_PICK_SOURCE_MANUAL = "Manual"
+_PICK_SOURCE_FILTER_OPTIONS = (_PICK_SOURCE_ALL, _PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
 
 try:
     from prediction_feedback_store import read_feedback_log as _read_feedback_log
@@ -1343,16 +1347,64 @@ def _normalize_tomorrow_strip_symbol(value: object) -> str:
     return symbol
 
 
-def _load_tomorrow_strip_sections() -> dict[str, list[str]]:
+def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_AI) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"manual", "manually", "user", "typed", "own"}:
+        return _PICK_SOURCE_MANUAL
+    if text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+        return _PICK_SOURCE_AI
+    default_text = str(default or "").strip().lower()
+    if default_text in {"manual", "manually", "user", "typed", "own"}:
+        return _PICK_SOURCE_MANUAL
+    if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+        return _PICK_SOURCE_AI
+    return ""
+
+
+def _normalize_pick_source_filter(value: object, default: str = _PICK_SOURCE_ALL) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"all", "both", "mixed"}:
+        return _PICK_SOURCE_ALL
+    mode = _normalize_pick_source_mode(value, default="")
+    if mode in {_PICK_SOURCE_AI, _PICK_SOURCE_MANUAL}:
+        return mode
+    return default if default in _PICK_SOURCE_FILTER_OPTIONS else _PICK_SOURCE_ALL
+
+
+def _source_mode_badge(value: object) -> str:
+    return "MAN" if _normalize_pick_source_mode(value) == _PICK_SOURCE_MANUAL else "AI"
+
+
+def _source_filter_caption(value: object) -> str:
+    selected = _normalize_pick_source_filter(value)
+    if selected == _PICK_SOURCE_AI:
+        return "AI imported"
+    if selected == _PICK_SOURCE_MANUAL:
+        return "Manual"
+    return "All"
+
+
+def _load_tomorrow_strip_sections(
+    *,
+    source_filter: object = _PICK_SOURCE_ALL,
+) -> tuple[dict[str, list[str]], dict[str, str]]:
     sections: dict[str, list[str]] = {bucket: [] for bucket in _TOMORROW_SECTION_ORDER}
+    source_modes: dict[str, str] = {}
     try:
         store = st.session_state.get("tomorrow_picks_store")
         if not isinstance(store, dict) and _TOMORROW_STORE_PATH.exists():
             store = json.loads(_TOMORROW_STORE_PATH.read_text(encoding="utf-8"))
         if not isinstance(store, dict):
-            return sections
+            return sections, source_modes
 
+        selected = _normalize_pick_source_filter(source_filter)
         seen: set[str] = set()
+        raw_source_modes = store.get("source_modes", {})
+        if isinstance(raw_source_modes, Mapping):
+            for raw_symbol, raw_mode in raw_source_modes.items():
+                symbol = _normalize_tomorrow_strip_symbol(raw_symbol)
+                if symbol:
+                    source_modes[symbol] = _normalize_pick_source_mode(raw_mode)
         raw_sections = store.get("sections", {})
         if isinstance(raw_sections, dict):
             for bucket in _TOMORROW_SECTION_ORDER:
@@ -1361,20 +1413,28 @@ def _load_tomorrow_strip_sections() -> dict[str, list[str]]:
                     continue
                 for raw in values:
                     symbol = _normalize_tomorrow_strip_symbol(raw)
+                    symbol_source = source_modes.get(symbol, _PICK_SOURCE_AI)
+                    if selected != _PICK_SOURCE_ALL and symbol_source != selected:
+                        continue
                     if symbol and symbol not in seen and len(seen) < 20:
                         sections[bucket].append(symbol)
+                        source_modes.setdefault(symbol, _PICK_SOURCE_AI)
                         seen.add(symbol)
 
         raw_picks = store.get("picks", [])
         if isinstance(raw_picks, (list, tuple)):
             for raw in raw_picks:
                 symbol = _normalize_tomorrow_strip_symbol(raw)
+                symbol_source = source_modes.get(symbol, _PICK_SOURCE_AI)
+                if selected != _PICK_SOURCE_ALL and symbol_source != selected:
+                    continue
                 if symbol and symbol not in seen and len(seen) < 20:
                     sections["relax"].append(symbol)
+                    source_modes.setdefault(symbol, _PICK_SOURCE_AI)
                     seen.add(symbol)
-        return sections
+        return sections, source_modes
     except Exception:
-        return sections
+        return sections, source_modes
 
 
 def _flatten_tomorrow_strip_symbols(
@@ -1384,7 +1444,12 @@ def _flatten_tomorrow_strip_symbols(
 ) -> list[str]:
     symbols: list[str] = []
     seen: set[str] = set()
-    bucket_map = sections if isinstance(sections, dict) else _load_tomorrow_strip_sections()
+    if isinstance(sections, dict):
+        bucket_map = sections
+    else:
+        bucket_map, _source_modes = _load_tomorrow_strip_sections(
+            source_filter=st.session_state.get("tmr_chart_strip_source_filter", _PICK_SOURCE_ALL)
+        )
     for bucket in _TOMORROW_SECTION_ORDER:
         for raw in list(bucket_map.get(bucket, [])):
             symbol = _normalize_tomorrow_strip_symbol(raw)
@@ -1397,7 +1462,21 @@ def _flatten_tomorrow_strip_symbols(
 
 
 def _render_tomorrow_picks_chart_strip() -> None:
-    sections = _load_tomorrow_strip_sections()
+    selected_source = _normalize_pick_source_filter(
+        st.session_state.get("tmr_chart_strip_source_filter", st.session_state.get("tmr_picks_source_filter", _PICK_SOURCE_ALL))
+    )
+    _ctrl_left, _ctrl_right = st.columns([4.8, 1.6], gap="large")
+    with _ctrl_right:
+        selected_source = st.radio(
+            "Pick Source",
+            options=list(_PICK_SOURCE_FILTER_OPTIONS),
+            index=list(_PICK_SOURCE_FILTER_OPTIONS).index(selected_source),
+            horizontal=True,
+            key="tmr_chart_strip_source_filter",
+            label_visibility="collapsed",
+            help="Toggle the strip between all, AI-imported, and manual picks.",
+        )
+    sections, source_modes = _load_tomorrow_strip_sections(source_filter=selected_source)
     rows_html: list[str] = []
     for bucket in _TOMORROW_SECTION_ORDER:
         label, accent = _TOMORROW_SECTION_META[bucket]
@@ -1410,6 +1489,7 @@ def _render_tomorrow_picks_chart_strip() -> None:
                     '<span class="pc-tmr-chip">'
                     '<span class="pc-tmr-badge">NSE</span>'
                     f'{_html.escape(symbol)}'
+                    f'<span class="pc-tmr-source">{_html.escape(_source_mode_badge(source_modes.get(symbol, _PICK_SOURCE_AI)))}</span>'
                     '</span>'
                 )
                 for symbol in visible_symbols
@@ -1556,6 +1636,20 @@ def _render_tomorrow_picks_chart_strip() -> None:
           letter-spacing:0.7px;
           text-transform:uppercase;
         }
+        .pc-tmr-source {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:24px;
+          padding:2px 6px;
+          border-radius:999px;
+          border:1px solid rgba(255,255,255,0.10);
+          color:#8ab4d8;
+          background:rgba(255,255,255,0.04);
+          font-size:9px;
+          letter-spacing:0.5px;
+          text-transform:uppercase;
+        }
         .pc-tmr-empty {
           display:inline-flex;
           align-items:center;
@@ -1594,7 +1688,7 @@ def _render_tomorrow_picks_chart_strip() -> None:
             '</span>'
             '</summary>'
             '<div class="pc-tmr-body">'
-            '<div class="pc-tmr-copy">Full 5-lane chart view: Relax, Swing, Intraday, Momentum, Breakout.</div>'
+            f'<div class="pc-tmr-copy">Full 5-lane chart view: Relax, Swing, Intraday, Momentum, Breakout. Source: {_html.escape(_source_filter_caption(selected_source))}.</div>'
             + "".join(rows_html)
             + '</div>'
             + '</details>'

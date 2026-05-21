@@ -347,7 +347,12 @@ def _render_comparison_results(result: AILPipelineResult) -> None:
     )
 
 
-def _render_aura_verdict(result: AILPipelineResult) -> pd.DataFrame:
+def _render_aura_verdict(
+    result: AILPipelineResult,
+    *,
+    import_to_tomorrow_picks_fn: Callable[[pd.DataFrame, pd.DataFrame], dict[str, Any]] | None = None,
+    open_tomorrow_picks_fn: Callable[[], None] | None = None,
+) -> pd.DataFrame:
     st.subheader("5. Final Aura Verdict")
     aura_df = _with_chart_links(pd.DataFrame(result.aura_verdicts))
     cols = [
@@ -368,6 +373,39 @@ def _render_aura_verdict(result: AILPipelineResult) -> pd.DataFrame:
         "Warnings",
     ]
     _render_dataframe(aura_df, cols, height=340)
+    if callable(import_to_tomorrow_picks_fn) or callable(open_tomorrow_picks_fn):
+        import_col, open_col, spacer_col = st.columns([1.5, 1.1, 2.4], gap="small")
+        with import_col:
+            import_clicked = st.button(
+                "Import To Tomorrow Picks",
+                key="ail_final_aura_import_tomorrow_picks",
+                width="stretch",
+                disabled=aura_df.empty or not callable(import_to_tomorrow_picks_fn),
+                type="primary",
+                help="Save eligible Final Aura Verdict rows into Tomorrow's Picks as AI picks.",
+            )
+        with open_col:
+            open_clicked = st.button(
+                "Tomorrow's Picks",
+                key="ail_final_aura_open_tomorrow_picks",
+                width="stretch",
+                disabled=not callable(open_tomorrow_picks_fn),
+            )
+        with spacer_col:
+            st.caption("A-I-L imports stay tagged as AI so Tomorrow's Picks and Imported AI Stocks can be filtered separately from manual picks.")
+
+        if import_clicked and callable(import_to_tomorrow_picks_fn):
+            summary = import_to_tomorrow_picks_fn(aura_df, result.final_ranked_df)
+            message = str(summary.get("message", "") if isinstance(summary, dict) else "")
+            kind = str(summary.get("kind", "info") if isinstance(summary, dict) else "info").lower()
+            if kind == "success":
+                st.success(message or "A-I-L picks were imported into Tomorrow's Picks.")
+            elif kind == "warning":
+                st.warning(message or "No eligible A-I-L rows were imported.")
+            else:
+                st.info(message or "A-I-L import finished.")
+        if open_clicked and callable(open_tomorrow_picks_fn):
+            open_tomorrow_picks_fn()
     return aura_df
 
 
@@ -483,6 +521,8 @@ def render_ail_in_one_panel(
     run_aura_engine_fn: Callable[[pd.DataFrame, str, dict[str, Any] | None], Any] | None = None,
     compare_prediction_cache_fn: Callable[[], object] | None = None,
     log_scan_predictions_fn: Callable[[pd.DataFrame, int, dict[str, Any] | None], None] | None = None,
+    import_to_tomorrow_picks_fn: Callable[[pd.DataFrame, pd.DataFrame], dict[str, Any]] | None = None,
+    open_tomorrow_picks_fn: Callable[[], None] | None = None,
     all_data: dict[str, Any] | None = None,
     tt_module: Any = None,
 ) -> None:
@@ -599,6 +639,10 @@ def render_ail_in_one_panel(
     _render_mode_top3(result)
     _render_ranked_leaders(result)
     _render_comparison_results(result)
-    aura_df = _render_aura_verdict(result)
+    aura_df = _render_aura_verdict(
+        result,
+        import_to_tomorrow_picks_fn=import_to_tomorrow_picks_fn,
+        open_tomorrow_picks_fn=open_tomorrow_picks_fn,
+    )
     _render_best_buy_tomorrow(aura_df, result)
     _render_risk_sector_confidence_learning(result)

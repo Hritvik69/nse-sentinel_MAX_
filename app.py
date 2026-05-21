@@ -135,7 +135,7 @@ import time
 import warnings
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -990,7 +990,7 @@ def _pending_outcome_symbols(limit: int = _POST_CLOSE_OUTCOME_SYMBOL_LIMIT) -> d
     }
 
 
-def _build_outcome_backfill_data(symbols: list[str]) -> dict[str, Any]:
+def _build_outcome_backfill_data(symbols: list[str], *, allow_fetch: bool = True) -> dict[str, Any]:
     all_data: dict[str, Any] = {}
     try:
         from strategy_engines._engine_utils import ALL_DATA as ENGINE_ALL_DATA, get_all_data_snapshot
@@ -1017,7 +1017,7 @@ def _build_outcome_backfill_data(symbols: list[str]) -> dict[str, Any]:
                         break
                 except Exception:
                     pass
-            if hist is None:
+            if hist is None and allow_fetch:
                 hist = None if symbol.startswith("^") else get_df_for_ticker(ticker_ns)
             if hist is None:
                 continue
@@ -1066,7 +1066,10 @@ def _run_post_close_outcome_refresh(*, force: bool = False, allow_open_session: 
             st.session_state["_post_close_outcome_status"] = status
             return status
 
-        outcome_data = _build_outcome_backfill_data(symbols)
+        outcome_data = _build_outcome_backfill_data(
+            symbols,
+            allow_fetch=bool(force or allow_open_session),
+        )
         if not outcome_data:
             status["message"] = "Post-close validation: waiting for next close data."
             st.session_state["_post_close_outcome_status"] = status
@@ -1624,10 +1627,17 @@ def _compare_prediction_cache_source() -> pd.DataFrame:
 def _get_saved_tomorrow_pick_symbols(limit: int = _COMPARE_STOCK_LIMIT) -> list[str]:
     try:
         store, _storage_mode = _load_tomorrow_store()
-        sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        all_sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        all_symbols = _tomorrow_flatten_sections(all_sections, limit=20)
+        source_modes = _normalize_tomorrow_source_modes(store.get("source_modes", {}), symbols=all_symbols)
+        selected_source = _normalize_pick_source_filter(
+            st.session_state.get("tmr_picks_source_filter", _PICK_SOURCE_ALL)
+        )
+        sections = _filter_tomorrow_sections_by_source(all_sections, source_modes, selected_source, limit=20)
+        filtered_picks = _tomorrow_flatten_sections(sections, limit=20)
         saved_store = {
             "sections": sections,
-            "picks": _tomorrow_flatten_sections(sections, limit=20) or store.get("picks", []),
+            "picks": filtered_picks or (store.get("picks", []) if selected_source == _PICK_SOURCE_ALL else []),
         }
         import_symbols = _select_compare_tomorrow_import_symbols(
             saved_store,
@@ -1810,6 +1820,175 @@ def _tomorrow_section_label(bucket: object) -> str:
     return str(_TOMORROW_SECTION_META.get(bucket_key, {}).get("label", "Relax"))
 
 
+_PICK_SOURCE_ALL = "All"
+_PICK_SOURCE_AI = "AI"
+_PICK_SOURCE_MANUAL = "Manual"
+_PICK_SOURCE_FILTER_OPTIONS = (_PICK_SOURCE_ALL, _PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
+_PICK_SOURCE_MODES = (_PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
+
+
+def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_AI) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"manual", "manually", "user", "typed", "own"}:
+        return _PICK_SOURCE_MANUAL
+    if text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+        return _PICK_SOURCE_AI
+    default_text = str(default or "").strip().lower()
+    if default_text in {"manual", "manually", "user", "typed", "own"}:
+        return _PICK_SOURCE_MANUAL
+    if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+        return _PICK_SOURCE_AI
+    return ""
+
+
+def _normalize_pick_source_filter(value: object, default: str = _PICK_SOURCE_ALL) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"all", "both", "mixed"}:
+        return _PICK_SOURCE_ALL
+    mode = _normalize_pick_source_mode(value, default="")
+    if mode in _PICK_SOURCE_MODES:
+        return mode
+    return default if default in _PICK_SOURCE_FILTER_OPTIONS else _PICK_SOURCE_ALL
+
+
+def _normalize_pick_source_mode_list(values: object, default: str = _PICK_SOURCE_AI) -> list[str]:
+    raw_values = list(values) if isinstance(values, (list, tuple, set)) else [values]
+    modes: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        mode = _normalize_pick_source_mode(raw, default="")
+        if mode not in _PICK_SOURCE_MODES or mode in seen:
+            continue
+        modes.append(mode)
+        seen.add(mode)
+    if not modes and default:
+        mode = _normalize_pick_source_mode(default)
+        if mode in _PICK_SOURCE_MODES:
+            modes.append(mode)
+    return modes
+
+
+def _source_mode_badge(mode: object) -> str:
+    normalized = _normalize_pick_source_mode(mode)
+    return "MAN" if normalized == _PICK_SOURCE_MANUAL else "AI"
+
+
+def _source_filter_caption(source_filter: object) -> str:
+    selected = _normalize_pick_source_filter(source_filter)
+    if selected == _PICK_SOURCE_AI:
+        return "AI imported"
+    if selected == _PICK_SOURCE_MANUAL:
+        return "Manual"
+    return "All"
+
+
+def _normalize_tomorrow_source_modes(
+    source_modes: object,
+    *,
+    symbols: list[object] | tuple[object, ...] | None = None,
+    default: str = _PICK_SOURCE_AI,
+) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    if isinstance(source_modes, dict):
+        for raw_symbol, raw_mode in source_modes.items():
+            symbol = _normalize_tomorrow_symbol(raw_symbol)
+            if not symbol:
+                continue
+            mapping[symbol] = _normalize_pick_source_mode(raw_mode, default=default)
+
+    normalized_symbols = _normalize_tomorrow_symbols(list(symbols or []), limit=40)
+    if normalized_symbols:
+        return {
+            symbol: mapping.get(symbol, _normalize_pick_source_mode(default))
+            for symbol in normalized_symbols
+        }
+    return mapping
+
+
+def _tomorrow_source_modes_from_store(store: dict | None) -> dict[str, str]:
+    normalized = _normalize_tomorrow_store(store)
+    return _normalize_tomorrow_source_modes(
+        normalized.get("source_modes", {}),
+        symbols=normalized.get("picks", []),
+    )
+
+
+def _tomorrow_source_mode_for_symbol(source_modes: object, symbol: object) -> str:
+    mapping = _normalize_tomorrow_source_modes(source_modes)
+    normalized = _normalize_tomorrow_symbol(symbol)
+    return _normalize_pick_source_mode(mapping.get(normalized, _PICK_SOURCE_AI))
+
+
+def _filter_tomorrow_sections_by_source(
+    sections: dict[str, list[object]] | None,
+    source_modes: object,
+    source_filter: object,
+    *,
+    limit: int = 20,
+) -> dict[str, list[str]]:
+    current_sections = _apply_tomorrow_sections_limit(sections, limit=limit)
+    selected = _normalize_pick_source_filter(source_filter)
+    if selected == _PICK_SOURCE_ALL:
+        return current_sections
+
+    mapping = _normalize_tomorrow_source_modes(
+        source_modes,
+        symbols=_tomorrow_flatten_sections(current_sections, limit=limit),
+    )
+    filtered = _tomorrow_section_defaults()
+    for bucket in _TOMORROW_SECTION_ORDER:
+        filtered[bucket] = [
+            symbol
+            for symbol in current_sections.get(bucket, [])
+            if _normalize_pick_source_mode(mapping.get(symbol, _PICK_SOURCE_AI)) == selected
+        ]
+    return _apply_tomorrow_sections_limit(filtered, limit=limit)
+
+
+def _tomorrow_source_counts(
+    sections: dict[str, list[object]] | None,
+    source_modes: object,
+) -> dict[str, int]:
+    symbols = _tomorrow_flatten_sections(sections, limit=20)
+    mapping = _normalize_tomorrow_source_modes(source_modes, symbols=symbols)
+    counts = {_PICK_SOURCE_AI: 0, _PICK_SOURCE_MANUAL: 0}
+    for symbol in symbols:
+        mode = _normalize_pick_source_mode(mapping.get(symbol, _PICK_SOURCE_AI))
+        if mode in counts:
+            counts[mode] += 1
+    return counts
+
+
+def _normalize_tomorrow_source_snapshots(
+    snapshots: object,
+    *,
+    symbols: list[object] | tuple[object, ...] | None = None,
+) -> dict[str, dict[str, object]]:
+    wanted = set(_normalize_tomorrow_symbols(list(symbols or []), limit=40))
+    out: dict[str, dict[str, object]] = {}
+    if not isinstance(snapshots, dict):
+        return out
+    for raw_symbol, raw_snapshot in snapshots.items():
+        symbol = _normalize_tomorrow_symbol(raw_symbol)
+        if not symbol or (wanted and symbol not in wanted) or not isinstance(raw_snapshot, dict):
+            continue
+        clean: dict[str, object] = {}
+        for key, value in raw_snapshot.items():
+            try:
+                if isinstance(value, np.generic):
+                    value = value.item()
+                elif isinstance(value, (pd.Timestamp, datetime, date)):
+                    value = value.isoformat()
+                elif isinstance(value, float) and not np.isfinite(value):
+                    value = ""
+            except Exception:
+                value = str(value)
+            clean[str(key)] = value
+        clean["Symbol"] = symbol
+        out[symbol] = clean
+    return out
+
+
 def _tomorrow_flatten_sections(sections: dict[str, list[object]] | None, limit: int = 20) -> list[str]:
     merged: list[str] = []
     seen: set[str] = set()
@@ -1853,7 +2032,13 @@ def _tomorrow_section_membership(sections: dict[str, list[object]] | None) -> di
 
 
 def _normalize_tomorrow_store(store: dict | None) -> dict:
-    default = {"picks": [], "notes": "", "sections": _tomorrow_section_defaults()}
+    default = {
+        "picks": [],
+        "notes": "",
+        "sections": _tomorrow_section_defaults(),
+        "source_modes": {},
+        "source_snapshots": {},
+    }
     if not isinstance(store, dict):
         return default.copy()
 
@@ -1877,12 +2062,23 @@ def _normalize_tomorrow_store(store: dict | None) -> dict:
 
     sections = _apply_tomorrow_sections_limit(section_seed, limit=20)
     picks = _tomorrow_flatten_sections(sections, limit=20)
+    source_modes = _normalize_tomorrow_source_modes(
+        store.get("source_modes", {}),
+        symbols=picks,
+        default=_PICK_SOURCE_AI,
+    )
+    source_snapshots = _normalize_tomorrow_source_snapshots(
+        store.get("source_snapshots", {}),
+        symbols=picks,
+    )
 
     notes_text = store.get("notes", "")
     return {
         "picks": picks,
         "notes": str(notes_text or ""),
         "sections": sections,
+        "source_modes": source_modes,
+        "source_snapshots": source_snapshots,
     }
 
 
@@ -1914,6 +2110,22 @@ def _merge_tomorrow_stores(latest: dict | None, incoming: dict | None, limit: in
     latest_norm = _normalize_tomorrow_store(latest)
     incoming_norm = _normalize_tomorrow_store(incoming)
     merged_sections = _tomorrow_section_defaults()
+    latest_source_modes = _normalize_tomorrow_source_modes(
+        latest_norm.get("source_modes", {}),
+        symbols=latest_norm.get("picks", []),
+    )
+    incoming_source_modes = _normalize_tomorrow_source_modes(
+        incoming_norm.get("source_modes", {}),
+        symbols=incoming_norm.get("picks", []),
+    )
+    latest_snapshots = _normalize_tomorrow_source_snapshots(
+        latest_norm.get("source_snapshots", {}),
+        symbols=latest_norm.get("picks", []),
+    )
+    incoming_snapshots = _normalize_tomorrow_source_snapshots(
+        incoming_norm.get("source_snapshots", {}),
+        symbols=incoming_norm.get("picks", []),
+    )
     seen: set[str] = set()
     total = 0
     for bucket in _TOMORROW_SECTION_ORDER:
@@ -1935,17 +2147,34 @@ def _merge_tomorrow_stores(latest: dict | None, incoming: dict | None, limit: in
             total += 1
     incoming_notes = str(incoming_norm.get("notes", "") or "")
     latest_notes = str(latest_norm.get("notes", "") or "")
+    merged_symbols = _tomorrow_flatten_sections(merged_sections, limit=limit)
+    merged_source_modes = {
+        symbol: latest_source_modes.get(symbol, incoming_source_modes.get(symbol, _PICK_SOURCE_AI))
+        for symbol in merged_symbols
+    }
+    for symbol, source_mode in incoming_source_modes.items():
+        if symbol in merged_source_modes:
+            merged_source_modes[symbol] = source_mode
+    merged_snapshots = {
+        symbol: dict(latest_snapshots.get(symbol) or incoming_snapshots.get(symbol) or {})
+        for symbol in merged_symbols
+    }
+    for symbol, snapshot in incoming_snapshots.items():
+        if symbol in merged_snapshots and snapshot:
+            merged_snapshots[symbol] = dict(snapshot)
     return _normalize_tomorrow_store(
         {
             "sections": merged_sections,
-            "picks": _tomorrow_flatten_sections(merged_sections, limit=limit),
+            "picks": merged_symbols,
             "notes": incoming_notes if incoming_notes.strip() else latest_notes,
+            "source_modes": merged_source_modes,
+            "source_snapshots": merged_snapshots,
         }
     )
 
 
 def _load_local_tomorrow_store() -> dict:
-    default = {"picks": [], "notes": ""}
+    default = _normalize_tomorrow_store(None)
     try:
         if not _TOMORROW_STORE_PATH.exists():
             return default
@@ -2106,32 +2335,66 @@ def _save_symbols_to_tomorrow_store(
     symbols: list[object] | tuple[object, ...] | None,
     *,
     bucket: str = "relax",
+    source_mode: str = _PICK_SOURCE_AI,
+    source_rows: object = None,
 ) -> dict[str, object]:
     store, storage_mode = _load_tomorrow_store()
     sections_before = store.get("sections", _tomorrow_section_defaults())
+    normalized_symbols = _normalize_tomorrow_symbols(symbols, limit=20)
     sections_after, added, moved, overflow = _assign_symbols_to_tomorrow_bucket(
         sections_before,
-        symbols,
+        normalized_symbols,
         bucket=bucket,
         limit=20,
     )
     target_bucket = _normalize_tomorrow_bucket(bucket)
-    changed = sections_after != store.get("sections", _tomorrow_section_defaults())
+    flat_after = _tomorrow_flatten_sections(sections_after, limit=20)
+    source_modes = _normalize_tomorrow_source_modes(
+        store.get("source_modes", {}),
+        symbols=flat_after,
+    )
+    target_source_mode = _normalize_pick_source_mode(source_mode, default=_PICK_SOURCE_AI) or _PICK_SOURCE_AI
+    for symbol in normalized_symbols:
+        if symbol in flat_after:
+            source_modes[symbol] = target_source_mode
+
+    source_snapshots = _normalize_tomorrow_source_snapshots(
+        store.get("source_snapshots", {}),
+        symbols=flat_after,
+    )
+    try:
+        snapshot_map = _build_import_snapshot_map(source_rows)
+    except Exception:
+        snapshot_map = {}
+    for symbol, snapshot in snapshot_map.items():
+        if symbol in flat_after and snapshot:
+            source_snapshots[symbol] = dict(snapshot)
+
+    changed = (
+        sections_after != store.get("sections", _tomorrow_section_defaults())
+        or source_modes != _normalize_tomorrow_source_modes(store.get("source_modes", {}), symbols=flat_after)
+        or source_snapshots != _normalize_tomorrow_source_snapshots(store.get("source_snapshots", {}), symbols=flat_after)
+    )
     if changed:
         store["sections"] = sections_after
-        store["picks"] = _tomorrow_flatten_sections(sections_after, limit=20)
+        store["picks"] = flat_after
+        store["source_modes"] = source_modes
+        store["source_snapshots"] = source_snapshots
         _persist_tomorrow_store(store)
 
     return {
         "added": int(added),
         "moved": int(moved),
         "changed": bool(changed),
-        "total": len(_tomorrow_flatten_sections(sections_after, limit=20)),
+        "total": len(flat_after),
         "section_total": len(sections_after.get(target_bucket, [])),
         "storage_mode": storage_mode,
         "limit_reached": bool(overflow > 0),
+        "saved_symbols": [symbol for symbol in normalized_symbols if symbol in flat_after],
+        "overflow": int(overflow),
         "bucket": target_bucket,
         "bucket_label": _tomorrow_section_label(target_bucket),
+        "source_mode": target_source_mode,
     }
 
 
@@ -2140,6 +2403,8 @@ def _clear_tomorrow_picks_store(store: dict) -> int:
     removed_count = len(normalized.get("picks", []))
     normalized["sections"] = _tomorrow_section_defaults()
     normalized["picks"] = []
+    normalized["source_modes"] = {}
+    normalized["source_snapshots"] = {}
     _persist_tomorrow_store(normalized, replace=True)
     return removed_count
 
@@ -2175,6 +2440,8 @@ def _render_add_in_picks_actions(
     key_prefix: str,
     scope_label: str,
     bucket: str = "relax",
+    source_mode: str = _PICK_SOURCE_AI,
+    source_rows: object = None,
     helper_text: str = "",
 ) -> None:
     normalized = _normalize_tomorrow_symbols(symbols)
@@ -2200,8 +2467,14 @@ def _render_add_in_picks_actions(
         if not normalized:
             st.info("No valid stock is available to add right now.")
         else:
-            summary = _save_symbols_to_tomorrow_store(normalized, bucket=bucket)
+            summary = _save_symbols_to_tomorrow_store(
+                normalized,
+                bucket=bucket,
+                source_mode=source_mode,
+                source_rows=source_rows,
+            )
             bucket_label = str(summary.get("bucket_label", _tomorrow_section_label(bucket)))
+            source_label = str(summary.get("source_mode", source_mode) or source_mode)
             if summary["added"] or summary["moved"]:
                 target = "Google Sheets" if summary["storage_mode"] == "cloud" else "local storage"
                 parts: list[str] = []
@@ -2212,7 +2485,7 @@ def _render_add_in_picks_actions(
                     noun = "stock" if int(summary["moved"]) == 1 else "stocks"
                     parts.append(f"moved {summary['moved']} existing {noun}")
                 joined = " and ".join(parts)
-                st.success(f"{joined.title()} from {scope_label} into the {bucket_label} strip in {target}.")
+                st.success(f"{joined.title()} from {scope_label} into the {bucket_label} strip as {source_label} in {target}.")
             elif summary["limit_reached"]:
                 st.info("Tomorrow's Picks is already full at 20 stocks, or these symbols are already saved.")
             else:
@@ -2286,6 +2559,39 @@ def _normalize_import_text_list(values: object) -> list[str]:
             out.append(text)
             seen.add(text)
     return out
+
+
+def _imported_record_source_modes(record: dict[str, object] | None) -> list[str]:
+    if not isinstance(record, dict):
+        return [_PICK_SOURCE_AI]
+    raw_modes = record.get("source_modes", record.get("source_mode", record.get("pick_source_mode", [])))
+    return _normalize_pick_source_mode_list(raw_modes, default=_PICK_SOURCE_AI)
+
+
+def _filter_imported_ai_records_by_source(
+    records: list[dict[str, object]] | tuple[dict[str, object], ...] | None,
+    source_filter: object,
+) -> list[dict[str, object]]:
+    selected = _normalize_pick_source_filter(source_filter)
+    normalized_records = [dict(record) for record in list(records or []) if isinstance(record, dict)]
+    if selected == _PICK_SOURCE_ALL:
+        return normalized_records
+    return [
+        record
+        for record in normalized_records
+        if selected in _imported_record_source_modes(record)
+    ]
+
+
+def _imported_source_counts(records: list[dict[str, object]] | tuple[dict[str, object], ...] | None) -> dict[str, int]:
+    counts = {_PICK_SOURCE_AI: 0, _PICK_SOURCE_MANUAL: 0}
+    for record in list(records or []):
+        if not isinstance(record, dict):
+            continue
+        for mode in _imported_record_source_modes(record):
+            if mode in counts:
+                counts[mode] += 1
+    return counts
 
 
 def _best_import_mode_for_records(
@@ -2397,6 +2703,7 @@ def _legacy_imported_ai_learning_records() -> list[dict[str, object]]:
                 "categories": [category],
                 "sources": [origin],
                 "modes": _normalize_import_mode_list(mode_value),
+                "source_modes": [_PICK_SOURCE_AI],
                 "last_imported_at": timestamp,
             }
         )
@@ -2417,6 +2724,10 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
             sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
             modes = _normalize_import_mode_list(item.get("modes", item.get("mode", [])))
+            source_modes = _normalize_pick_source_mode_list(
+                item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", []))),
+                default=_PICK_SOURCE_AI,
+            )
             if 7 in modes:
                 categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(item.get("last_imported_at", item.get("imported_at", "")) or "")
@@ -2430,6 +2741,7 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = [_import_category_from_context(source_label=origin, mode_value=mode_value)]
             sources = [origin]
             modes = _normalize_import_mode_list(mode_value)
+            source_modes = [_PICK_SOURCE_AI]
             if 7 in modes:
                 categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(st.session_state.get("prediction_chart_imported_at", "") or "")
@@ -2442,6 +2754,7 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
                 "categories": [],
                 "sources": [],
                 "modes": [],
+                "source_modes": [],
                 "last_imported_at": imported_at,
                 "snapshot": {},
             },
@@ -2449,6 +2762,10 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
         record["categories"] = _normalize_import_text_list(list(record.get("categories", [])) + categories)
         record["sources"] = _normalize_import_text_list(list(record.get("sources", [])) + sources)
         record["modes"] = _normalize_import_mode_list(list(record.get("modes", [])) + modes)
+        record["source_modes"] = _normalize_pick_source_mode_list(
+            list(record.get("source_modes", [])) + source_modes,
+            default=_PICK_SOURCE_AI,
+        )
         if imported_at:
             record["last_imported_at"] = imported_at
         if isinstance(snapshot, dict) and snapshot:
@@ -2656,8 +2973,16 @@ def _get_imported_ai_learning_records() -> list[dict[str, object]]:
     return records
 
 
-def _sync_imported_ai_store_to_prediction_chart(*, focus_symbol: str | None = None) -> dict[str, object]:
-    records = _get_imported_ai_learning_records()
+def _sync_imported_ai_store_to_prediction_chart(
+    *,
+    focus_symbol: str | None = None,
+    source_filter: object = _PICK_SOURCE_ALL,
+) -> dict[str, object]:
+    selected_source = _normalize_pick_source_filter(source_filter)
+    records = _filter_imported_ai_records_by_source(
+        _get_imported_ai_learning_records(),
+        selected_source,
+    )
     symbols = [str(record.get("ticker", "")).strip() for record in records if str(record.get("ticker", "")).strip()]
     symbols = _normalize_prediction_chart_imports(symbols, limit=40)
     if not symbols:
@@ -2681,6 +3006,7 @@ def _sync_imported_ai_store_to_prediction_chart(*, focus_symbol: str | None = No
     st.session_state["prediction_chart_import_context"] = {
         "latest_sources": latest_sources,
         "latest_modes": [focus_mode] if focus_mode > 0 else [],
+        "source_filter": selected_source,
         "count": len(symbols),
     }
     return {
@@ -2697,6 +3023,7 @@ def _store_symbols_in_imported_ai_learning(
     source_label: str,
     source_bucket: object = "",
     source_rows: object = None,
+    source_mode: str = _PICK_SOURCE_AI,
 ) -> dict[str, object]:
     normalized = _normalize_prediction_chart_imports(symbols, limit=40)
     if not normalized:
@@ -2717,6 +3044,7 @@ def _store_symbols_in_imported_ai_learning(
     )
     source_text = str(source_label or category or "Imported AI Stocks")
     mode_list = _normalize_import_mode_list(mode_value)
+    source_mode_list = _normalize_pick_source_mode_list(source_mode, default=_PICK_SOURCE_AI)
     ts = datetime.now().isoformat(timespec="seconds")
     added = 0
     updated = 0
@@ -2728,6 +3056,7 @@ def _store_symbols_in_imported_ai_learning(
                 "categories": [category] if category else [],
                 "sources": [source_text],
                 "modes": mode_list,
+                "source_modes": source_mode_list,
                 "last_imported_at": ts,
                 "snapshot": dict(snapshot_map.get(symbol) or {}),
             }
@@ -2737,10 +3066,15 @@ def _store_symbols_in_imported_ai_learning(
             before_categories = list(record.get("categories", []))
             before_sources = list(record.get("sources", []))
             before_modes = list(record.get("modes", []))
+            before_source_modes = list(record.get("source_modes", []))
             before_snapshot = dict(record.get("snapshot", {}) or {})
             record["categories"] = _normalize_import_text_list(before_categories + ([category] if category else []))
             record["sources"] = _normalize_import_text_list(before_sources + [source_text])
             record["modes"] = _normalize_import_mode_list(before_modes + mode_list)
+            record["source_modes"] = _normalize_pick_source_mode_list(
+                before_source_modes + source_mode_list,
+                default=_PICK_SOURCE_AI,
+            )
             record["last_imported_at"] = ts
             if symbol in snapshot_map and snapshot_map.get(symbol):
                 record["snapshot"] = dict(snapshot_map.get(symbol) or {})
@@ -2749,6 +3083,7 @@ def _store_symbols_in_imported_ai_learning(
                 record.get("categories", []) != before_categories
                 or record.get("sources", []) != before_sources
                 or record.get("modes", []) != before_modes
+                or record.get("source_modes", []) != before_source_modes
                 or dict(record.get("snapshot", {}) or {}) != before_snapshot
             ):
                 updated += 1
@@ -2764,10 +3099,11 @@ def _store_symbols_in_imported_ai_learning(
         "mode": mode_list[0] if mode_list else st.session_state.get("mode", 0),
         "source_label": source_text,
         "category": category,
+        "source_mode": source_mode_list[0] if source_mode_list else _PICK_SOURCE_AI,
     }
 
 
-def _log_imported_symbols_for_self_learning() -> dict[str, object]:
+def _log_imported_symbols_for_self_learning(*, source_filter: object = _PICK_SOURCE_ALL) -> dict[str, object]:
     result: dict[str, object] = {
         "symbols": [],
         "matched_symbols": [],
@@ -2778,7 +3114,12 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
         "mode": 0,
     }
     try:
-        imported_records = _get_imported_ai_learning_records()
+        selected_source = _normalize_pick_source_filter(source_filter)
+        imported_records = _filter_imported_ai_records_by_source(
+            _get_imported_ai_learning_records(),
+            selected_source,
+        )
+        result["source_filter"] = selected_source
         imported = [
             str(record.get("ticker", "")).strip()
             for record in imported_records
@@ -2792,7 +3133,10 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
         result["symbols"] = imported
         st.session_state["self_learning_imported_symbols"] = imported
         if not imported:
-            result["message"] = "Add some stocks into Imported AI Stocks first."
+            if selected_source == _PICK_SOURCE_ALL:
+                result["message"] = "Add some stocks into Imported AI Stocks first."
+            else:
+                result["message"] = f"No {_source_filter_caption(selected_source)} Imported AI stocks are saved yet."
             return result
 
         frames: list[pd.DataFrame] = []
@@ -2858,6 +3202,11 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
             sources = _normalize_import_text_list(record.get("sources", []))
             return " | ".join(sources)
 
+        def _record_source_mode(symbol: object) -> str:
+            record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
+            modes = _imported_record_source_modes(record)
+            return " | ".join(modes)
+
         def _record_mode(symbol: object) -> int:
             record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
             modes = _normalize_import_mode_list(record.get("modes", []))
@@ -2881,6 +3230,7 @@ def _log_imported_symbols_for_self_learning() -> dict[str, object]:
 
         working["Import Category"] = working["_learn_symbol"].map(_record_categories)
         working["Import Source"] = working["_learn_symbol"].map(_record_sources)
+        working["Import Source Mode"] = working["_learn_symbol"].map(_record_source_mode)
         working["Import Mode"] = working["_learn_symbol"].map(_record_mode)
         working["Logged At"] = working["_learn_symbol"].map(_record_logged_at)
         working["_learn_logged_date"] = working["Logged At"].map(_logged_date)
@@ -2976,8 +3326,12 @@ def _refresh_imported_ai_last_outcomes() -> str:
     return f"Checked last outcomes by date. Pending rows: {pending}."
 
 
-def _run_imported_ai_self_improve_update(*, include_outcome_refresh: bool = True) -> dict[str, object]:
-    summary = _log_imported_symbols_for_self_learning()
+def _run_imported_ai_self_improve_update(
+    *,
+    include_outcome_refresh: bool = True,
+    source_filter: object = _PICK_SOURCE_ALL,
+) -> dict[str, object]:
+    summary = _log_imported_symbols_for_self_learning(source_filter=source_filter)
     learning_message = str(summary.get("message", "") or "Self-learning update finished.").strip()
     outcome_message = ""
     if include_outcome_refresh:
@@ -3241,24 +3595,37 @@ def _normalize_tomorrow_pick_import_row(
 def _build_tomorrow_picks_import_source_rows(
     symbols: list[str],
     sections: dict[str, list[object]] | None,
+    *,
+    source_modes: object = None,
+    source_snapshots: object = None,
 ) -> pd.DataFrame:
     normalized = _normalize_tomorrow_symbols(symbols, limit=40)
     if not normalized:
         return pd.DataFrame()
     membership = _tomorrow_section_membership(sections)
-    source_map = _collect_tomorrow_import_source_map(normalized)
+    source_map = _normalize_tomorrow_source_snapshots(source_snapshots, symbols=normalized)
+    fallback_map = _collect_tomorrow_import_source_map(normalized)
+    for symbol in normalized:
+        if symbol not in source_map and symbol in fallback_map:
+            source_map[symbol] = dict(fallback_map[symbol])
     rows = [
-        _normalize_tomorrow_pick_import_row(
-            symbol,
-            membership.get(symbol, "relax"),
-            source_map.get(symbol),
-        )
+        {
+            **_normalize_tomorrow_pick_import_row(
+                symbol,
+                membership.get(symbol, "relax"),
+                source_map.get(symbol),
+            ),
+            "Import Source Mode": _tomorrow_source_mode_for_symbol(source_modes, symbol),
+        }
         for symbol in normalized
     ]
     return pd.DataFrame(rows)
 
 
-def _import_tomorrow_picks_to_imported_ai_learning() -> dict[str, object]:
+def _import_tomorrow_picks_to_imported_ai_learning(
+    *,
+    source_filter: object = _PICK_SOURCE_ALL,
+) -> dict[str, object]:
     result: dict[str, object] = {
         "symbols": [],
         "added": 0,
@@ -3269,15 +3636,38 @@ def _import_tomorrow_picks_to_imported_ai_learning() -> dict[str, object]:
     }
     try:
         store, _storage_mode = _load_tomorrow_store()
-        sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        all_sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+        source_modes = _normalize_tomorrow_source_modes(
+            store.get("source_modes", {}),
+            symbols=_tomorrow_flatten_sections(all_sections, limit=20),
+        )
+        source_snapshots = _normalize_tomorrow_source_snapshots(
+            store.get("source_snapshots", {}),
+            symbols=_tomorrow_flatten_sections(all_sections, limit=20),
+        )
+        selected_source = _normalize_pick_source_filter(source_filter)
+        sections = _filter_tomorrow_sections_by_source(
+            all_sections,
+            source_modes,
+            selected_source,
+            limit=20,
+        )
         symbols = _tomorrow_flatten_sections(sections, limit=20)
         if not symbols:
-            symbols = _normalize_tomorrow_symbols(store.get("picks", []), limit=20)
+            symbols = _normalize_tomorrow_symbols(store.get("picks", []), limit=20) if selected_source == _PICK_SOURCE_ALL else []
         if not symbols:
-            result["message"] = "No Tomorrow's Picks are saved yet. Add picks first, then import them into Imported AI Stocks."
+            if selected_source == _PICK_SOURCE_ALL:
+                result["message"] = "No Tomorrow's Picks are saved yet. Add picks first, then import them into Imported AI Stocks."
+            else:
+                result["message"] = f"No {_source_filter_caption(selected_source)} Tomorrow's Picks are saved yet."
             return result
 
-        source_df = _build_tomorrow_picks_import_source_rows(symbols, sections)
+        source_df = _build_tomorrow_picks_import_source_rows(
+            symbols,
+            sections,
+            source_modes=source_modes,
+            source_snapshots=source_snapshots,
+        )
         added_total = 0
         updated_total = 0
         for bucket in _TOMORROW_SECTION_ORDER:
@@ -3288,20 +3678,29 @@ def _import_tomorrow_picks_to_imported_ai_learning() -> dict[str, object]:
             ]
             if not bucket_symbols:
                 continue
-            bucket_rows = pd.DataFrame()
-            if isinstance(source_df, pd.DataFrame) and not source_df.empty and "Symbol" in source_df.columns:
-                bucket_rows = source_df[source_df["Symbol"].isin(bucket_symbols)].copy()
-            summary = _store_symbols_in_imported_ai_learning(
-                bucket_symbols,
-                mode_value=_tomorrow_import_mode_for_bucket(bucket),
-                source_label=f"Tomorrow's Picks - {_tomorrow_section_label(bucket)}",
-                source_bucket=bucket,
-                source_rows=bucket_rows,
-            )
-            added_total += int(summary.get("added", 0) or 0)
-            updated_total += int(summary.get("updated", 0) or 0)
+            for pick_source_mode in _PICK_SOURCE_MODES:
+                source_group = [
+                    symbol
+                    for symbol in bucket_symbols
+                    if _tomorrow_source_mode_for_symbol(source_modes, symbol) == pick_source_mode
+                ]
+                if not source_group:
+                    continue
+                bucket_rows = pd.DataFrame()
+                if isinstance(source_df, pd.DataFrame) and not source_df.empty and "Symbol" in source_df.columns:
+                    bucket_rows = source_df[source_df["Symbol"].isin(source_group)].copy()
+                summary = _store_symbols_in_imported_ai_learning(
+                    source_group,
+                    mode_value=_tomorrow_import_mode_for_bucket(bucket),
+                    source_label=f"Tomorrow's Picks - {_tomorrow_section_label(bucket)}",
+                    source_bucket=bucket,
+                    source_rows=bucket_rows,
+                    source_mode=pick_source_mode,
+                )
+                added_total += int(summary.get("added", 0) or 0)
+                updated_total += int(summary.get("updated", 0) or 0)
 
-        tracking_summary = _run_imported_ai_self_improve_update()
+        tracking_summary = _run_imported_ai_self_improve_update(source_filter=selected_source)
         logged = int(tracking_summary.get("added", 0) or 0)
         already_logged = int(tracking_summary.get("already_logged", 0) or 0)
         action_bits: list[str] = []
@@ -3324,7 +3723,7 @@ def _import_tomorrow_picks_to_imported_ai_learning() -> dict[str, object]:
                 "already_logged": already_logged,
                 "kind": "success" if added_total or updated_total or logged else "info",
                 "message": (
-                    f"Imported {len(symbols)} Tomorrow's Picks into Imported AI Stocks; "
+                    f"Imported {len(symbols)} {_source_filter_caption(selected_source)} Tomorrow's Picks into Imported AI Stocks; "
                     f"{', '.join(action_bits)}. {learning_message}"
                 ).strip(),
             }
@@ -3334,6 +3733,165 @@ def _import_tomorrow_picks_to_imported_ai_learning() -> dict[str, object]:
         result["kind"] = "error"
         result["message"] = f"Import failed: {exc}"
         return result
+
+
+def _ail_aura_bucket_for_row(row: dict[str, object]) -> str:
+    mode_value = row.get("Mode ID", row.get("Mode", ""))
+    try:
+        mode_int = resolve_mode_id(mode_value, 0)
+    except Exception:
+        mode_int = 0
+    if mode_int:
+        return _tomorrow_bucket_for_mode(mode_int)
+
+    text = " ".join(
+        str(row.get(key, "") or "")
+        for key in ("AI Verdict", "Final Verdict", "Entry Timing", "Timing Reason", "AIL Category", "Mode Name")
+    ).lower()
+    if "breakout" in text:
+        return "breakout"
+    if "intraday" in text or "open entry" in text:
+        return "intraday"
+    if "swing" in text or "tomorrow" in text:
+        return "swing"
+    if "momentum" in text:
+        return "momentum"
+    return "relax"
+
+
+def _ail_aura_row_is_importable(row: dict[str, object]) -> bool:
+    text = " ".join(
+        str(row.get(key, "") or "")
+        for key in ("AI Verdict", "Final Verdict", "Entry Timing", "Timing Reason")
+    ).upper()
+    if not text:
+        return False
+    if any(blocked in text for blocked in ("AVOID", "REJECT", "WEAK CONFIRMATION")):
+        return False
+    return any(token in text for token in ("BUY", "WATCH", "MOMENTUM", "SWING", "BREAKOUT", "OPEN ENTRY", "WAIT"))
+
+
+def _import_ail_aura_to_tomorrow_picks(
+    aura_df: pd.DataFrame,
+    final_ranked_df: pd.DataFrame,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "kind": "info",
+        "message": "",
+        "symbols": [],
+        "added": 0,
+        "moved": 0,
+        "updated": 0,
+    }
+    try:
+        if not isinstance(aura_df, pd.DataFrame) or aura_df.empty:
+            result["message"] = "No Final Aura Verdict rows are available to import yet."
+            return result
+
+        aura_work = aura_df.copy()
+        aura_work["_ail_symbol"] = aura_work.apply(lambda row: _normalize_tomorrow_symbol(row.get("Symbol")), axis=1)
+        aura_work = aura_work[aura_work["_ail_symbol"].astype(str).str.len() > 0].copy()
+        if aura_work.empty:
+            result["message"] = "No valid Final Aura Verdict symbols were available to import."
+            return result
+
+        final_map: dict[str, dict[str, object]] = {}
+        if isinstance(final_ranked_df, pd.DataFrame) and not final_ranked_df.empty:
+            final_work = final_ranked_df.copy()
+            final_work["_ail_symbol"] = final_work.apply(
+                lambda row: _normalize_tomorrow_symbol(row.get("Symbol", row.get("Ticker", ""))),
+                axis=1,
+            )
+            final_work = final_work[final_work["_ail_symbol"].astype(str).str.len() > 0].copy()
+            final_work = final_work.drop_duplicates(subset=["_ail_symbol"], keep="first")
+            final_map = {
+                str(row.get("_ail_symbol", "") or ""): row.drop(labels=["_ail_symbol"], errors="ignore").to_dict()
+                for _, row in final_work.iterrows()
+            }
+
+        grouped_rows: dict[str, list[dict[str, object]]] = {bucket: [] for bucket in _TOMORROW_SECTION_ORDER}
+        for _, aura_row in aura_work.iterrows():
+            symbol = _normalize_tomorrow_symbol(aura_row.get("_ail_symbol"))
+            if not symbol:
+                continue
+            merged = dict(final_map.get(symbol, {}))
+            merged.update(aura_row.drop(labels=["_ail_symbol"], errors="ignore").to_dict())
+            merged["Symbol"] = symbol
+            merged["Import Source"] = "A-I-L IN ONE - Final Aura Verdict"
+            merged["Import Category"] = "A-I-L Final Aura"
+            merged["Import Source Mode"] = _PICK_SOURCE_AI
+            if not _ail_aura_row_is_importable(merged):
+                continue
+            bucket = _ail_aura_bucket_for_row(merged)
+            grouped_rows[bucket].append(merged)
+
+        imported_symbols: list[str] = []
+        added_total = 0
+        moved_total = 0
+        updated_total = 0
+        overflow_total = 0
+        limit_remaining = 20
+        for bucket in _TOMORROW_SECTION_ORDER:
+            rows = grouped_rows.get(bucket, [])[:limit_remaining]
+            if not rows:
+                continue
+            symbols = [str(row.get("Symbol", "") or "") for row in rows if str(row.get("Symbol", "") or "")]
+            if not symbols:
+                continue
+            summary = _save_symbols_to_tomorrow_store(
+                symbols,
+                bucket=bucket,
+                source_mode=_PICK_SOURCE_AI,
+                source_rows=pd.DataFrame(rows),
+            )
+            saved_symbols = _normalize_tomorrow_symbols(summary.get("saved_symbols", symbols), limit=20)
+            imported_symbols.extend(saved_symbols)
+            added_total += int(summary.get("added", 0) or 0)
+            moved_total += int(summary.get("moved", 0) or 0)
+            overflow_total += int(summary.get("overflow", 0) or 0)
+            if bool(summary.get("changed", False)) and not int(summary.get("added", 0) or 0) and not int(summary.get("moved", 0) or 0):
+                updated_total += len(saved_symbols)
+            cached_after, _cached_mode = _get_cached_tomorrow_store()
+            current_total = len(cached_after.get("picks", [])) if isinstance(cached_after, dict) else 0
+            limit_remaining = max(0, 20 - current_total)
+            if limit_remaining <= 0:
+                break
+
+        imported_symbols = _normalize_tomorrow_symbols(imported_symbols, limit=20)
+        if not imported_symbols:
+            result.update(
+                {
+                    "kind": "warning",
+                    "message": "A-I-L Final Aura has no eligible BUY/WATCH rows to import into Tomorrow's Picks.",
+                }
+            )
+            return result
+
+        st.session_state["tmr_picks_source_filter"] = _PICK_SOURCE_AI
+        result.update(
+            {
+                "kind": "success",
+                "symbols": imported_symbols,
+                "added": added_total,
+                "moved": moved_total,
+                "updated": updated_total,
+                "message": (
+                    f"Imported {len(imported_symbols)} A-I-L Final Aura stock(s) into Tomorrow's Picks as AI. "
+                    f"Added {added_total}, moved {moved_total}, refreshed {updated_total}."
+                    + (f" Skipped {overflow_total} because Tomorrow's Picks is full." if overflow_total else "")
+                ),
+            }
+        )
+        return result
+    except Exception as exc:
+        result["kind"] = "warning"
+        result["message"] = f"A-I-L import could not finish: {exc}"
+        return result
+
+
+def _open_tomorrow_picks_from_ail() -> None:
+    st.session_state["tmr_picks_source_filter"] = _PICK_SOURCE_AI
+    _activate_sidebar_panel("tomorrow_picks_show_panel")
 
 
 def _render_sidebar_imported_ai_learning_button() -> None:
@@ -3453,9 +4011,14 @@ def _render_sidebar_imported_ai_learning_entry_button() -> None:
         _activate_sidebar_panel("imported_ai_learning_show_panel")
 
 
-def _build_imported_ai_learning_panel_data() -> dict[str, object]:
+def _build_imported_ai_learning_panel_data(
+    *,
+    source_filter: object = _PICK_SOURCE_ALL,
+) -> dict[str, object]:
+    selected_source = _normalize_pick_source_filter(source_filter)
     payload: dict[str, object] = {
         "imported": [],
+        "total_imported": 0,
         "origin": "Imported AI Stocks",
         "mode": st.session_state.get("mode", 0),
         "table": pd.DataFrame(),
@@ -3465,14 +4028,21 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
         "missing_symbols": [],
         "categories": [],
         "records": [],
+        "source_counts": {_PICK_SOURCE_AI: 0, _PICK_SOURCE_MANUAL: 0},
+        "source_filter": selected_source,
         "storage_mode": "local",
         "updated_at": "",
     }
     try:
         store_payload, storage_mode = _load_imported_ai_learning_store()
-        records = _normalize_imported_ai_learning_records(store_payload.get("records", []))
+        all_records = _normalize_imported_ai_learning_records(store_payload.get("records", []))
+        records = _filter_imported_ai_records_by_source(all_records, selected_source)
         payload["storage_mode"] = storage_mode
         payload["updated_at"] = str(store_payload.get("updated_at", "") or "")
+        payload["total_imported"] = len([
+            record for record in all_records if str(record.get("ticker", "")).strip()
+        ])
+        payload["source_counts"] = _imported_source_counts(all_records)
         imported = [
             str(record.get("ticker", "")).strip()
             for record in records
@@ -3599,6 +4169,7 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
             record_categories = _normalize_import_text_list(record.get("categories", []))
             record_sources = _normalize_import_text_list(record.get("sources", []))
             record_modes = _normalize_import_mode_list(record.get("modes", []))
+            record_source_modes = _imported_record_source_modes(record)
             visible_modes = [mode for mode in record_modes if mode > 0]
             stored_state = (
                 "Live Scan" if symbol in scan_map
@@ -3608,6 +4179,7 @@ def _build_imported_ai_learning_panel_data() -> dict[str, object]:
             rows.append(
                 {
                     "Ticker": symbol,
+                    "Source Mode": " | ".join(record_source_modes) if record_source_modes else _PICK_SOURCE_AI,
                     "Categories": " | ".join(record_categories) if record_categories else "-",
                     "Sources": " | ".join(record_sources[:3]) if record_sources else "-",
                     "Modes": " | ".join([f"M{mode}" for mode in visible_modes]) if visible_modes else "-",
@@ -3932,6 +4504,7 @@ def _render_imported_ai_self_learning_intelligence() -> None:
                 columns={
                     "symbol": "Ticker",
                     "mode": "Mode",
+                    "source_mode": "Source Mode",
                     "import_category": "Category",
                     "strategy_strip": "Strip",
                     "sector": "Sector",
@@ -3944,7 +4517,7 @@ def _render_imported_ai_self_learning_intelligence() -> None:
             )
             display = _clean_display_frame(
                 display,
-                columns=["Ticker", "Mode", "Strip", "Category", "Sector", "Trap", "Score", "Return %", "Outcome", "Correct"],
+                columns=["Ticker", "Mode", "Source Mode", "Strip", "Category", "Sector", "Trap", "Score", "Return %", "Outcome", "Correct"],
             )
             display = _coerce_display_numbers(display, ["Score", "Return %"])
             st.dataframe(
@@ -3952,6 +4525,7 @@ def _render_imported_ai_self_learning_intelligence() -> None:
                 column_config={
                     "Ticker": st.column_config.TextColumn("Ticker", width="small"),
                     "Mode": st.column_config.TextColumn("Mode", width="small"),
+                    "Source Mode": st.column_config.TextColumn("Source", width="small"),
                     "Strip": st.column_config.TextColumn("Strip", width="small"),
                     "Category": st.column_config.TextColumn("Category", width="medium"),
                     "Sector": st.column_config.TextColumn("Sector", width="small"),
@@ -3983,12 +4557,14 @@ def _render_imported_ai_self_learning_intelligence() -> None:
             st.write(_format_perf_bucket(perf.get("worst_sector")))
 
     with _risk_tab:
-        _r1, _r2, _r3 = st.columns(3)
+        _r1, _r2, _r3, _r4 = st.columns(4)
         with _r1:
-            _render_bucket_table("By source", perf.get("by_import_source"))
+            _render_bucket_table("By source mode", perf.get("by_source_mode"))
         with _r2:
-            _render_bucket_table("By mode", perf.get("by_mode"))
+            _render_bucket_table("By source", perf.get("by_import_source"))
         with _r3:
+            _render_bucket_table("By mode", perf.get("by_mode"))
+        with _r4:
             _render_bucket_table("By trap risk", perf.get("by_trap_risk"))
 
 
@@ -3996,24 +4572,34 @@ def render_imported_ai_learning_panel() -> None:
     if not st.session_state.get("imported_ai_learning_show_panel", False):
         return
 
-    try:
-        _run_post_close_outcome_refresh()
-    except Exception:
-        pass
-
-    panel = _build_imported_ai_learning_panel_data()
+    selected_source = _normalize_pick_source_filter(
+        st.session_state.get("imported_ai_source_filter", _PICK_SOURCE_ALL)
+    )
+    panel = _build_imported_ai_learning_panel_data(source_filter=selected_source)
     imported = list(panel.get("imported", []) or [])
+    total_imported = int(panel.get("total_imported", len(imported)) or 0)
     table = panel.get("table")
     if not isinstance(table, pd.DataFrame):
         table = pd.DataFrame()
 
     st.divider()
-    _hdr_col, _close_col = st.columns([6, 1])
+    _hdr_col, _source_col, _close_col = st.columns([5, 1.9, 1])
     with _hdr_col:
         st.header("Imported AI Stocks")
         st.caption(
             "This screen shows the imported AI stocks already saved in permanent storage, their saved scan or snapshot data, "
             "their import category/source, and their learning-log status. Use Self Improve here when you want this basket to feed the learning engine."
+        )
+    with _source_col:
+        st.write("")
+        selected_source = st.radio(
+            "Source",
+            options=list(_PICK_SOURCE_FILTER_OPTIONS),
+            index=list(_PICK_SOURCE_FILTER_OPTIONS).index(selected_source),
+            horizontal=True,
+            key="imported_ai_source_filter",
+            label_visibility="collapsed",
+            help="Toggle between manually added picks and AI/imported picks.",
         )
     with _close_col:
         st.write("")
@@ -4029,6 +4615,7 @@ def render_imported_ai_learning_panel() -> None:
     _category_text = ", ".join(list(panel.get("categories", []) or [])[:4]) or "Imported AI Stocks"
     _storage_mode = str(panel.get("storage_mode", "local") or "local")
     _storage_label = "Cloud + Local backup" if _storage_mode == "cloud" else "Local persistent store"
+    _source_counts = panel.get("source_counts", {}) if isinstance(panel.get("source_counts", {}), dict) else {}
     _persistence_health = st.session_state.get("_persistence_health", {})
     _github_backup_label = (
         "GitHub backup ON"
@@ -4037,7 +4624,9 @@ def render_imported_ai_learning_panel() -> None:
     )
     _updated_at = str(panel.get("updated_at", "") or "").strip()
     st.caption(
-        f"Categories: {_category_text} | {_mode_label} | Storage: {_storage_label} | {_github_backup_label} | Imported stocks: {len(imported)}"
+        f"Source: {_source_filter_caption(selected_source)} | AI {int(_source_counts.get(_PICK_SOURCE_AI, 0) or 0)} | "
+        f"Manual {int(_source_counts.get(_PICK_SOURCE_MANUAL, 0) or 0)} | Categories: {_category_text} | {_mode_label} | "
+        f"Storage: {_storage_label} | {_github_backup_label} | Showing {len(imported)} of {total_imported} imported stocks"
     )
     if _updated_at:
         st.caption(f"Last saved: {_updated_at}")
@@ -4066,7 +4655,7 @@ def render_imported_ai_learning_panel() -> None:
         )
     with _action2:
         if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", width="stretch"):
-            summary = _sync_imported_ai_store_to_prediction_chart()
+            summary = _sync_imported_ai_store_to_prediction_chart(source_filter=selected_source)
             if list(summary.get("symbols", []) or []):
                 _activate_sidebar_panel("pred_chart_show_panel")
             else:
@@ -4086,6 +4675,8 @@ def render_imported_ai_learning_panel() -> None:
                 "prediction_chart_imported_at",
                 "prediction_chart_import_context",
                 "imported_ai_learning_updated_at",
+                "imported_ai_intelligence_visible",
+                "imported_ai_top3_prompt_visible",
             ):
                 st.session_state.pop(key, None)
             st.rerun()
@@ -4094,7 +4685,7 @@ def render_imported_ai_learning_panel() -> None:
             _activate_sidebar_panel(None)
 
     if _self_improve_clicked:
-        summary = _run_imported_ai_self_improve_update()
+        summary = _run_imported_ai_self_improve_update(source_filter=selected_source)
         added = int(summary.get("added", 0) or 0)
         already_logged = int(summary.get("already_logged", 0) or 0)
         missing = int(len(list(summary.get("missing_symbols", []) or [])))
@@ -4113,7 +4704,10 @@ def render_imported_ai_learning_panel() -> None:
             st.info(message)
 
     if not imported:
-        st.info("No imported AI stocks are stored yet in the permanent basket. Add some symbols from a Mode Top 3, Breakout Radar, CSV Breakout, or Live Breakout Pulse panel first.")
+        if total_imported:
+            st.info(f"No {_source_filter_caption(selected_source)} stocks are stored in Imported AI Stocks yet. Switch the source toggle to All or another mode.")
+        else:
+            st.info("No imported AI stocks are stored yet in the permanent basket. Add some symbols from a Mode Top 3, Breakout Radar, CSV Breakout, Live Breakout Pulse, A-I-L, or Tomorrow's Picks panel first.")
         return
 
     missing_symbols = list(panel.get("missing_symbols", []) or [])
@@ -4125,21 +4719,20 @@ def render_imported_ai_learning_panel() -> None:
             f"Stored row data is still missing for some imported symbols: {_missing_preview}"
         )
 
-    _render_imported_ai_self_learning_intelligence()
-
     if not table.empty:
         st.subheader("Saved Imported Basket")
         _basket_tab, _outcome_tab, _detail_tab = st.tabs(["Watchlist", "Outcomes", "Full Details"])
         with _basket_tab:
             basket = _clean_display_frame(
                 table,
-                columns=["Ticker", "Categories", "Modes", "Signal", "Conviction", "Trap", "Final Score", "Pred Score"],
+                columns=["Ticker", "Source Mode", "Categories", "Modes", "Signal", "Conviction", "Trap", "Final Score", "Pred Score"],
             )
             basket = _coerce_display_numbers(basket, ["Final Score", "Pred Score"])
             st.dataframe(
                 basket,
                 column_config={
                     "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "Source Mode": st.column_config.TextColumn("Source", width="small"),
                     "Categories": st.column_config.TextColumn("Category", width="medium"),
                     "Modes": st.column_config.TextColumn("Mode", width="small"),
                     "Signal": st.column_config.TextColumn("Signal", width="small"),
@@ -4155,12 +4748,13 @@ def render_imported_ai_learning_panel() -> None:
         with _outcome_tab:
             outcomes = _clean_display_frame(
                 table,
-                columns=["Ticker", "Categories", "Sources", "Logged Today", "Last Outcome", "Correct", "Stored Data"],
+                columns=["Ticker", "Source Mode", "Categories", "Sources", "Logged Today", "Last Outcome", "Correct", "Stored Data"],
             )
             st.dataframe(
                 outcomes,
                 column_config={
                     "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+                    "Source Mode": st.column_config.TextColumn("Source", width="small"),
                     "Categories": st.column_config.TextColumn("Category", width="medium"),
                     "Sources": st.column_config.TextColumn("Source", width="large"),
                     "Logged Today": st.column_config.TextColumn("Logged", width="small"),
@@ -4179,6 +4773,7 @@ def render_imported_ai_learning_panel() -> None:
                 detail,
                 column_config={
                     "Ticker": st.column_config.TextColumn("Ticker"),
+                    "Source Mode": st.column_config.TextColumn("Source Mode", width="small"),
                     "Categories": st.column_config.TextColumn("Categories", width="medium"),
                     "Sources": st.column_config.TextColumn("Sources", width="large"),
                     "Modes": st.column_config.TextColumn("Modes"),
@@ -4199,7 +4794,37 @@ def render_imported_ai_learning_panel() -> None:
                 height=min(520, 38 + (len(detail) + 1) * 36),
             )
 
-    _render_imported_ai_top3_prompt_panel(panel)
+    st.write("")
+    _show_intelligence = bool(st.session_state.get("imported_ai_intelligence_visible", False))
+    _intelligence_label = (
+        "Hide Self Learning Intelligence" if _show_intelligence else "Show Self Learning Intelligence"
+    )
+    if st.button(
+        _intelligence_label,
+        key="imported_ai_intelligence_toggle_btn",
+        width="stretch",
+        type="secondary",
+    ):
+        st.session_state["imported_ai_intelligence_visible"] = not _show_intelligence
+        st.rerun()
+    if _show_intelligence:
+        _render_imported_ai_self_learning_intelligence()
+
+    st.write("")
+    _show_top3_picker = bool(st.session_state.get("imported_ai_top3_prompt_visible", False))
+    _top3_picker_label = (
+        "Hide Tomorrow Accuracy Picker" if _show_top3_picker else "Show Tomorrow Accuracy Picker"
+    )
+    if st.button(
+        _top3_picker_label,
+        key="imported_ai_top3_prompt_toggle_btn",
+        width="stretch",
+        type="secondary",
+    ):
+        st.session_state["imported_ai_top3_prompt_visible"] = not _show_top3_picker
+        st.rerun()
+    if _show_top3_picker:
+        _render_imported_ai_top3_prompt_panel(panel)
 
     st.write("")
     if st.button(
@@ -4209,7 +4834,7 @@ def render_imported_ai_learning_panel() -> None:
         type="primary",
         help="Fetch and fill the Last Outcome and Correct columns using the latest next-session data by imported date.",
     ):
-        summary = _run_imported_ai_self_improve_update()
+        summary = _run_imported_ai_self_improve_update(source_filter=selected_source)
         st.session_state["_imported_ai_outcome_refresh_msg"] = str(
             summary.get("message", "") or "Self-learning/outcome refresh finished."
         )
@@ -4307,6 +4932,7 @@ def _render_ai_prediction_import_action(
     source_label: str,
     source_bucket: object = "",
     source_rows: object = None,
+    source_mode: str = _PICK_SOURCE_AI,
     helper_text: str = "",
 ) -> None:
     normalized = _normalize_prediction_chart_imports(symbols, limit=12)
@@ -4333,6 +4959,7 @@ def _render_ai_prediction_import_action(
         source_label=source_label,
         source_bucket=source_bucket,
         source_rows=source_rows,
+        source_mode=source_mode,
     )
     imported = list(summary.get("symbols", []) or [])
     if imported:
@@ -4347,6 +4974,7 @@ def _render_ai_prediction_import_action(
             )
         except Exception:
             pass
+        st.session_state["imported_ai_source_filter"] = _normalize_pick_source_mode(source_mode, default=_PICK_SOURCE_AI)
         _activate_sidebar_panel("imported_ai_learning_show_panel")
     else:
         st.info("The imported AI stocks list is empty right now.")
@@ -5229,14 +5857,26 @@ def render_tomorrow_picks_panel() -> None:
         return
 
     store, storage_mode = _load_tomorrow_store()
-    sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
-    store["sections"] = sections
-    store["picks"] = _tomorrow_flatten_sections(sections, limit=20)
-    st.session_state["tomorrow_picks_visible_symbols"] = list(store["picks"])
+    all_sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+    all_picks = _tomorrow_flatten_sections(all_sections, limit=20)
+    source_modes = _normalize_tomorrow_source_modes(store.get("source_modes", {}), symbols=all_picks)
+    source_snapshots = _normalize_tomorrow_source_snapshots(store.get("source_snapshots", {}), symbols=all_picks)
+    store["sections"] = all_sections
+    store["picks"] = all_picks
+    store["source_modes"] = source_modes
+    store["source_snapshots"] = source_snapshots
+    selected_source = _normalize_pick_source_filter(
+        st.session_state.get("tmr_picks_source_filter", _PICK_SOURCE_ALL)
+    )
+    sections = _filter_tomorrow_sections_by_source(all_sections, source_modes, selected_source, limit=20)
+    visible_picks = _tomorrow_flatten_sections(sections, limit=20)
+    st.session_state["tomorrow_picks_visible_symbols"] = list(visible_picks)
 
-    saved_count = len(store["picks"])
-    slots_left = max(0, 20 - saved_count)
+    saved_count = len(visible_picks)
+    all_saved_count = len(all_picks)
+    slots_left = max(0, 20 - all_saved_count)
     active_sections = sum(1 for bucket in _TOMORROW_SECTION_ORDER if sections.get(bucket))
+    source_counts = _tomorrow_source_counts(all_sections, source_modes)
     saved_notes = str(store.get("notes", "") or "")
     notes_words = len(saved_notes.split()) if saved_notes.strip() else 0
     picks_feedback = st.session_state.get("tmr_picks_feedback", {}) or {}
@@ -5594,12 +6234,29 @@ def render_tomorrow_picks_panel() -> None:
 
     with st.container():
         st.markdown('<div class="tmr-v2-anchor"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="tmr-v2-title">Tomorrow\'s Picks</div>', unsafe_allow_html=True)
+        title_col, source_col = st.columns([4.4, 1.6], gap="large")
+        with title_col:
+            st.markdown('<div class="tmr-v2-title">Tomorrow\'s Picks</div>', unsafe_allow_html=True)
+        with source_col:
+            selected_source = st.radio(
+                "Pick Source",
+                options=list(_PICK_SOURCE_FILTER_OPTIONS),
+                index=list(_PICK_SOURCE_FILTER_OPTIONS).index(selected_source),
+                horizontal=True,
+                key="tmr_picks_source_filter",
+                label_visibility="collapsed",
+                help="Show all picks, only AI-imported picks, or only manually added picks.",
+            )
+            sections = _filter_tomorrow_sections_by_source(all_sections, source_modes, selected_source, limit=20)
+            visible_picks = _tomorrow_flatten_sections(sections, limit=20)
+            st.session_state["tomorrow_picks_visible_symbols"] = list(visible_picks)
+            saved_count = len(visible_picks)
+            active_sections = sum(1 for bucket in _TOMORROW_SECTION_ORDER if sections.get(bucket))
         st.markdown(
             (
                 '<div class="tmr-v2-lead">'
                 'Dedicated strips keep Relax, Swing, Intraday, Momentum, and Breakout ideas separate. '
-                'Any ADD IN PICKS action now lands in the correct strip automatically, and each pick stays saved until you remove it.'
+                'Any ADD IN PICKS or A-I-L action now lands in the correct strip automatically, and each pick stays saved by Manual or AI source until you remove it.'
                 '</div>'
             ),
             unsafe_allow_html=True,
@@ -5615,10 +6272,10 @@ def render_tomorrow_picks_panel() -> None:
         st.markdown(
             (
                 '<div class="tmr-v2-metrics">'
-                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Saved Picks</div><div class="tmr-v2-metric-value">{saved_count}</div><div class="tmr-v2-metric-caption">Total stocks saved across all strategy strips</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Visible Picks</div><div class="tmr-v2-metric-value">{saved_count}</div><div class="tmr-v2-metric-caption">{html.escape(_source_filter_caption(selected_source))} view from {all_saved_count} total saved stocks</div></div>'
                 f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Slots Left</div><div class="tmr-v2-metric-value">{slots_left}</div><div class="tmr-v2-metric-caption">Maximum 20 saved picks in total</div></div>'
                 f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Active Strips</div><div class="tmr-v2-metric-value">{active_sections}/{len(_TOMORROW_SECTION_ORDER)}</div><div class="tmr-v2-metric-caption">How many strategy lanes currently hold picks</div></div>'
-                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Storage</div><div class="tmr-v2-metric-value">{html.escape(storage_label)}</div><div class="tmr-v2-metric-caption">{html.escape(sync_caption)}</div></div>'
+                f'<div class="tmr-v2-metric"><div class="tmr-v2-metric-label">Source Split</div><div class="tmr-v2-metric-value">AI {int(source_counts.get(_PICK_SOURCE_AI, 0) or 0)}</div><div class="tmr-v2-metric-caption">Manual {int(source_counts.get(_PICK_SOURCE_MANUAL, 0) or 0)} | {html.escape(storage_label)}</div></div>'
                 '</div>'
             ),
             unsafe_allow_html=True,
@@ -5648,8 +6305,8 @@ def render_tomorrow_picks_panel() -> None:
                 (
                     '<div class="tmr-v2-bulk-actions">'
                     '<div class="tmr-v2-bulk-title">Bulk Remove</div>'
-                    f'<div class="tmr-v2-bulk-caption">Delete all {saved_count} saved stock'
-                    f'{"s" if saved_count != 1 else ""} from every strip in one click. Notes stay saved.</div>'
+                    f'<div class="tmr-v2-bulk-caption">Delete all {all_saved_count} saved stock'
+                    f'{"s" if all_saved_count != 1 else ""} from every strip in one click. Notes stay saved.</div>'
                     '</div>'
                 ),
                 unsafe_allow_html=True,
@@ -5662,7 +6319,7 @@ def render_tomorrow_picks_panel() -> None:
                 width="stretch",
                 disabled=saved_count <= 0,
                 type="primary",
-                help="Import every saved Tomorrow's Pick into Imported AI Stocks, then log them for self-learning.",
+                help="Import the currently visible Tomorrow's Picks source view into Imported AI Stocks, then log them for self-learning.",
             )
         with bulk_button_col:
             st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
@@ -5670,16 +6327,17 @@ def render_tomorrow_picks_panel() -> None:
                 "Delete All Stocks",
                 key="tmr_v2_clear_all_stocks",
                 width="stretch",
-                disabled=saved_count <= 0,
+                disabled=all_saved_count <= 0,
             )
 
         if import_picks_clicked:
-            import_summary = _import_tomorrow_picks_to_imported_ai_learning()
+            import_summary = _import_tomorrow_picks_to_imported_ai_learning(source_filter=selected_source)
             import_kind = str(import_summary.get("kind", "info") or "info")
             import_message = str(import_summary.get("message", "") or "Import finished.").strip()
             _set_tomorrow_picks_feedback(import_kind, import_message)
             if list(import_summary.get("symbols", []) or []):
                 st.session_state["_imported_ai_outcome_refresh_msg"] = import_message
+                st.session_state["imported_ai_source_filter"] = selected_source
                 try:
                     st.toast(import_message)
                 except Exception:
@@ -5733,7 +6391,7 @@ def render_tomorrow_picks_panel() -> None:
                         add_clicked = st.form_submit_button(
                             "Add",
                             width="stretch",
-                            disabled=saved_count >= 20,
+                            disabled=all_saved_count >= 20,
                         )
 
                 if add_clicked:
@@ -5741,23 +6399,24 @@ def render_tomorrow_picks_panel() -> None:
                     if not symbol:
                         st.info("Enter a valid stock symbol first.")
                     else:
-                        add_summary = _save_symbols_to_tomorrow_store([symbol], bucket=manual_bucket)
+                        add_summary = _save_symbols_to_tomorrow_store(
+                            [symbol],
+                            bucket=manual_bucket,
+                            source_mode=_PICK_SOURCE_MANUAL,
+                        )
                         bucket_label = str(add_summary.get("bucket_label", _tomorrow_section_label(manual_bucket)))
                         if add_summary["added"] or add_summary["moved"]:
-                            st.success(f"{symbol} is now saved in the {bucket_label} strip.")
-                            store, storage_mode = _load_tomorrow_store()
-                            sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
-                            store["sections"] = sections
-                            store["picks"] = _tomorrow_flatten_sections(sections, limit=20)
-                            saved_count = len(store["picks"])
-                            slots_left = max(0, 20 - saved_count)
-                            active_sections = sum(1 for bucket in _TOMORROW_SECTION_ORDER if sections.get(bucket))
+                            _set_tomorrow_picks_feedback(
+                                "success",
+                                f"{symbol} is now saved in the {bucket_label} strip as Manual.",
+                            )
+                            st.rerun()
                         elif add_summary["limit_reached"]:
                             st.warning("Tomorrow's Picks already has 20 saved stocks. Remove one before adding another.")
                         else:
                             st.info(f"{symbol} is already in the {bucket_label} strip.")
 
-                if saved_count >= 20:
+                if all_saved_count >= 20:
                     st.caption("Tomorrow's Picks is full at 20 total saved stocks.")
 
                 for bucket in _TOMORROW_SECTION_ORDER:
@@ -5791,20 +6450,26 @@ def render_tomorrow_picks_panel() -> None:
                         continue
 
                     for idx, symbol in enumerate(bucket_symbols):
+                        row_source_mode = _tomorrow_source_mode_for_symbol(source_modes, symbol)
                         row_col, meta_col, remove_col = st.columns([2.1, 2.8, 1], gap="small")
                         with row_col:
                             st.markdown(
                                 (
                                     f'<div class="tmr-v2-row-symbol">{html.escape(symbol)}</div>'
-                                    f'<div class="tmr-v2-row-meta">{html.escape(label)} strip</div>'
+                                    f'<div class="tmr-v2-row-meta">{html.escape(label)} strip | {html.escape(row_source_mode)}</div>'
                                 ),
                                 unsafe_allow_html=True,
                             )
                         with meta_col:
+                            source_copy = (
+                                "Manual pick saved from Quick Add."
+                                if row_source_mode == _PICK_SOURCE_MANUAL
+                                else "AI/imported pick saved from scanner, A-I-L, or import actions."
+                            )
                             st.markdown(
                                 (
                                     '<div class="tmr-v2-row-meta">'
-                                    f'Auto-routed from {html.escape(label)} results and stored permanently until removed.'
+                                    f'{html.escape(source_copy)} Stored permanently until removed.'
                                     '</div>'
                                 ),
                                 unsafe_allow_html=True,
@@ -5818,15 +6483,31 @@ def render_tomorrow_picks_panel() -> None:
                         if remove_clicked:
                             updated_sections = {
                                 name: list(values)
-                                for name, values in sections.items()
+                                for name, values in all_sections.items()
                             }
                             updated_sections[bucket] = [
                                 saved_symbol
-                                for saved_symbol in bucket_symbols
+                                for saved_symbol in updated_sections.get(bucket, [])
                                 if saved_symbol != symbol
                             ]
                             store["sections"] = _apply_tomorrow_sections_limit(updated_sections, limit=20)
                             store["picks"] = _tomorrow_flatten_sections(store["sections"], limit=20)
+                            store["source_modes"] = _normalize_tomorrow_source_modes(
+                                {
+                                    key: value
+                                    for key, value in source_modes.items()
+                                    if _normalize_tomorrow_symbol(key) != symbol
+                                },
+                                symbols=store["picks"],
+                            )
+                            store["source_snapshots"] = _normalize_tomorrow_source_snapshots(
+                                {
+                                    key: value
+                                    for key, value in source_snapshots.items()
+                                    if _normalize_tomorrow_symbol(key) != symbol
+                                },
+                                symbols=store["picks"],
+                            )
                             _persist_tomorrow_store(store, replace=True)
                             st.rerun()
 
@@ -5918,7 +6599,25 @@ def render_tomorrow_picks_panel() -> None:
 
 def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
     store, _storage_mode = _load_tomorrow_store()
-    sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+    all_sections = _apply_tomorrow_sections_limit(store.get("sections", {}), limit=20)
+    all_picks = _tomorrow_flatten_sections(all_sections, limit=20)
+    source_modes = _normalize_tomorrow_source_modes(store.get("source_modes", {}), symbols=all_picks)
+    source_filter_key = "tmr_chart_strip_source_filter" if embedded else "tmr_strip_source_filter"
+    selected_source = _normalize_pick_source_filter(
+        st.session_state.get(source_filter_key, st.session_state.get("tmr_picks_source_filter", _PICK_SOURCE_ALL))
+    )
+    control_cols = st.columns([4.8, 1.6], gap="large")
+    with control_cols[1]:
+        selected_source = st.radio(
+            "Pick Source",
+            options=list(_PICK_SOURCE_FILTER_OPTIONS),
+            index=list(_PICK_SOURCE_FILTER_OPTIONS).index(selected_source),
+            horizontal=True,
+            key=source_filter_key,
+            label_visibility="collapsed",
+            help="Toggle the strip between all, AI-imported, and manual picks.",
+        )
+    sections = _filter_tomorrow_sections_by_source(all_sections, source_modes, selected_source, limit=20)
     st.session_state["tomorrow_picks_visible_symbols"] = _tomorrow_flatten_sections(sections, limit=20)
     container_margin_top = "0px" if embedded else "-12px"
     container_margin_bottom = "14px" if embedded else "2px"
@@ -6091,6 +6790,20 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
           letter-spacing:0.7px;
           text-transform:uppercase;
         }
+        .tmr-board-chip-source {
+          display:inline-flex;
+          align-items:center;
+          justify-content:center;
+          min-width:24px;
+          padding:2px 6px;
+          border-radius:999px;
+          border:1px solid rgba(255,255,255,0.10);
+          color:#8ab4d8;
+          background:rgba(255,255,255,0.04);
+          font-size:9px;
+          letter-spacing:0.5px;
+          text-transform:uppercase;
+        }
         .tmr-board-empty {
           display:inline-flex;
           align-items:center;
@@ -6149,6 +6862,7 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
                     '<span class="tmr-board-chip">'
                     '<span class="tmr-board-chip-badge">NSE</span>'
                     f'{html.escape(symbol)}'
+                    f'<span class="tmr-board-chip-source">{html.escape(_source_mode_badge(_tomorrow_source_mode_for_symbol(source_modes, symbol)))}</span>'
                     '</span>'
                 )
                 for symbol in visible_symbols
@@ -6174,6 +6888,7 @@ def render_tomorrow_picks_ticker_strip(*, embedded: bool = False) -> None:
         if embedded
         else "Compact 5-lane view: Relax, Swing, Intraday, Momentum, Breakout."
     )
+    strip_copy = f"{strip_copy} Source: {_source_filter_caption(selected_source)}."
 
     st.markdown(
         (
@@ -9626,8 +10341,14 @@ with st.sidebar:
     st.divider()
 
     st.caption("📡 Data Session")
+    _sidebar_light_panel_active = any(
+        bool(st.session_state.get(panel_key, False))
+        for panel_key in _SIDEBAR_PANEL_KEYS
+    )
     if _tt_toggle:
         st.caption("Time Travel is active, so the normal live/close routing is paused until simulation is turned off.")
+    elif _sidebar_light_panel_active:
+        st.caption("Panel is open. Full session status stays on the scanner home.")
     else:
         _session_plan = get_scan_data_plan()
         _session_window = str(_session_plan.get("window", "") or "").upper()
@@ -9718,8 +10439,14 @@ with st.sidebar:
             _activate_sidebar_panel("live_pulse_show_panel")
         st.caption("⚡ Cached CSV scan for pre-move setups. 📡 Live scan for real-time momentum bursts.")
         # Show cache status
-        try:
-            _status = _get_sidebar_data_status(_get_cached_nse_tickers())
+        if not _sidebar_light_panel_active:
+            try:
+                _status = _get_sidebar_data_status(_get_cached_nse_tickers())
+            except Exception:
+                _status = None
+        else:
+            _status = None
+        if isinstance(_status, dict):
             st.markdown(
                 f'<div style="font-size:11px;color:#4a6480;line-height:1.9;">'
                 f'Fresh: <b style="color:#00d4a8">{_status.get("fresh", "?")}</b> &nbsp;'
@@ -9727,8 +10454,6 @@ with st.sidebar:
                 f'Missing: <b style="color:#ff4d6d">{_status.get("missing", "?")}</b></div>',
                 unsafe_allow_html=True
             )
-        except Exception:
-            pass
         _render_sidebar_imported_ai_learning_entry_button()
     else:
         st.caption("data_downloader.py not found - using live yfinance.")
@@ -9758,22 +10483,6 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────
 # MAIN PAGE
 # ─────────────────────────────────────────────────────────────────────
-learning_status, signal_weight_status = _bootstrap_learning_status()
-_defer_post_close_outcome_refresh = bool(st.session_state.get("pred_chart_show_panel", False))
-if _defer_post_close_outcome_refresh:
-    _post_close_outcome_status = st.session_state.get("_post_close_outcome_status", {})
-else:
-    _post_close_outcome_status = _run_post_close_outcome_refresh()
-if isinstance(_post_close_outcome_status, dict) and (
-    int(_post_close_outcome_status.get("filled_stock", 0) or 0)
-    + int(_post_close_outcome_status.get("filled_sector", 0) or 0)
-) > 0:
-    learning_status = st.session_state.get("_learning_status", learning_status)
-    signal_weight_status = st.session_state.get("_signal_weight_status", signal_weight_status)
-
-mc = mode_colors[mode]
-_mc_soft = _hex_to_rgba(mc, 0.10)
-_mc_border = _hex_to_rgba(mc, 0.28)
 _show_sector_screener = st.session_state.get("show_sector_screener", False) or sector_screener_clicked
 _show_ail_in_one_panel = bool(st.session_state.get("ail_in_one_show_panel", False))
 _show_live_pulse_panel = bool(st.session_state.get("live_pulse_show_panel", False)) or live_pulse_clicked
@@ -9788,6 +10497,22 @@ _show_home_scanner = not (
     or _show_pred_chart_panel
     or _show_imported_ai_learning_panel
 )
+if _show_home_scanner:
+    learning_status, signal_weight_status = _bootstrap_learning_status()
+else:
+    learning_status = st.session_state.get("_learning_status", {})
+    signal_weight_status = st.session_state.get("_signal_weight_status", {})
+_post_close_outcome_status = st.session_state.get("_post_close_outcome_status", {})
+if isinstance(_post_close_outcome_status, dict) and (
+    int(_post_close_outcome_status.get("filled_stock", 0) or 0)
+    + int(_post_close_outcome_status.get("filled_sector", 0) or 0)
+) > 0:
+    learning_status = st.session_state.get("_learning_status", learning_status)
+    signal_weight_status = st.session_state.get("_signal_weight_status", signal_weight_status)
+
+mc = mode_colors[mode]
+_mc_soft = _hex_to_rgba(mc, 0.10)
+_mc_border = _hex_to_rgba(mc, 0.28)
 
 st.markdown(
     f"""
@@ -9816,6 +10541,10 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+if _show_imported_ai_learning_panel:
+    render_imported_ai_learning_panel()
+    st.stop()
 
 if _show_home_scanner:
     _dashboard_tt_date = _get_pending_time_travel_date()
@@ -9860,18 +10589,29 @@ if _show_home_scanner:
         unsafe_allow_html=True)
     st.caption(_dashboard_status_label)
 
+_needs_full_ticker_list = bool(
+    _show_home_scanner
+    or _show_pred_chart_panel
+    or _show_sector_screener
+    or _show_ail_in_one_panel
+)
 _ui_cached_tickers = _cache_ui_tickers(st.session_state.get("_ui_all_tickers", []))
-if len(_ui_cached_tickers) >= _TICKER_GOOD_COUNT:
-    all_tickers = list(_ui_cached_tickers)
+if _needs_full_ticker_list:
+    if len(_ui_cached_tickers) >= _TICKER_GOOD_COUNT:
+        all_tickers = list(_ui_cached_tickers)
+    else:
+        with st.spinner("Loading NSE ticker list..."):
+            all_tickers = _get_cached_nse_tickers(show_spinner=True)
+        all_tickers = _cache_ui_tickers(all_tickers)
 else:
-    with st.spinner("Loading NSE ticker list..."):
-        all_tickers = _get_cached_nse_tickers(show_spinner=True)
-    all_tickers = _cache_ui_tickers(all_tickers)
+    all_tickers = list(_ui_cached_tickers)
 n = len(all_tickers)
 
 with st.sidebar:
     ticker_count = len(all_tickers)
-    if ticker_count < _TICKER_GOOD_COUNT:
+    if not _needs_full_ticker_list:
+        st.caption("Ticker list loads when this panel needs it.")
+    elif ticker_count < _TICKER_GOOD_COUNT:
         st.warning(
             f"⚠️ Only {ticker_count} tickers loaded. "
             f"Click below to restore full list."
@@ -9896,6 +10636,9 @@ with st.sidebar:
 
 with st.sidebar:
     try:
+        if not _show_home_scanner:
+            st.caption("AI Learning Status available on scanner home.")
+            raise RuntimeError("skip sidebar learning details outside scanner home")
         _ls = learning_status if isinstance(learning_status, dict) else {}
         _fs = _ls.get("feedback_summary", {}) if isinstance(_ls.get("feedback_summary", {}), dict) else {}
         _logged = int(_fs.get("total_logged", 0) or 0)
@@ -10026,10 +10769,6 @@ if _show_pred_chart_panel:
         ticker_list=all_tickers,
         tomorrow_strip_renderer=lambda: render_tomorrow_picks_ticker_strip(embedded=True),
     )
-    st.stop()
-
-if _show_imported_ai_learning_panel:
-    render_imported_ai_learning_panel()
     st.stop()
 
 if _show_home_scanner:
@@ -10523,6 +11262,8 @@ if st.session_state.get("ail_in_one_show_panel", False):
             compute_battle_scores_fn=_ail_compute_battle_scores,
             run_aura_engine_fn=_ail_run_aura_engine,
             compare_prediction_cache_fn=_compare_prediction_cache_source,
+            import_to_tomorrow_picks_fn=_import_ail_aura_to_tomorrow_picks,
+            open_tomorrow_picks_fn=_open_tomorrow_picks_from_ail,
             all_data=_engine_utils.ALL_DATA if _engine_utils is not None else {},
             tt_module=_tt if _TIME_TRAVEL_OK else None,
         )
@@ -11298,6 +12039,8 @@ if _show_home_scanner and "results" in st.session_state:
                 key_prefix=f"scan_top3_mode_{stored_mode}",
                 scope_label="main scan",
                 bucket=_tomorrow_bucket_for_mode(stored_mode),
+                source_mode=_PICK_SOURCE_AI,
+                source_rows=_tomorrow_df,
                 helper_text="Add these top scan picks into Tomorrow's Picks and keep them saved until you remove them.",
             )
             _render_ai_prediction_import_action(
@@ -11652,6 +12395,8 @@ else:
             key_prefix=f"battle_winner_{_normalize_tomorrow_symbol(_w_sym) or 'stock'}",
             scope_label="Compare Stocks winner",
             bucket=_tomorrow_bucket_for_mode(st.session_state.get("mode", 3)),
+            source_mode=_PICK_SOURCE_AI,
+            source_rows=_battle_df if isinstance(_battle_df, pd.DataFrame) else None,
             helper_text="Add the current best potential stock into Tomorrow's Picks without reopening the compare view.",
         )
 
