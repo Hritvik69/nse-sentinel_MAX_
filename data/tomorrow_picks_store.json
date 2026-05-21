@@ -2,7 +2,9 @@
   "picks": [
     "BLISSGVS",
     "MANKIND",
-    "GMRP&UI"
+    "GMRP&UI",
+    "RUCHIRA",
+    "PGHL"
   ],
   "notes": "",
   "sections": {
@@ -11,7 +13,10 @@
       "MANKIND",
       "GMRP&UI"
     ],
-    "swing": [],
+    "swing": [
+      "RUCHIRA",
+      "PGHL"
+    ],
     "intraday": [],
     "momentum": [],
     "breakout": []
