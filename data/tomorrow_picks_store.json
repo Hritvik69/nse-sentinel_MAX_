@@ -1,43 +1,11 @@
 {
-  "picks": [
-    "TIRUMALCHM",
-    "INGERRAND",
-    "SEAMECLTD",
-    "PREMEXPLN",
-    "CENTENKA",
-    "CONSOFINVT",
-    "AIIL",
-    "GRASIM",
-    "KICL",
-    "HINDALCO",
-    "WANBURY",
-    "ELGIEQUIP",
-    "SMLT"
-  ],
+  "picks": [],
   "notes": "",
   "sections": {
-    "relax": [
-      "TIRUMALCHM",
-      "INGERRAND",
-      "SEAMECLTD"
-    ],
-    "swing": [
-      "PREMEXPLN",
-      "CENTENKA"
-    ],
-    "intraday": [
-      "CONSOFINVT",
-      "AIIL"
-    ],
-    "momentum": [
-      "GRASIM",
-      "KICL",
-      "HINDALCO"
-    ],
-    "breakout": [
-      "WANBURY",
-      "ELGIEQUIP",
-      "SMLT"
-    ]
+    "relax": [],
+    "swing": [],
+    "intraday": [],
+    "momentum": [],
+    "breakout": []
   }
 }
