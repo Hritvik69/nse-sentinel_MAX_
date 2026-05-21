@@ -223,6 +223,31 @@ def _metadata_text_list(value: object) -> list[str]:
     return out
 
 
+def _metadata_source_mode(value: object, default: str = "AI") -> str:
+    raw_items: list[object]
+    if isinstance(value, str) and any(sep in value for sep in ("|", ",")):
+        raw_items = [part.strip() for part in value.replace(",", "|").split("|")]
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+    primary = ""
+    for item in raw_items:
+        text = _clean_label(item).lower()
+        if text in {"manual", "mannual", "manually", "user", "typed", "own"}:
+            primary = "Manual"
+        elif text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+            primary = "AI"
+    if primary:
+        return primary
+    fallback = str(default or "").strip().lower()
+    if fallback in {"manual", "mannual"}:
+        return "Manual"
+    if fallback in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+        return "AI"
+    return ""
+
+
 def _join_metadata_values(value: object) -> str:
     return " | ".join(_metadata_text_list(value))
 
@@ -361,7 +386,7 @@ def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
             categories = _metadata_text_list(item.get("categories", item.get("category", [])))
             sources = _metadata_text_list(item.get("sources", item.get("source", [])))
             modes = _metadata_text_list(item.get("modes", item.get("mode", [])))
-            source_modes = _metadata_text_list(item.get("source_modes", item.get("source_mode", [])))
+            source_mode = _metadata_source_mode(item.get("source_modes", item.get("source_mode", [])))
             mode_defaults = _mode_import_defaults(modes[0] if modes else "")
             category_text = " | ".join(categories) or mode_defaults.get("import_category", "")
             source_text = " | ".join(sources) or mode_defaults.get("import_source", "")
@@ -378,7 +403,7 @@ def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
                 "sector": sector_text,
                 "trap_risk": trap_text,
                 "mode": " | ".join([f"M{int(float(mode))}" if str(mode).replace('.', '', 1).isdigit() else str(mode) for mode in modes]),
-                "source_mode": " | ".join(source_modes),
+                "source_mode": source_mode,
             }
 
         _IMPORTED_META_CACHE_SIG = sig
@@ -689,13 +714,13 @@ def log_scan_predictions(
                             )
                             or _strategy_strip_from_text(row.get("Import Category", ""), import_source)
                         )[:80],
-                        "source_mode": str(
+                        "source_mode": _metadata_source_mode(
                             _first_present(
                                 row,
                                 ["Import Source Mode", "Source Mode", "source_mode"],
                                 "",
-                            )
-                            or ""
+                            ),
+                            default="",
                         )[:40],
                         "prediction_direction": direction,
                         "target_policy_version": _TARGET_POLICY_VERSION,

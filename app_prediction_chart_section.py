@@ -1349,12 +1349,12 @@ def _normalize_tomorrow_strip_symbol(value: object) -> str:
 
 def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_AI) -> str:
     text = str(value or "").strip().lower()
-    if text in {"manual", "manually", "user", "typed", "own"}:
+    if text in {"manual", "mannual", "manually", "user", "typed", "own"}:
         return _PICK_SOURCE_MANUAL
     if text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
         return _PICK_SOURCE_AI
     default_text = str(default or "").strip().lower()
-    if default_text in {"manual", "manually", "user", "typed", "own"}:
+    if default_text in {"manual", "mannual", "manually", "user", "typed", "own"}:
         return _PICK_SOURCE_MANUAL
     if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
         return _PICK_SOURCE_AI
@@ -1384,6 +1384,28 @@ def _source_filter_caption(value: object) -> str:
     return "All"
 
 
+def _tomorrow_strip_has_saved_symbols(store: Mapping[str, object]) -> bool:
+    raw_sections = store.get("sections", {})
+    if isinstance(raw_sections, Mapping):
+        for bucket in _TOMORROW_SECTION_ORDER:
+            values = raw_sections.get(bucket, [])
+            if isinstance(values, (list, tuple)) and any(_normalize_tomorrow_strip_symbol(item) for item in values):
+                return True
+    raw_picks = store.get("picks", [])
+    return isinstance(raw_picks, (list, tuple)) and any(_normalize_tomorrow_strip_symbol(item) for item in raw_picks)
+
+
+def _tomorrow_strip_source_default(store: Mapping[str, object]) -> str:
+    raw_source_modes = store.get("source_modes", {})
+    has_explicit_source_modes = (
+        isinstance(raw_source_modes, Mapping)
+        and any(_normalize_tomorrow_strip_symbol(symbol) for symbol in raw_source_modes.keys())
+    )
+    if has_explicit_source_modes or not _tomorrow_strip_has_saved_symbols(store):
+        return _PICK_SOURCE_AI
+    return _PICK_SOURCE_MANUAL
+
+
 def _load_tomorrow_strip_sections(
     *,
     source_filter: object = _PICK_SOURCE_ALL,
@@ -1400,11 +1422,12 @@ def _load_tomorrow_strip_sections(
         selected = _normalize_pick_source_filter(source_filter)
         seen: set[str] = set()
         raw_source_modes = store.get("source_modes", {})
+        source_default = _tomorrow_strip_source_default(store)
         if isinstance(raw_source_modes, Mapping):
             for raw_symbol, raw_mode in raw_source_modes.items():
                 symbol = _normalize_tomorrow_strip_symbol(raw_symbol)
                 if symbol:
-                    source_modes[symbol] = _normalize_pick_source_mode(raw_mode)
+                    source_modes[symbol] = _normalize_pick_source_mode(raw_mode, default=source_default)
         raw_sections = store.get("sections", {})
         if isinstance(raw_sections, dict):
             for bucket in _TOMORROW_SECTION_ORDER:
@@ -1413,24 +1436,24 @@ def _load_tomorrow_strip_sections(
                     continue
                 for raw in values:
                     symbol = _normalize_tomorrow_strip_symbol(raw)
-                    symbol_source = source_modes.get(symbol, _PICK_SOURCE_AI)
+                    symbol_source = source_modes.get(symbol, source_default)
                     if selected != _PICK_SOURCE_ALL and symbol_source != selected:
                         continue
                     if symbol and symbol not in seen and len(seen) < 20:
                         sections[bucket].append(symbol)
-                        source_modes.setdefault(symbol, _PICK_SOURCE_AI)
+                        source_modes.setdefault(symbol, source_default)
                         seen.add(symbol)
 
         raw_picks = store.get("picks", [])
         if isinstance(raw_picks, (list, tuple)):
             for raw in raw_picks:
                 symbol = _normalize_tomorrow_strip_symbol(raw)
-                symbol_source = source_modes.get(symbol, _PICK_SOURCE_AI)
+                symbol_source = source_modes.get(symbol, source_default)
                 if selected != _PICK_SOURCE_ALL and symbol_source != selected:
                     continue
                 if symbol and symbol not in seen and len(seen) < 20:
                     sections["relax"].append(symbol)
-                    source_modes.setdefault(symbol, _PICK_SOURCE_AI)
+                    source_modes.setdefault(symbol, source_default)
                     seen.add(symbol)
         return sections, source_modes
     except Exception:

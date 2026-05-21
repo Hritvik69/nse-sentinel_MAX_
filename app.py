@@ -1829,12 +1829,12 @@ _PICK_SOURCE_MODES = (_PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
 
 def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_AI) -> str:
     text = str(value or "").strip().lower()
-    if text in {"manual", "manually", "user", "typed", "own"}:
+    if text in {"manual", "mannual", "manually", "user", "typed", "own"}:
         return _PICK_SOURCE_MANUAL
     if text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
         return _PICK_SOURCE_AI
     default_text = str(default or "").strip().lower()
-    if default_text in {"manual", "manually", "user", "typed", "own"}:
+    if default_text in {"manual", "mannual", "manually", "user", "typed", "own"}:
         return _PICK_SOURCE_MANUAL
     if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
         return _PICK_SOURCE_AI
@@ -1852,7 +1852,10 @@ def _normalize_pick_source_filter(value: object, default: str = _PICK_SOURCE_ALL
 
 
 def _normalize_pick_source_mode_list(values: object, default: str = _PICK_SOURCE_AI) -> list[str]:
-    raw_values = list(values) if isinstance(values, (list, tuple, set)) else [values]
+    if isinstance(values, str) and any(sep in values for sep in ("|", ",")):
+        raw_values = [part.strip() for part in re.split(r"[|,]", values)]
+    else:
+        raw_values = list(values) if isinstance(values, (list, tuple, set)) else [values]
     modes: list[str] = []
     seen: set[str] = set()
     for raw in raw_values:
@@ -1866,6 +1869,13 @@ def _normalize_pick_source_mode_list(values: object, default: str = _PICK_SOURCE
         if mode in _PICK_SOURCE_MODES:
             modes.append(mode)
     return modes
+
+
+def _primary_pick_source_mode(values: object, default: str = _PICK_SOURCE_AI) -> str:
+    modes = _normalize_pick_source_mode_list(values, default="")
+    if modes:
+        return modes[-1]
+    return _normalize_pick_source_mode(default, default=_PICK_SOURCE_AI) or _PICK_SOURCE_AI
 
 
 def _source_mode_badge(mode: object) -> str:
@@ -2062,10 +2072,16 @@ def _normalize_tomorrow_store(store: dict | None) -> dict:
 
     sections = _apply_tomorrow_sections_limit(section_seed, limit=20)
     picks = _tomorrow_flatten_sections(sections, limit=20)
+    raw_source_modes = store.get("source_modes", {})
+    has_explicit_source_modes = (
+        isinstance(raw_source_modes, dict)
+        and any(_normalize_tomorrow_symbol(symbol) for symbol in raw_source_modes.keys())
+    )
+    source_default = _PICK_SOURCE_AI if has_explicit_source_modes or not picks else _PICK_SOURCE_MANUAL
     source_modes = _normalize_tomorrow_source_modes(
-        store.get("source_modes", {}),
+        raw_source_modes,
         symbols=picks,
-        default=_PICK_SOURCE_AI,
+        default=source_default,
     )
     source_snapshots = _normalize_tomorrow_source_snapshots(
         store.get("source_snapshots", {}),
@@ -2565,7 +2581,7 @@ def _imported_record_source_modes(record: dict[str, object] | None) -> list[str]
     if not isinstance(record, dict):
         return [_PICK_SOURCE_AI]
     raw_modes = record.get("source_modes", record.get("source_mode", record.get("pick_source_mode", [])))
-    return _normalize_pick_source_mode_list(raw_modes, default=_PICK_SOURCE_AI)
+    return [_primary_pick_source_mode(raw_modes, default=_PICK_SOURCE_AI)]
 
 
 def _filter_imported_ai_records_by_source(
@@ -2724,10 +2740,12 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
             sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
             modes = _normalize_import_mode_list(item.get("modes", item.get("mode", [])))
-            source_modes = _normalize_pick_source_mode_list(
-                item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", []))),
-                default=_PICK_SOURCE_AI,
-            )
+            source_modes = [
+                _primary_pick_source_mode(
+                    item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", []))),
+                    default=_PICK_SOURCE_AI,
+                )
+            ]
             if 7 in modes:
                 categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(item.get("last_imported_at", item.get("imported_at", "")) or "")
@@ -2762,10 +2780,7 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
         record["categories"] = _normalize_import_text_list(list(record.get("categories", [])) + categories)
         record["sources"] = _normalize_import_text_list(list(record.get("sources", [])) + sources)
         record["modes"] = _normalize_import_mode_list(list(record.get("modes", [])) + modes)
-        record["source_modes"] = _normalize_pick_source_mode_list(
-            list(record.get("source_modes", [])) + source_modes,
-            default=_PICK_SOURCE_AI,
-        )
+        record["source_modes"] = [_primary_pick_source_mode(source_modes, default=_PICK_SOURCE_AI)]
         if imported_at:
             record["last_imported_at"] = imported_at
         if isinstance(snapshot, dict) and snapshot:
@@ -3044,7 +3059,8 @@ def _store_symbols_in_imported_ai_learning(
     )
     source_text = str(source_label or category or "Imported AI Stocks")
     mode_list = _normalize_import_mode_list(mode_value)
-    source_mode_list = _normalize_pick_source_mode_list(source_mode, default=_PICK_SOURCE_AI)
+    target_source_mode = _primary_pick_source_mode(source_mode, default=_PICK_SOURCE_AI)
+    source_mode_list = [target_source_mode]
     ts = datetime.now().isoformat(timespec="seconds")
     added = 0
     updated = 0
@@ -3066,15 +3082,15 @@ def _store_symbols_in_imported_ai_learning(
             before_categories = list(record.get("categories", []))
             before_sources = list(record.get("sources", []))
             before_modes = list(record.get("modes", []))
-            before_source_modes = list(record.get("source_modes", []))
+            before_source_modes = _normalize_pick_source_mode_list(
+                record.get("source_modes", record.get("source_mode", [])),
+                default=_PICK_SOURCE_AI,
+            )
             before_snapshot = dict(record.get("snapshot", {}) or {})
             record["categories"] = _normalize_import_text_list(before_categories + ([category] if category else []))
             record["sources"] = _normalize_import_text_list(before_sources + [source_text])
             record["modes"] = _normalize_import_mode_list(before_modes + mode_list)
-            record["source_modes"] = _normalize_pick_source_mode_list(
-                before_source_modes + source_mode_list,
-                default=_PICK_SOURCE_AI,
-            )
+            record["source_modes"] = source_mode_list
             record["last_imported_at"] = ts
             if symbol in snapshot_map and snapshot_map.get(symbol):
                 record["snapshot"] = dict(snapshot_map.get(symbol) or {})
@@ -3099,7 +3115,7 @@ def _store_symbols_in_imported_ai_learning(
         "mode": mode_list[0] if mode_list else st.session_state.get("mode", 0),
         "source_label": source_text,
         "category": category,
-        "source_mode": source_mode_list[0] if source_mode_list else _PICK_SOURCE_AI,
+        "source_mode": target_source_mode,
     }
 
 

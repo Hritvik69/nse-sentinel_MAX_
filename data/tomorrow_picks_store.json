@@ -53,25 +53,25 @@
     ]
   },
   "source_modes": {
-    "BLISSGVS": "AI",
-    "MANKIND": "AI",
-    "GMRP&UI": "AI",
-    "RUCHIRA": "AI",
+    "BLISSGVS": "Manual",
+    "MANKIND": "Manual",
+    "GMRP&UI": "Manual",
+    "RUCHIRA": "Manual",
     "GHCLTEXTIL": "AI",
     "JAGSNPHARM": "AI",
     "JUBLINGREA": "AI",
-    "PGHL": "AI",
+    "PGHL": "Manual",
     "KNRCON": "AI",
-    "RSWM": "AI",
-    "SHALBY": "AI",
-    "JBCHEPHARM": "AI",
-    "HONASA": "AI",
-    "ELGIEQUIP": "AI",
+    "RSWM": "Manual",
+    "SHALBY": "Manual",
+    "JBCHEPHARM": "Manual",
+    "HONASA": "Manual",
+    "ELGIEQUIP": "Manual",
     "CARRARO": "AI",
     "PREMIERENE": "AI",
-    "CAPTRUST": "AI",
-    "APOLLOHOSP": "AI",
-    "ORKLAINDIA": "AI"
+    "CAPTRUST": "Manual",
+    "APOLLOHOSP": "Manual",
+    "ORKLAINDIA": "Manual"
   },
   "source_snapshots": {
     "BLISSGVS": {
