@@ -6,7 +6,10 @@
     "RUCHIRA",
     "PGHL",
     "RSWM",
-    "SHALBY"
+    "SHALBY",
+    "JBCHEPHARM",
+    "HONASA",
+    "ELGIEQUIP"
   ],
   "notes": "",
   "sections": {
@@ -23,7 +26,11 @@
       "RSWM",
       "SHALBY"
     ],
-    "momentum": [],
+    "momentum": [
+      "JBCHEPHARM",
+      "HONASA",
+      "ELGIEQUIP"
+    ],
     "breakout": []
   }
 }
