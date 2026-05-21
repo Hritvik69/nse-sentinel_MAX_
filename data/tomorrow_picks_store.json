@@ -1,8 +1,16 @@
 {
-  "picks": [],
+  "picks": [
+    "BLISSGVS",
+    "MANKIND",
+    "GMRP&UI"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "BLISSGVS",
+      "MANKIND",
+      "GMRP&UI"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
