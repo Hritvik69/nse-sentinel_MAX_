@@ -34,6 +34,8 @@ _MAX_CONC = 12                              # aligned with app worker cap
 _SEM      = threading.BoundedSemaphore(_MAX_CONC)
 _PRELOAD_BATCH_SIZE = 60
 _MAX_PRELOAD_BATCH_CONC = 4
+_MAX_BATCH_FAILURE_SINGLE_RETRIES = 8
+_MAX_PARTIAL_MISSING_RETRY_RATIO = 0.25
 _MARKET_OPEN_IST = dtime(9, 30)
 _IST_TZ = ZoneInfo("Asia/Kolkata") if ZoneInfo is not None else None
 
@@ -989,6 +991,8 @@ def preload_all(
     live_downloaded = 0
     fallback_used = 0
     cache_hits = 0
+    retry_skipped = 0
+    api_failures = 0
 
     def _emit_progress() -> None:
         if progress_callback is None:
@@ -998,7 +1002,7 @@ def preload_all(
         except Exception:
             pass
 
-    existing = get_all_data_snapshot(tickers_ns)
+    existing = get_all_data_snapshot(tickers_ns, copy=False)
     with _NO_DATA_LOCK:
         known_no_data = set(_coerce_no_data_tickers())
     if _current_time_travel_cutoff() is not None:
@@ -1098,6 +1102,8 @@ def preload_all(
             "downloaded": live_downloaded,
             "fallback_used": fallback_used,
             "cache_hits": cache_hits,
+            "retry_skipped": retry_skipped,
+            "api_failures": api_failures,
             "force_live_refresh": force_live_refresh,
         }
 
@@ -1111,12 +1117,25 @@ def preload_all(
         len(batches),
     )
 
-    def _fetch_batch(batch: list[str]) -> dict[str, pd.DataFrame | None]:
+    def _fetch_batch(batch: list[str]) -> tuple[dict[str, pd.DataFrame | None], set[str], int, int]:
+        upstream_failed: set[str] = set()
+        retry_skipped_local = 0
+        api_failures_local = 0
         frames, batch_ok = _download_batch(batch, period)
         if not batch_ok:
-            retry_list = batch
+            upstream_failed.update(batch)
+            api_failures_local += len(batch)
+            retry_list = batch[:_MAX_BATCH_FAILURE_SINGLE_RETRIES]
+            retry_skipped_local += max(0, len(batch) - len(retry_list))
         else:
-            retry_list = [ticker_ns for ticker_ns in batch if frames.get(ticker_ns) is None]
+            missing = [ticker_ns for ticker_ns in batch if frames.get(ticker_ns) is None]
+            missing_ratio = len(missing) / max(1, len(batch)) if missing else 0.0
+            if missing_ratio <= _MAX_PARTIAL_MISSING_RETRY_RATIO:
+                retry_list = missing
+            else:
+                upstream_failed.update(missing)
+                retry_list = missing[:_MAX_BATCH_FAILURE_SINGLE_RETRIES]
+                retry_skipped_local += max(0, len(missing) - len(retry_list))
         for ticker_ns in retry_list:
             if frames.get(ticker_ns) is None:
                 frames[ticker_ns] = download_history(
@@ -1125,7 +1144,7 @@ def preload_all(
                     ignore_no_data_cache=force_live_refresh,
                     suppress_no_data_mark=force_live_refresh,
                 )
-        return frames
+        return frames, upstream_failed, retry_skipped_local, api_failures_local
 
     def _submit_scan_task(executor, batch: list[str]):
         if _current_time_travel_cutoff() is not None:
@@ -1142,9 +1161,14 @@ def preload_all(
         for fut in as_completed(futs):
             batch = futs[fut]
             try:
-                batch_frames = fut.result()
+                batch_frames, upstream_failed, skipped_local, api_failures_local = fut.result()
+                retry_skipped += int(skipped_local)
+                api_failures += int(api_failures_local)
             except Exception:
                 batch_frames = {ticker_ns: None for ticker_ns in batch}
+                upstream_failed = set(batch)
+                retry_skipped += len(batch)
+                api_failures += len(batch)
 
             with _ALL_DATA_LOCK:
                 for ticker_ns in batch:
@@ -1167,7 +1191,9 @@ def preload_all(
             for ticker_ns in batch:
                 frame = batch_frames.get(ticker_ns)
                 if frame is None:
-                    if not force_live_refresh:
+                    if ticker_ns in upstream_failed:
+                        pass
+                    elif not force_live_refresh:
                         _mark_no_data(ticker_ns)
                 else:
                     _clear_no_data(ticker_ns)
@@ -1193,6 +1219,8 @@ def preload_all(
         "downloaded": live_downloaded,
         "fallback_used": fallback_used,
         "cache_hits": cache_hits,
+        "retry_skipped": retry_skipped,
+        "api_failures": api_failures,
         "force_live_refresh": force_live_refresh,
     }
 
@@ -1301,7 +1329,7 @@ def prepare_market_session_data(
                 and callable(save_snapshot_fn)
                 and not snapshot_exists_fn(expected_date)
             ):
-                snapshot_saved = int(save_snapshot_fn(get_all_data_snapshot(), expected_date, require_live_source=True) or 0)
+                snapshot_saved = int(save_snapshot_fn(get_all_data_snapshot(copy=False), expected_date, require_live_source=True) or 0)
         except Exception:
             snapshot_saved = 0
 
@@ -1322,15 +1350,6 @@ def get_df_for_ticker(ticker: str) -> pd.DataFrame | None:
     ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
     force_live_refresh = _should_force_live_refresh()
     allow_live_fallback = _should_allow_live_fallback(force_live_refresh)
-    if _current_time_travel_cutoff() is not None:
-        try:
-            import time_travel_engine as _tt
-
-            cached_tt = _tt.get_cached_for_ticker(ticker_ns)
-            if isinstance(cached_tt, pd.DataFrame) and not cached_tt.empty:
-                return cached_tt
-        except Exception:
-            pass
     df = get_all_data_frame(ticker_ns)
     df = _apply_time_travel_cutoff_if_needed(df, ticker_ns)
     stale_fallback = None

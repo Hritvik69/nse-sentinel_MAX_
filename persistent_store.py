@@ -188,15 +188,14 @@ def _gh_put_status(secrets: dict, path: str, content_bytes: bytes, sha: str | No
             "Accept": "application/vnd.github+json",
             "Content-Type": "application/json",
         }
-        for delay in (0, 2, 4, 8):
-            if delay:
-                _time.sleep(delay)
-            resp = requests.put(url, headers=headers, data=json.dumps(payload), timeout=20)
-            if resp.status_code in (200, 201):
-                return {"ok": True, "status": resp.status_code}
-            if resp.status_code not in (429, 503):
-                return {"ok": False, "status": resp.status_code}
-        return {"ok": False, "status": 503}
+        resp = requests.put(url, headers=headers, data=json.dumps(payload), timeout=20)
+        if resp.status_code in (200, 201):
+            return {"ok": True, "status": resp.status_code}
+        return {
+            "ok": False,
+            "status": resp.status_code,
+            "retry_after": resp.headers.get("Retry-After", ""),
+        }
     except Exception as exc:
         return {"ok": False, "status": 0, "error": str(exc)[:160]}
 
@@ -499,6 +498,32 @@ _PENDING_PUSHES_LOCK = threading.Lock()
 _PUSH_WORKER_STARTED = False
 _PUSH_WORKER_LOCK = threading.Lock()
 _TRANSIENT_PUSH_STATUSES = {429, 503}
+_PUSH_STATUS_LOCK = threading.Lock()
+_LAST_PUSH_ERROR: dict[str, Any] = {}
+
+
+def _set_last_push_error(path: str, status: object = "", error: object = "") -> None:
+    with _PUSH_STATUS_LOCK:
+        _LAST_PUSH_ERROR.clear()
+        _LAST_PUSH_ERROR.update(
+            {
+                "path": str(path or ""),
+                "status": status,
+                "error": str(error or "")[:240],
+                "ts": _time.time(),
+            }
+        )
+
+
+def _clear_last_push_error(path: str | None = None) -> None:
+    with _PUSH_STATUS_LOCK:
+        if path is None or _LAST_PUSH_ERROR.get("path") == path:
+            _LAST_PUSH_ERROR.clear()
+
+
+def get_last_push_error() -> dict[str, Any]:
+    with _PUSH_STATUS_LOCK:
+        return dict(_LAST_PUSH_ERROR)
 
 
 def _ensure_data_dir() -> None:
@@ -524,14 +549,41 @@ def _take_pending_pushes() -> list[Path]:
 
 def _put_with_transient_retry(secrets: dict, remote_path: str, content: bytes, sha: str | None) -> dict:
     result: dict = {"ok": False, "status": 0}
+    retry_after_delay: float | None = None
     for attempt, delay in enumerate((0.0, 0.25, 0.75), start=1):
+        if retry_after_delay is not None:
+            delay = retry_after_delay
+            retry_after_delay = None
         if delay:
             _time.sleep(delay)
         result = _gh_put_status(secrets, remote_path, content, sha)
         status = int(result.get("status") or 0)
         if result.get("ok") or status not in _TRANSIENT_PUSH_STATUSES or attempt >= 3:
             return result
+        try:
+            retry_after = float(result.get("retry_after") or 0)
+            if retry_after > 0:
+                retry_after_delay = min(retry_after, 30.0)
+        except Exception:
+            retry_after_delay = None
     return result
+
+
+def _rebuild_signal_performance_from_sector_log() -> bool:
+    """Regenerate derived signal performance from the merged sector log."""
+    sector_log = _DATA_DIR / "sector_predictions.csv"
+    perf_path = _DATA_DIR / "sector_signal_performance.csv"
+    if not sector_log.exists():
+        return False
+    try:
+        from sector_dynamic_weights import update_signal_performance
+
+        log_df = pd.read_csv(sector_log, dtype=str, keep_default_na=False)
+        update_signal_performance(log_df)
+        return perf_path.exists()
+    except Exception as exc:
+        _LOG.error("persistent_store: signal performance rebuild failed: %s", str(exc)[:160])
+        return False
 
 
 def _do_push_blocking(local_path: Path) -> bool:
@@ -548,6 +600,8 @@ def _do_push_blocking(local_path: Path) -> bool:
         if not local_path.exists():
             _LOG.debug("persistent_store: %s does not exist -- skipped", local_path)
             return True
+        if local_name == "sector_signal_performance.csv":
+            _rebuild_signal_performance_from_sector_log()
         with _PUSH_LOCK:
             if not local_path.exists():
                 _LOG.debug("persistent_store: %s disappeared before push -- skipped", local_path)
@@ -560,6 +614,7 @@ def _do_push_blocking(local_path: Path) -> bool:
             content = local_path.read_bytes()
             result = _put_with_transient_retry(secrets, remote_path, content, sha)
             if result.get("ok"):
+                _clear_last_push_error(remote_path)
                 return True
             if int(result.get("status") or 0) == 409:
                 latest = _gh_get(secrets, remote_path)
@@ -571,10 +626,13 @@ def _do_push_blocking(local_path: Path) -> bool:
                     return False
                 retry = _put_with_transient_retry(secrets, remote_path, merged, latest_sha)
                 if retry.get("ok"):
+                    _clear_last_push_error(remote_path)
                     return True
+            _set_last_push_error(remote_path, result.get("status"), result.get("error", "push failed"))
             _LOG.error("persistent_store: GitHub push failed for %s status=%s", remote_path, result.get("status"))
             return False
     except Exception as exc:
+        _set_last_push_error(str(local_path), 0, exc)
         _LOG.error("persistent_store: push failed for %s: %s", local_path.name, str(exc)[:160])
         return False
 
@@ -595,8 +653,9 @@ def _run_push_worker() -> None:
                     break
                 for pending_path in pending:
                     _do_push_blocking(pending_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            _set_last_push_error(str(local_path), 0, exc)
+            _LOG.exception("persistent_store: push worker failed")
         finally:
             _PUSH_QUEUE.task_done()
 
@@ -624,6 +683,7 @@ def pull_all() -> int:
 
     _ensure_data_dir()
     pulled = 0
+    sector_log_touched = False
     for local_name, remote_path in _SYNC_FILES.items():
         try:
             data = _gh_get(secrets, remote_path)
@@ -645,10 +705,14 @@ def pull_all() -> int:
                     continue
                 raw = merged
             atomic_write_bytes(local_path, raw)
+            if local_name == "sector_predictions.csv":
+                sector_log_touched = True
             pulled += 1
         except Exception as exc:
             _LOG.error("persistent_store: pull failed for %s: %s", remote_path, str(exc)[:160])
             continue
+    if sector_log_touched:
+        _rebuild_signal_performance_from_sector_log()
     return pulled
 
 

@@ -474,7 +474,7 @@ def _freeze_rows(raw_rows: list[dict]) -> tuple[tuple[tuple[str, Any], ...], ...
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def _cached_index_analysis(index_sector: str, _tt_date_key: str = "live") -> dict[str, Any]:
+def _cached_index_analysis(index_sector: str, tt_date_key: str = "live") -> dict[str, Any]:
     return analyze_index(index_sector)
 
 
@@ -483,7 +483,7 @@ def _cached_pipeline_df(
     raw_rows_payload: tuple[tuple[tuple[str, Any], ...], ...],
     mode: int,
     market_bias_key: Any,
-    _tt_date_key: str = "live",
+    tt_date_key: str = "live",
     _market_bias: dict[str, Any] | None = None,
     _enhance_results_fn: Callable[[list[dict], int], pd.DataFrame] | None = None,
     _apply_enhanced_logic_fn: Callable[[pd.DataFrame], pd.DataFrame] | None = None,
@@ -615,7 +615,7 @@ def render_sector_screener_dashboard(
 
         if compute_market_bias_fn is not None:
             try:
-                _mb = compute_market_bias_fn(include_bank=True)
+                _mb = compute_market_bias_fn(include_bank=True, tt_cache_key=_mb_tt_key)
             except TypeError:
                 _mb = compute_market_bias_fn()
             if isinstance(_mb, dict):
@@ -648,7 +648,7 @@ def render_sector_screener_dashboard(
                 _freeze_rows(raw_rows),
                 mode,
                 _market_bias_key(mb),
-                _tt_date_key=_rp_tt_key,
+                tt_date_key=_rp_tt_key,
                 _market_bias=mb,
                 _enhance_results_fn=enhance_results_fn,
                 _apply_enhanced_logic_fn=apply_enhanced_logic_fn,
@@ -975,7 +975,7 @@ def render_sector_screener_dashboard(
             _cia_tt_key = str(st.session_state.get("tt_date_val") or "live")
         index_analysis = _cached_index_analysis(
             get_dashboard_index_sector(sector_name),
-            _tt_date_key=_cia_tt_key,
+            tt_date_key=_cia_tt_key,
         )
         pred = compute_sector_prediction_enhanced(
             sector_name,

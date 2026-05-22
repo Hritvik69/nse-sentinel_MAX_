@@ -98,8 +98,14 @@ def record_failure(ticker: str, reason: FailReason) -> None:
     """
     with _LOCK:
         _attempted.add(ticker)
-        if ticker not in _succeeded:        # don't overwrite a success
-            _failed[ticker] = reason
+        if ticker in _succeeded:
+            return
+        prev_reason = _failed.get(ticker)
+        if prev_reason == reason:
+            return
+        if prev_reason is not None:
+            _reason_count[prev_reason] = max(0, _reason_count[prev_reason] - 1)
+        _failed[ticker] = reason
         _reason_count[reason] += 1
 
 

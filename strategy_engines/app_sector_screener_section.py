@@ -15,6 +15,7 @@
 
 import streamlit as st
 import pandas as pd
+from html import escape
 
 # ── Engine imports ────────────────────────────────────────────────────
 try:
@@ -310,15 +311,15 @@ else:
                     )
                     _ts_html += (
                         f'<tr style="background:{_bg};border-bottom:1px solid #0f1e2f;">'
-                        f'<td style="padding:8px 10px;font-weight:700;">{_ts["symbol"]}</td>'
+                        f'<td style="padding:8px 10px;font-weight:700;">{escape(str(_ts["symbol"]))}</td>'
                         f'<td style="padding:8px 10px;text-align:right;'
                         f'font-weight:800;color:{_sc_c};">{_ts["score"]:.1f}</td>'
                         f'<td style="padding:8px 10px;text-align:center;color:#f0b429;">'
-                        f'{_ts["signal"]}</td>'
+                        f'{escape(str(_ts["signal"]))}</td>'
                         f'<td style="padding:8px 10px;text-align:center;">'
-                        f'{_ts["grade"]}</td>'
+                        f'{escape(str(_ts["grade"]))}</td>'
                         f'<td style="padding:8px 10px;text-align:center;'
-                        f'color:{_trap_c};font-weight:700;">{_ts["trap"]}</td>'
+                        f'color:{_trap_c};font-weight:700;">{escape(str(_ts["trap"]))}</td>'
                         f'</tr>'
                     )
                 _ts_html += "</tbody></table></div>"
@@ -452,6 +453,10 @@ else:
             _fl  = _pr.get("flag", "")
             _sn  = _pr.get("sector", "")
             _desc = get_sector_description(_sn)
+            _sn_safe = escape(str(_sn))
+            _desc_safe = escape(str(_desc))
+            _p_safe = escape(str(_p))
+            _pi_safe = escape(str(_pi))
 
             _fl_badge = (
                 "⚠️ FAKE BULLISH" if _fl == "FAKE_BULLISH"
@@ -467,17 +472,17 @@ else:
             _all_html += (
                 f'<tr style="background:{_bg};border-bottom:1px solid #0f1e2f;">'
                 f'<td style="padding:9px 10px;">'
-                f'<div style="font-weight:700;">{_sn}</div>'
-                f'<div style="font-size:10px;color:#4a6480;">{_desc}</div></td>'
+                f'<div style="font-weight:700;">{_sn_safe}</div>'
+                f'<div style="font-size:10px;color:#4a6480;">{_desc_safe}</div></td>'
                 f'<td style="padding:9px 10px;text-align:center;">'
-                f'<span style="font-weight:800;color:{_pc};">{_pi} {_p}</span></td>'
+                f'<span style="font-weight:800;color:{_pc};">{_pi_safe} {_p_safe}</span></td>'
                 f'<td style="padding:9px 10px;text-align:right;'
                 f'font-weight:800;color:{_prob_color(_prb)};">{_prb:.0f}%</td>'
                 f'<td style="padding:9px 10px;text-align:right;color:#0094ff;">{_cof:.0f}%</td>'
                 f'<td style="padding:9px 10px;text-align:right;color:#00d4a8;">{_bl:.0f}%</td>'
                 f'<td style="padding:9px 10px;text-align:right;color:#ccd9e8;">{_sc:.1f}</td>'
                 f'<td style="padding:9px 10px;text-align:center;'
-                f'font-size:11px;color:{_fl_col};">{_fl_badge}</td>'
+                f'font-size:11px;color:{_fl_col};">{escape(str(_fl_badge))}</td>'
                 f'</tr>'
             )
 
@@ -511,6 +516,9 @@ else:
         _strong_prob = _strongest.get("probability_pct", 0.0)
         _weak_name   = _weakest.get("sector", "—")
         _weak_prob   = _weakest.get("probability_pct", 0.0)
+        _mkt_dir_safe = escape(str(_mkt_dir))
+        _strong_name_safe = escape(str(_strong_name))
+        _weak_name_safe = escape(str(_weak_name))
 
         st.markdown(
             f'<div style="background:#0b1017;border:2px solid {_mkt_color};'
@@ -518,21 +526,21 @@ else:
             # Market direction
             f'<div style="font-family:\'Syne\',sans-serif;font-size:22px;'
             f'font-weight:800;color:{_mkt_color};margin-bottom:16px;">'
-            f'Market Direction: {_mkt_dir}</div>'
+            f'Market Direction: {_mkt_dir_safe}</div>'
             # Stats row
             f'<div style="display:flex;gap:32px;flex-wrap:wrap;">'
             f'<div>'
             f'<div style="font-size:10px;color:#4a6480;text-transform:uppercase;'
             f'letter-spacing:1px;">🔥 Strongest Sector</div>'
             f'<div style="font-size:18px;font-weight:800;color:#00d4a8;">'
-            f'{_strong_name}</div>'
+            f'{_strong_name_safe}</div>'
             f'<div style="font-size:12px;color:#4a6480;">{_strong_prob:.0f}% probability</div>'
             f'</div>'
             f'<div>'
             f'<div style="font-size:10px;color:#4a6480;text-transform:uppercase;'
             f'letter-spacing:1px;">⚠️ Weakest Sector</div>'
             f'<div style="font-size:18px;font-weight:800;color:#ff4d6d;">'
-            f'{_weak_name}</div>'
+            f'{_weak_name_safe}</div>'
             f'<div style="font-size:12px;color:#4a6480;">{_weak_prob:.0f}% probability</div>'
             f'</div>'
             f'<div>'

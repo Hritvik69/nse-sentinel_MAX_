@@ -35,18 +35,27 @@ def _coerce_date(value: object) -> date | None:
         return None
 
 
-def _frame_signature(df: pd.DataFrame | None) -> tuple[int, str]:
+def _frame_signature(df: pd.DataFrame | None) -> tuple[int, str, str]:
     try:
         if df is None or df.empty:
-            return (0, "")
+            return (0, "", "")
         last = pd.to_datetime(df.index[-1], errors="coerce")
         last_text = "" if pd.isna(last) else pd.Timestamp(last).isoformat()
-        return (int(len(df)), last_text)
+        content_text = ""
+        try:
+            cols = [col for col in ("Open", "High", "Low", "Close", "Volume") if col in df.columns]
+            sample = df.loc[:, cols].tail(64) if cols else df.tail(64)
+            hashed = pd.util.hash_pandas_object(sample, index=True).astype("uint64")
+            if not hashed.empty:
+                content_text = f"{int(hashed.sum())}:{int(hashed.iloc[-1])}"
+        except Exception:
+            content_text = str(getattr(df, "shape", ""))
+        return (int(len(df)), last_text, content_text)
     except Exception:
-        return (0, "")
+        return (0, "", "")
 
 
-def _cache_key(ticker: str, cutoff: date, df: pd.DataFrame | None) -> tuple[str, str, tuple[int, str]]:
+def _cache_key(ticker: str, cutoff: date, df: pd.DataFrame | None) -> tuple[str, str, tuple[int, str, str]]:
     ticker_key = str(ticker or "").strip().upper()
     return (ticker_key, cutoff.isoformat(), _frame_signature(df))
 

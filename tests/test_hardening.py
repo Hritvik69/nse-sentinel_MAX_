@@ -1845,6 +1845,149 @@ class HardeningRegressionTests(unittest.TestCase):
         self.assertIn(double_encoded_alias, row)
         self.assertEqual(row["Price (\u20b9)"], row[legacy_alias])
 
+    def test_time_travel_cache_signature_tracks_same_length_value_changes(self) -> None:
+        import time_travel_engine as tt
+
+        df1 = _sample_ohlcv("2026-05-01", periods=30, close_start=100)
+        df2 = df1.copy()
+        df2.iloc[-1, df2.columns.get_loc("Close")] = 999.0
+        cutoff = date(2026, 7, 1)
+        try:
+            tt.clear_cache()
+            cached1 = tt.cache_frame("TEST.NS", df1, cutoff)
+            self.assertIsNotNone(cached1)
+            self.assertIsNone(tt.get_cached_frame("TEST.NS", df2, cutoff))
+            cached2 = tt.cache_frame("TEST.NS", df2, cutoff)
+            self.assertIsNotNone(cached2)
+            self.assertEqual(float(cached2["Close"].iloc[-1]), 999.0)
+        finally:
+            tt.clear_cache()
+
+    def test_preload_batch_failure_caps_single_ticker_retries(self) -> None:
+        from strategy_engines import _engine_utils as eu
+
+        tickers = [f"ZZZ{i}.NS" for i in range(20)]
+        old_all_data = dict(eu.ALL_DATA)
+        old_no_data = dict(eu._NO_DATA_TICKERS)
+        old_download_batch = eu._download_batch
+        old_download_history = eu.download_history
+        old_persist = eu._persist_frame_to_csv
+        calls: list[str] = []
+        try:
+            eu.ALL_DATA.clear()
+            eu._NO_DATA_TICKERS.clear()
+            eu._download_batch = lambda batch, period: ({ticker: None for ticker in batch}, False)  # type: ignore[assignment]
+
+            def fake_download_history(ticker_ns, *args, **kwargs):
+                calls.append(ticker_ns)
+                return None
+
+            eu.download_history = fake_download_history  # type: ignore[assignment]
+            eu._persist_frame_to_csv = lambda *args, **kwargs: None  # type: ignore[assignment]
+            stats = eu.preload_all(tickers, workers=4, force_live_refresh=True)
+
+            self.assertEqual(len(calls), eu._MAX_BATCH_FAILURE_SINGLE_RETRIES)
+            self.assertEqual(stats["retry_skipped"], len(tickers) - eu._MAX_BATCH_FAILURE_SINGLE_RETRIES)
+            self.assertEqual(stats["api_failures"], len(tickers))
+        finally:
+            eu.ALL_DATA.clear()
+            eu.ALL_DATA.update(old_all_data)
+            eu._NO_DATA_TICKERS.clear()
+            eu._NO_DATA_TICKERS.update(old_no_data)
+            eu._download_batch = old_download_batch  # type: ignore[assignment]
+            eu.download_history = old_download_history  # type: ignore[assignment]
+            eu._persist_frame_to_csv = old_persist  # type: ignore[assignment]
+
+    def test_persistent_store_transient_retry_is_single_bounded_layer(self) -> None:
+        import persistent_store as ps
+
+        old_put = ps._gh_put_status
+        old_sleep = ps._time.sleep
+        calls: list[bytes] = []
+        try:
+            ps._time.sleep = lambda *_args, **_kwargs: None
+
+            def fake_put(secrets, path, content, sha=None):
+                calls.append(content)
+                return {"ok": False, "status": 503}
+
+            ps._gh_put_status = fake_put  # type: ignore[assignment]
+            result = ps._put_with_transient_retry({}, "data/test.csv", b"x", None)
+            self.assertFalse(result["ok"])
+            self.assertEqual(len(calls), 3)
+        finally:
+            ps._gh_put_status = old_put  # type: ignore[assignment]
+            ps._time.sleep = old_sleep
+
+    def test_sector_signal_performance_rebuilds_from_sector_log(self) -> None:
+        import persistent_store as ps
+        import sector_dynamic_weights as sdw
+
+        tmp = Path(tempfile.mkdtemp())
+        old_ps_dir = ps._DATA_DIR
+        old_sdw_dir = sdw._DATA_DIR
+        old_perf_path = sdw._PERF_PATH
+        old_push = sdw._push_file
+        old_cache = sdw._perf_cache
+        try:
+            ps._DATA_DIR = tmp  # type: ignore[assignment]
+            sdw._DATA_DIR = tmp  # type: ignore[assignment]
+            sdw._PERF_PATH = tmp / "sector_signal_performance.csv"  # type: ignore[assignment]
+            sdw._push_file = lambda *args, **kwargs: True  # type: ignore[assignment]
+            sdw._perf_cache = {}
+            (tmp / "sector_predictions.csv").write_text(
+                "sector,direction,correct,signal_ema_slope,signal_momentum\n"
+                "IT,Bullish,True,70,55\n"
+                "IT,Bullish,False,75,30\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(ps._rebuild_signal_performance_from_sector_log())
+            perf = pd.read_csv(sdw._PERF_PATH, dtype=str, keep_default_na=False)
+            ema = perf[perf["signal_name"] == "ema_slope"].iloc[0]
+            self.assertEqual(ema["observations"], "2")
+            self.assertEqual(ema["wins"], "1")
+        finally:
+            ps._DATA_DIR = old_ps_dir  # type: ignore[assignment]
+            sdw._DATA_DIR = old_sdw_dir  # type: ignore[assignment]
+            sdw._PERF_PATH = old_perf_path  # type: ignore[assignment]
+            sdw._push_file = old_push  # type: ignore[assignment]
+            sdw._perf_cache = old_cache
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_scan_diagnostics_success_and_failure_counts_are_idempotent(self) -> None:
+        import scan_diagnostics as diag
+
+        diag.reset()
+        diag.record_failure("AAA.NS", "NO_DATA")
+        diag.record_failure("AAA.NS", "NO_DATA")
+        diag.record_failure("AAA.NS", "STALE")
+        report = diag.get_report()
+        self.assertEqual(report["failed_data"], 1)
+        self.assertEqual(report["reasons"].get("NO_DATA", 0), 0)
+        self.assertEqual(report["reasons"].get("STALE", 0), 1)
+
+        diag.record_success("AAA.NS")
+        report = diag.get_report()
+        self.assertEqual(report["succeeded"], 1)
+        self.assertEqual(report["failed_data"], 0)
+        self.assertEqual(report["reasons"].get("STALE", 0), 0)
+
+    def test_reliability_patch_source_guards_are_present(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app_source = (root / "app.py").read_text(encoding="utf-8")
+        dashboard_source = (root / "strategy_engines" / "app_sector_screener_dashboard.py").read_text(encoding="utf-8")
+        sector_ui_source = (root / "strategy_engines" / "app_sector_screener_section.py").read_text(encoding="utf-8")
+        intel_ui_source = (root / "strategy_engines" / "app_sector_intelligence_section.py").read_text(encoding="utf-8")
+
+        self.assertIn("def compute_market_bias(include_bank: bool = True, tt_cache_key: str = \"live\")", app_source)
+        self.assertIn("def compute_market_bias_ui(tt_cache_key: str = \"live\")", app_source)
+        self.assertNotIn("_tt_date_key", dashboard_source)
+        self.assertIn("_tt_restore_needed = False", app_source)
+        self.assertNotIn("lc * av * 250", app_source)
+        self.assertIn("escape(str(_ts[\"symbol\"]))", sector_ui_source)
+        self.assertIn("_leaders_safe = escape(str(_leaders_str))", intel_ui_source)
+
 
 if __name__ == "__main__":
     unittest.main()

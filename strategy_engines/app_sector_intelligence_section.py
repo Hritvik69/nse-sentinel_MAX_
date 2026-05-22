@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
@@ -349,14 +351,19 @@ def render_sector_intelligence_section() -> None:
                         _flow_lbl = _FLOW_ICON.get(_sec_flow, "⚪ Stable")
                         _flow_col = _FLOW_COLOR.get(_sec_flow, "#8ab4d8")
                         _leaders_str = ", ".join(_sec_ldr) if _sec_ldr else "—"
+                        _sec_name_safe = escape(str(_sec_name))
+                        _sec_desc_safe = escape(str(_sec_desc))
+                        _flow_lbl_safe = escape(str(_flow_lbl))
+                        _lbl_safe = escape(str(_lbl))
+                        _leaders_safe = escape(str(_leaders_str))
                         _bg = "#0d1520" if _ri % 2 == 0 else "#0b1017"
 
                         _rank_html += (
                             f'<tr style="background:{_bg};border-bottom:1px solid #0f1e2f;">'
                             f'<td style="padding:9px 10px;font-weight:700;color:#4a6480;">#{_ri}</td>'
                             f'<td style="padding:9px 10px;">'
-                            f'<div style="font-weight:700;">{_sec_name}</div>'
-                            f'<div style="font-size:10px;color:#4a6480;">{_sec_desc}</div>'
+                            f'<div style="font-weight:700;">{_sec_name_safe}</div>'
+                            f'<div style="font-size:10px;color:#4a6480;">{_sec_desc_safe}</div>'
                             f'</td>'
                             f'<td style="padding:9px 10px;text-align:right;">'
                             f'<span style="font-weight:800;color:{_col};font-size:15px;">'
@@ -364,14 +371,14 @@ def render_sector_intelligence_section() -> None:
                             f'<td style="padding:9px 10px;text-align:right;color:#8ab4d8;">'
                             f'{_sec_mom:.1f}</td>'
                             f'<td style="padding:9px 10px;text-align:center;">'
-                            f'<span style="color:{_flow_col};font-size:12px;">{_flow_lbl}</span>'
+                            f'<span style="color:{_flow_col};font-size:12px;">{_flow_lbl_safe}</span>'
                             f'</td>'
                             f'<td style="padding:9px 10px;text-align:center;">'
                             f'<span style="background:{_col}22;color:{_col};'
                             f'border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">'
-                            f'{_lbl}</span></td>'
+                            f'{_lbl_safe}</span></td>'
                             f'<td style="padding:9px 10px;font-size:11px;color:#8ab4d8;">'
-                            f'{_leaders_str}</td>'
+                            f'{_leaders_safe}</td>'
                             f'</tr>'
                         )
 
@@ -541,6 +548,11 @@ def render_sector_intelligence_section() -> None:
                         _tmr_conf = float(_tmr.get("confidence", 0.0) or 0.0)
                         _tmr_dir = str(_tmr.get("direction", "Sideways") or "Sideways")
                         _tmr_icon = {"Bullish": "▲", "Bearish": "▼", "Sideways": "◆"}.get(_tmr_dir, "•")
+                        _sec_n_safe = escape(str(_sec_n))
+                        _desc_safe = escape(str(_desc))
+                        _tmr_chip_safe = escape(str(_tmr_chip))
+                        _tmr_icon_safe = escape(str(_tmr_icon))
+                        _tmr_dir_safe = escape(str(_tmr_dir))
 
                         _card = (
                             f'<div style="background:#0b1017;border:1.5px solid #1e3a5f;'
@@ -549,9 +561,9 @@ def render_sector_intelligence_section() -> None:
                             f'justify-content:space-between;margin-bottom:10px;">'
                             f'<div>'
                             f'<span style="font-weight:800;font-size:14px;color:#ccd9e8;">'
-                            f'{_sec_n}</span>'
+                            f'{_sec_n_safe}</span>'
                             f'<span style="font-size:10px;color:#4a6480;margin-left:8px;">'
-                            f'{_desc}</span>'
+                            f'{_desc_safe}</span>'
                             f'</div>'
                             f'<span style="font-size:13px;font-weight:800;color:{_col_c};">'
                             f'{_sec_str:.1f}</span>'
@@ -559,8 +571,8 @@ def render_sector_intelligence_section() -> None:
                             f'<div style="display:flex;justify-content:space-between;align-items:center;'
                             f'background:{_tmr_color}14;border:1px solid {_tmr_color}44;border-radius:10px;'
                             f'padding:8px 10px;margin-bottom:10px;">'
-                            f'<span style="font-size:11px;font-weight:800;color:{_tmr_color};">{_tmr_chip}</span>'
-                            f'<span style="font-size:11px;color:#8ab4d8;">{_tmr_icon} {_tmr_dir} · {_tmr_conf:.0f}%</span>'
+                            f'<span style="font-size:11px;font-weight:800;color:{_tmr_color};">{_tmr_chip_safe}</span>'
+                            f'<span style="font-size:11px;color:#8ab4d8;">{_tmr_icon_safe} {_tmr_dir_safe} · {_tmr_conf:.0f}%</span>'
                             f'</div>'
                         )
 
@@ -572,7 +584,7 @@ def render_sector_intelligence_section() -> None:
                                     f'gap:8px;margin-bottom:5px;">'
                                     f'<span style="font-size:14px;">{_medal}</span>'
                                     f'<span style="font-weight:700;font-size:13px;'
-                                    f'color:#ccd9e8;">{_leader}</span>'
+                                    f'color:#ccd9e8;">{escape(str(_leader))}</span>'
                                     f'</div>'
                                 )
                         else:
@@ -590,6 +602,9 @@ def render_sector_intelligence_section() -> None:
 
                     _best_sector = _top_sec or _dom or "—"
                     _avoid_sector = _weak_sec or "—"
+                    _best_sector_safe = escape(str(_best_sector))
+                    _avoid_sector_safe = escape(str(_avoid_sector))
+                    _market_label_safe = escape(str(_market_label))
 
                     td1, td2, td3 = st.columns(3)
                     with td1:
@@ -599,7 +614,7 @@ def render_sector_intelligence_section() -> None:
                             f'<div style="font-size:11px;color:#4a6480;margin-bottom:4px;">'
                             f'Trade Focus</div>'
                             f'<div style="font-size:18px;font-weight:800;color:#00d4a8;">'
-                            f'{_best_sector}</div>'
+                            f'{_best_sector_safe}</div>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )
@@ -610,7 +625,7 @@ def render_sector_intelligence_section() -> None:
                             f'<div style="font-size:11px;color:#4a6480;margin-bottom:4px;">'
                             f'Avoid Sector</div>'
                             f'<div style="font-size:18px;font-weight:800;color:#ff4d6d;">'
-                            f'{_avoid_sector}</div>'
+                            f'{_avoid_sector_safe}</div>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )
@@ -621,7 +636,7 @@ def render_sector_intelligence_section() -> None:
                             f'<div style="font-size:11px;color:#4a6480;margin-bottom:4px;">'
                             f'Market Type</div>'
                             f'<div style="font-size:18px;font-weight:800;color:{_market_color};">'
-                            f'{_market_label}</div>'
+                            f'{_market_label_safe}</div>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )

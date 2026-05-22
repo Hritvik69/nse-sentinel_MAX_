@@ -4,7 +4,7 @@ Dark terminal aesthetic | Multi-strategy scanner | 1000+ NSE stocks
 
 Run from the APP3 root folder (the folder that contains app.py):
     cd C:\Users\HP\Downloads\app3
-    
+
 .\.venv\Scripts\python.exe -m streamlit run app.py
 
 CHANGES vs original:
@@ -5762,7 +5762,8 @@ _YF_SEM = threading.BoundedSemaphore(MAX_YF_CONCURRENCY)
 _MKT_LOCK   = threading.Lock()
 _MKT_CACHE: dict[str, float] = {}
 _NIFTY_LOCK = threading.Lock()
-_NIFTY_20D_RET: float | None = None
+_NIFTY_20D_RET: dict[tuple[str, str], float] = {}
+_NIFTY_LAST_KEY_BY_CONTEXT: dict[str, tuple[str, str]] = {}
 _NIFTY_COMPUTING = False
 
 # SPEED FIX — restore mktcap cache from session_state on each rerun so
@@ -5777,48 +5778,71 @@ except Exception:
 
 def get_mktcap_cr(ticker: str) -> float:
     """DO NOT MODIFY — strategy rule"""
+    ticker_ns = ticker if str(ticker).endswith(".NS") else f"{ticker}.NS"
     with _MKT_LOCK:
+        if ticker_ns in _MKT_CACHE:
+            return _MKT_CACHE[ticker_ns]
         if ticker in _MKT_CACHE:
             return _MKT_CACHE[ticker]
     try:
-        ticker_ns = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
-        if _engine_utils is not None and callable(getattr(_engine_utils, "get_all_data_frame", None)):
-            df = _engine_utils.get_all_data_frame(ticker_ns)
-        else:
-            df = _engine_utils.ALL_DATA.get(ticker_ns) if _engine_utils is not None else None
-        if df is not None and not df.empty and {"Close", "Volume"}.issubset(df.columns):
-            close = df["Close"].dropna()
-            volume = df["Volume"].dropna()
-            if not close.empty and not volume.empty:
-                lc = float(close.iloc[-1])
-                av = float(volume.tail(20).mean())
-                mc_cr = round(lc * av * 250 / 1e7, 2)
-                with _MKT_LOCK:
-                    _MKT_CACHE[ticker] = mc_cr
-                try:
-                    st.session_state.setdefault("_mkt_cache_store", {})[ticker] = mc_cr
-                except Exception:
-                    pass
-                return mc_cr
-    except Exception:
-        pass
-    try:
         with _YF_SEM:
-            info = yf.Ticker(ticker).fast_info
+            info = yf.Ticker(ticker_ns).fast_info
             raw  = getattr(info, "market_cap", 0) or 0
     except Exception:
         raw = 0
     mc_cr = float(raw) / 1e7 if raw else 0.0
     with _MKT_LOCK:
+        _MKT_CACHE[ticker_ns] = mc_cr
         _MKT_CACHE[ticker] = mc_cr
     # SPEED FIX — persist new entry to session_state so next rerun skips API call
     try:
         if "_mkt_cache_store" not in st.session_state:
             st.session_state["_mkt_cache_store"] = {}
+        st.session_state["_mkt_cache_store"][ticker_ns] = mc_cr
         st.session_state["_mkt_cache_store"][ticker] = mc_cr
     except Exception:
         pass
     return mc_cr
+
+
+def _nifty_context_key() -> str:
+    try:
+        if _TIME_TRAVEL_OK and getattr(_tt, "is_active", lambda: False)():
+            ref = _tt.get_reference_date()
+            if ref is not None:
+                return f"tt:{ref}"
+    except Exception:
+        pass
+    try:
+        return f"live:{get_expected_data_date()}"
+    except Exception:
+        return f"live:{datetime.now().date()}"
+
+
+def _nifty_frame_signature(df: pd.DataFrame | None) -> str:
+    try:
+        if df is None or df.empty:
+            return "empty"
+        idx = pd.to_datetime(df.index[-1], errors="coerce")
+        last_idx = "" if pd.isna(idx) else pd.Timestamp(idx).isoformat()
+        close = df["Close"].dropna() if "Close" in df.columns else pd.Series(dtype=float)
+        volume = df["Volume"].dropna() if "Volume" in df.columns else pd.Series(dtype=float)
+        last_close = float(close.iloc[-1]) if len(close) else 0.0
+        last_vol = float(volume.iloc[-1]) if len(volume) else 0.0
+        return f"{len(df)}|{last_idx}|{last_close:.8g}|{last_vol:.8g}"
+    except Exception:
+        return str(getattr(df, "shape", "unknown"))
+
+
+def _nifty_cache_key(df: pd.DataFrame | None, context_key: str | None = None) -> tuple[str, str]:
+    return (context_key or _nifty_context_key(), _nifty_frame_signature(df))
+
+
+def _reset_nifty_20d_cache() -> None:
+    global _NIFTY_20D_RET, _NIFTY_LAST_KEY_BY_CONTEXT
+    with _NIFTY_LOCK:
+        _NIFTY_20D_RET.clear()
+        _NIFTY_LAST_KEY_BY_CONTEXT.clear()
 
 
 def get_nifty_20d_return() -> float | None:
@@ -5827,35 +5851,63 @@ def get_nifty_20d_return() -> float | None:
     comparison uses historical Nifty data, not live current data.
     """
     global _NIFTY_20D_RET, _NIFTY_COMPUTING
+    context_key = _nifty_context_key()
+
+    def _ret_from_frame(df_in: pd.DataFrame | None) -> float | None:
+        try:
+            if df_in is None or len(df_in) < 21:
+                return None
+            close_in = df_in["Close"].dropna()
+            if len(close_in) < 21:
+                return None
+            today = float(close_in.iloc[-1])
+            ago20 = float(close_in.iloc[-21])
+            if ago20 <= 0:
+                return None
+            return float(today / ago20 - 1.0)
+        except Exception:
+            return None
+
+    try:
+        if _engine_utils is not None:
+            for tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
+                if callable(getattr(_engine_utils, "get_all_data_frame", None)):
+                    df_pre = _engine_utils.get_all_data_frame(tk)
+                else:
+                    df_pre = _engine_utils.ALL_DATA.get(tk)
+                if df_pre is None or len(df_pre) < 25 or "Close" not in df_pre.columns:
+                    continue
+                if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
+                    df_pre = _tt.apply_time_travel_cutoff(df_pre)
+                cache_key = _nifty_cache_key(df_pre, context_key)
+                with _NIFTY_LOCK:
+                    if cache_key in _NIFTY_20D_RET:
+                        return _NIFTY_20D_RET[cache_key]
+                    if _NIFTY_COMPUTING:
+                        return None
+                    _NIFTY_COMPUTING = True
+                try:
+                    ret_pre = _ret_from_frame(df_pre)
+                    if ret_pre is None:
+                        continue
+                    with _NIFTY_LOCK:
+                        _NIFTY_20D_RET[cache_key] = ret_pre
+                        _NIFTY_LAST_KEY_BY_CONTEXT[context_key] = cache_key
+                    return ret_pre
+                finally:
+                    with _NIFTY_LOCK:
+                        _NIFTY_COMPUTING = False
+    except Exception:
+        pass
+
     with _NIFTY_LOCK:
-        if _NIFTY_20D_RET is not None:
-            return _NIFTY_20D_RET
+        last_key = _NIFTY_LAST_KEY_BY_CONTEXT.get(context_key)
+        if last_key in _NIFTY_20D_RET:
+            return _NIFTY_20D_RET[last_key]
         if _NIFTY_COMPUTING:
             return None
         _NIFTY_COMPUTING = True
     try:
-        try:
-            if _engine_utils is not None:
-                for tk in ("^NSEI", "NIFTY_50.NS", "%5ENSEI"):
-                    if callable(getattr(_engine_utils, "get_all_data_frame", None)):
-                        df_pre = _engine_utils.get_all_data_frame(tk)
-                    else:
-                        df_pre = _engine_utils.ALL_DATA.get(tk)
-                    if df_pre is None or len(df_pre) < 25 or "Close" not in df_pre.columns:
-                        continue
-                    if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
-                        df_pre = _tt.apply_time_travel_cutoff(df_pre)
-                    close_pre = df_pre["Close"].dropna()
-                    if len(close_pre) >= 21:
-                        base = float(close_pre.iloc[-21])
-                        if base <= 0:
-                            continue
-                        ret = float(close_pre.iloc[-1] / base - 1.0)
-                        with _NIFTY_LOCK:
-                            _NIFTY_20D_RET = ret
-                        return ret
-        except Exception:
-            pass
         try:
             with _YF_SEM:
                 df_n = yf.download(
@@ -5867,20 +5919,15 @@ def get_nifty_20d_return() -> float | None:
             # in every Time Travel scan.
             if _TIME_TRAVEL_OK and hasattr(_tt, "apply_time_travel_cutoff"):
                 df_n = _tt.apply_time_travel_cutoff(df_n)
-            if df_n is None or len(df_n) < 21:
+            ret = _ret_from_frame(df_n)
+            if ret is None:
                 return None
-            close_n = df_n["Close"].dropna()
-            if len(close_n) < 21:
-                return None
-            n_today = float(close_n.iloc[-1])
-            n_ago20 = float(close_n.iloc[-21])
-            if n_ago20 <= 0:
-                return None
-            ret = (n_today - n_ago20) / n_ago20
         except Exception:
             return None
+        cache_key = _nifty_cache_key(df_n, context_key)
         with _NIFTY_LOCK:
-            _NIFTY_20D_RET = ret
+            _NIFTY_20D_RET[cache_key] = ret
+            _NIFTY_LAST_KEY_BY_CONTEXT[context_key] = cache_key
         return ret
     finally:
         with _NIFTY_LOCK:
@@ -8171,7 +8218,7 @@ def _safe_float(v, default: float = 0.0) -> float:
 
 
 @st.cache_data(ttl=900, show_spinner=False)
-def compute_market_bias(include_bank: bool = True) -> dict:
+def compute_market_bias(include_bank: bool = True, tt_cache_key: str = "live") -> dict:
     """
     Compute probabilistic market bias for next day using only free yfinance data.
     Fail-safe: returns conservative "Sideways / no edge" output if index data missing.
@@ -8463,11 +8510,11 @@ def interpret_market_bias(nifty_feat: dict, bank_feat: dict | None = None) -> di
 
 # ── FRESH ISOLATED MARKET BIAS ENGINE (Task 4.3 — UI Version) ─────────
 @st.cache_data(ttl=600, show_spinner=False)
-def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
+def compute_market_bias_ui(tt_cache_key: str = "live") -> dict:
     """
     Independent function for the 'Market Bias Engine' UI button.
     Does not touch scanner/strategy mode logic.
-    _tt_cache_key is passed as a cache-buster — callers pass the active
+    tt_cache_key is passed as a cache-buster — callers pass the active
     TT date string (or "live") so Streamlit re-runs when the date changes.
     """
     try:
@@ -8495,7 +8542,7 @@ def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
                 "expected_move": "±0.5% (fallback)",
                 "reasons": ["Insufficient data from yfinance for Nifty (^NSEI)."]
             }
-        
+
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         # ── Time-Travel: truncate to historical cutoff ─────────────────
@@ -8528,14 +8575,14 @@ def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
         c_last = float(close.iloc[-1])
         ret5d  = (c_last / float(close.iloc[-6]) - 1.0) * 100.0 if len(close) >= 6 else 0.0
         ret20d = (c_last / float(close.iloc[-21]) - 1.0) * 100.0 if len(close) >= 21 else 0.0
-        
+
         avg_vol = vol.iloc[-21:-1].mean() if len(vol) >= 21 else 1.0
         vol_r   = vol.iloc[-1] / avg_vol if avg_vol > 0 else 1.0
 
         # 3. Bias Logic (Strictly Isolated)
         bullish = (c_last > e20 > e50) and (rsi_val > 52) and (ret5d > 0.1)
         bearish = (c_last < e20 < e50) and (rsi_val < 48) and (ret5d < -0.1)
-        
+
         score = 50
         if bullish:
             score += 15
@@ -8549,7 +8596,7 @@ def compute_market_bias_ui(_tt_cache_key: str = "live") -> dict:
             bias = "Bearish / Negative Bias" if score > 70 else "Bearish"
         else:
             bias = "Sideways / No Clear Edge"
-        
+
         score = min(95, max(5, score))
 
         # 4. Volatility based move range
@@ -8614,14 +8661,25 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
         # frame without mutating the shared live ALL_DATA cache.
         try:
             _tt_cut = _tt.get_reference_date()
-            if _tt_cut is not None:
-                _tt_mask = pd.to_datetime(df.index).date <= _tt_cut
+        except Exception:
+            _tt_cut = None
+            if _TIME_TRAVEL_OK and getattr(_tt, "is_active", lambda: False)():
+                _scan_diag.record_failure(ticker_ns, "STALE")
+                return None
+        if _tt_cut is not None:
+            try:
+                parsed_index = pd.to_datetime(df.index, errors="coerce")
+                if pd.isna(parsed_index).any():
+                    _scan_diag.record_failure(ticker_ns, "STALE")
+                    return None
+                _tt_mask = parsed_index.date <= _tt_cut
                 df = df.loc[_tt_mask]
                 if df.empty or len(df) < 30:
                     _scan_diag.record_failure(ticker_ns, "TOO_SHORT")
                     return None
-        except Exception:
-            pass  # fail-safe: continue with untruncated data rather than crash
+            except Exception:
+                _scan_diag.record_failure(ticker_ns, "STALE")
+                return None
 
         try:
             last_idx = df.index[-1]
@@ -8834,6 +8892,7 @@ def analyse(ticker, mode, retries=2):  # retries unused; kept for API compatibil
                     "Channel Higher Highs": int(_mode7_channel_result.higher_highs),
                     "Channel Note": _mode7_channel_result.note,
                 })
+            _scan_diag.record_success(ticker_ns)
             return _scan_row
         _scan_diag.record_failure(ticker_ns, "SCAN_FILTER")
         return None
@@ -9068,7 +9127,7 @@ def _build_ready_scan_tickers(tickers, *, strict: bool = True) -> tuple[list[str
 
         snapshot_fn = getattr(_engine_utils, "get_all_data_snapshot", None)
         if callable(snapshot_fn):
-            cached_frames = snapshot_fn(tickers_ns)
+            cached_frames = snapshot_fn(tickers_ns, copy=False)
         else:
             all_data_lock = getattr(_engine_utils, "_ALL_DATA_LOCK", None)
             if all_data_lock is not None:
@@ -10878,250 +10937,248 @@ if main_scan_clicked:
 
     # ── 🕰️ Activate time-travel BEFORE scan if toggle is on ───────────
     _tt_active_date = st.session_state.get("tt_date_val")
+    _tt_restore_needed = False
     if _tt_active_date is not None and _TIME_TRAVEL_OK:
         with st.spinner(f"🕰️ Preparing historical snapshot for {_tt_active_date.strftime('%d %b %Y')}…"):
             _snapped = _tt.activate(_tt_active_date)
+            _tt_restore_needed = True
         st.caption(f"🕰️ Time-travel active — {_snapped} ticker(s) snapshotted to {_tt_active_date}")
         # BUG FIX: Reset Nifty cache so get_nifty_20d_return() re-fetches
         # with the TT cutoff applied, not a previously cached live value.
-        with _NIFTY_LOCK:
-            _NIFTY_20D_RET = None
+        _reset_nifty_20d_cache()
 
-    window = get_current_window()
-    expected_date = get_expected_data_date()
-    _snapshot_hint_path = get_snapshot_path(expected_date)
-    skip_preload = False
-    do_snapshot = False
-    force_live_refresh = False
+    try:
+        window = get_current_window()
+        expected_date = get_expected_data_date()
+        _snapshot_hint_path = get_snapshot_path(expected_date)
+        skip_preload = False
+        do_snapshot = False
+        force_live_refresh = False
 
-    if _tt_active_date is None:
-        _session_plan = get_scan_data_plan()
-        window = str(_session_plan.get("window", window) or window)
-        expected_date = _session_plan.get("expected_date", expected_date)
-        _snapshot_hint_path = _session_plan.get("snapshot_path", _snapshot_hint_path)
-        do_snapshot = bool(_session_plan.get("save_snapshot_after_scan", False))
-        force_live_refresh = bool(_session_plan.get("force_live_refresh", False))
-        if bool(_session_plan.get("use_snapshot", False)) and snapshot_exists(expected_date):
-            loaded = load_snapshot_into_ALL_DATA(expected_date)
-            if loaded > 0:
-                total_universe = len(all_tickers)
-                missing = max(0, total_universe - loaded)
-                if missing > 0:
-                    # Snapshot is partial -- preload_all fills what it can from
-                    # the local CSV cache and skips the rest so closed-market
-                    # scans stay fast instead of triggering a large live fetch.
-                    st.info(
-                        f"📂 Loaded {loaded} tickers from "
-                        f"{expected_date} snapshot. "
-                        f"Checking local history for {missing} remaining tickers..."
-                    )
-                    skip_preload = False
-                else:
-                    # Full snapshot -- nothing left to fetch.
-                    st.info(
-                        f"📂 Loaded {loaded} tickers from "
-                        f"{expected_date} snapshot. "
-                        f"No live refresh needed."
-                    )
-                    skip_preload = True
-            else:
-                st.warning(
-                    f"⚠️ Snapshot found at {_snapshot_hint_path} "
-                    "but could not be loaded. Falling back to live/cache preload."
-                )
-
-    if False and _tt_active_date is None:
-        if window in ("PRE_MARKET", "WEEKEND"):
-            if snapshot_exists(expected_date):
+        if _tt_active_date is None:
+            _session_plan = get_scan_data_plan()
+            window = str(_session_plan.get("window", window) or window)
+            expected_date = _session_plan.get("expected_date", expected_date)
+            _snapshot_hint_path = _session_plan.get("snapshot_path", _snapshot_hint_path)
+            do_snapshot = bool(_session_plan.get("save_snapshot_after_scan", False))
+            force_live_refresh = bool(_session_plan.get("force_live_refresh", False))
+            if bool(_session_plan.get("use_snapshot", False)) and snapshot_exists(expected_date):
                 loaded = load_snapshot_into_ALL_DATA(expected_date)
                 if loaded > 0:
-                    st.info(
-                        f"📂 Loaded {loaded} tickers from "
-                        f"{expected_date} closing snapshot. "
-                        f"No download needed."
-                    )
-                    skip_preload = True
+                    total_universe = len(all_tickers)
+                    missing = max(0, total_universe - loaded)
+                    if missing > 0:
+                        # Snapshot is partial -- preload_all fills what it can from
+                        # the local CSV cache and skips the rest so closed-market
+                        # scans stay fast instead of triggering a large live fetch.
+                        st.info(
+                            f"📂 Loaded {loaded} tickers from "
+                            f"{expected_date} snapshot. "
+                            f"Checking local history for {missing} remaining tickers..."
+                        )
+                        skip_preload = False
+                    else:
+                        # Full snapshot -- nothing left to fetch.
+                        st.info(
+                            f"📂 Loaded {loaded} tickers from "
+                            f"{expected_date} snapshot. "
+                            f"No live refresh needed."
+                        )
+                        skip_preload = True
                 else:
                     st.warning(
                         f"⚠️ Snapshot found at {_snapshot_hint_path} "
-                        "but could not be loaded. Falling back to preload."
+                        "but could not be loaded. Falling back to live/cache preload."
                     )
-                    skip_preload = False
-            else:
-                skip_preload = False
-        elif window == "CLOSED":
-            if snapshot_exists(expected_date):
-                loaded = load_snapshot_into_ALL_DATA(expected_date)
-                if loaded > 0:
-                    st.info(
-                        f"📂 Loaded {loaded} tickers from "
-                        f"{expected_date} closing snapshot. "
-                        f"No download needed."
-                    )
-                    skip_preload = True
-                    do_snapshot = False
+
+        if False and _tt_active_date is None:
+            if window in ("PRE_MARKET", "WEEKEND"):
+                if snapshot_exists(expected_date):
+                    loaded = load_snapshot_into_ALL_DATA(expected_date)
+                    if loaded > 0:
+                        st.info(
+                            f"📂 Loaded {loaded} tickers from "
+                            f"{expected_date} closing snapshot. "
+                            f"No download needed."
+                        )
+                        skip_preload = True
+                    else:
+                        st.warning(
+                            f"⚠️ Snapshot found at {_snapshot_hint_path} "
+                            "but could not be loaded. Falling back to preload."
+                        )
+                        skip_preload = False
                 else:
                     skip_preload = False
-                    do_snapshot = False
+            elif window == "CLOSED":
+                if snapshot_exists(expected_date):
+                    loaded = load_snapshot_into_ALL_DATA(expected_date)
+                    if loaded > 0:
+                        st.info(
+                            f"📂 Loaded {loaded} tickers from "
+                            f"{expected_date} closing snapshot. "
+                            f"No download needed."
+                        )
+                        skip_preload = True
+                        do_snapshot = False
+                    else:
+                        skip_preload = False
+                        do_snapshot = False
+                else:
+                    skip_preload = False
+                    do_snapshot = True
             else:
                 skip_preload = False
-                do_snapshot = True
-        else:
-            skip_preload = False
-            do_snapshot = False
+                do_snapshot = False
 
-    preload_stats = {
-        "total": len(all_tickers),
-        "loaded": 0,
-        "downloaded": 0,
-        "fallback_used": 0,
-        "cache_hits": 0,
-        "force_live_refresh": force_live_refresh,
-    }
-
-    if not skip_preload:
-        preload_message = "Preparing price-history preload..."
-        if force_live_refresh and window == "LIVE":
-            preload_message = "Refreshing live market data..."
-        elif force_live_refresh and window == "CLOSED":
-            preload_message = "Refreshing latest post-close data..."
-        elif window in ("PRE_MARKET", "WEEKEND"):
-            preload_message = "Preparing latest close data..."
-        preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
-            preload_message
-        )
-        if _engine_utils is not None and callable(getattr(_engine_utils, "get_all_data_snapshot", None)):
-            _preload_keys = [t if t.endswith(".NS") else f"{t}.NS" for t in all_tickers]
-            _preload_existing = _engine_utils.get_all_data_snapshot(_preload_keys, copy=False)
-        else:
-            _preload_existing = {}
-        _preload_tickers = [
-            t for t in all_tickers
-            if force_live_refresh
-            or _engine_utils is None
-            or _preload_existing.get(t if t.endswith(".NS") else f"{t}.NS") is None
-        ]
-        _preload_total = len(_preload_tickers)
-        _preload_state = {
-            "done": 0,
-            "total": _preload_total,
+        preload_stats = {
+            "total": len(all_tickers),
             "loaded": 0,
-        }
-        _preload_render = {
-            "done": 0,
-            "ts": 0.0,
-            "step": max(50, _preload_total // 40) if _preload_total else 50,
+            "downloaded": 0,
+            "fallback_used": 0,
+            "cache_hits": 0,
+            "force_live_refresh": force_live_refresh,
         }
 
-        def _update_preload(done: int, total: int, loaded: int) -> None:
-            _preload_state["done"] = done
-            _preload_state["total"] = total
-            _preload_state["loaded"] = loaded
-            now = time.time()
-            should_render = (
-                done == total
-                or done == 1
-                or (done - _preload_render["done"]) >= _preload_render["step"]
-                or (now - _preload_render["ts"]) >= 0.50
+        if not skip_preload:
+            preload_message = "Preparing price-history preload..."
+            if force_live_refresh and window == "LIVE":
+                preload_message = "Refreshing live market data..."
+            elif force_live_refresh and window == "CLOSED":
+                preload_message = "Refreshing latest post-close data..."
+            elif window in ("PRE_MARKET", "WEEKEND"):
+                preload_message = "Preparing latest close data..."
+            preload_bar, preload_status, preload_eta, preload_started = _start_stage_feedback(
+                preload_message
             )
-            if not should_render:
-                return
-            _preload_render["done"] = done
-            _preload_render["ts"] = now
-            _update_stage_feedback(
+            if _engine_utils is not None and callable(getattr(_engine_utils, "get_all_data_snapshot", None)):
+                _preload_keys = [t if t.endswith(".NS") else f"{t}.NS" for t in all_tickers]
+                _preload_existing = _engine_utils.get_all_data_snapshot(_preload_keys, copy=False)
+            else:
+                _preload_existing = {}
+            _preload_tickers = [
+                t for t in all_tickers
+                if force_live_refresh
+                or _engine_utils is None
+                or _preload_existing.get(t if t.endswith(".NS") else f"{t}.NS") is None
+            ]
+            _preload_total = len(_preload_tickers)
+            _preload_state = {
+                "done": 0,
+                "total": _preload_total,
+                "loaded": 0,
+            }
+            _preload_render = {
+                "done": 0,
+                "ts": 0.0,
+                "step": max(50, _preload_total // 40) if _preload_total else 50,
+            }
+
+            def _update_preload(done: int, total: int, loaded: int) -> None:
+                _preload_state["done"] = done
+                _preload_state["total"] = total
+                _preload_state["loaded"] = loaded
+                now = time.time()
+                should_render = (
+                    done == total
+                    or done == 1
+                    or (done - _preload_render["done"]) >= _preload_render["step"]
+                    or (now - _preload_render["ts"]) >= 0.50
+                )
+                if not should_render:
+                    return
+                _preload_render["done"] = done
+                _preload_render["ts"] = now
+                _update_stage_feedback(
+                    preload_bar,
+                    preload_status,
+                    preload_eta,
+                    preload_started,
+                    done,
+                    total,
+                    loaded,
+                    "Preloaded",
+                    "Ready",
+                )
+
+            preload_stats = preload_all(
+                _preload_tickers,
+                period="6mo",
+                workers=min(workers, 12),
+                progress_callback=_update_preload,
+                force_live_refresh=force_live_refresh,
+            )
+            _finish_stage_feedback(
                 preload_bar,
                 preload_status,
                 preload_eta,
                 preload_started,
-                done,
-                total,
-                loaded,
-                "Preloaded",
+                _preload_state["total"],
+                _preload_state["loaded"],
                 "Ready",
             )
 
-        preload_stats = preload_all(
-            _preload_tickers,
-            period="6mo",
-            workers=min(workers, 12),
-            progress_callback=_update_preload,
-            force_live_refresh=force_live_refresh,
-        )
-        _finish_stage_feedback(
-            preload_bar,
-            preload_status,
-            preload_eta,
-            preload_started,
-            _preload_state["total"],
-            _preload_state["loaded"],
-            "Ready",
-        )
+        if (
+            _tt_active_date is None
+            and do_snapshot
+            and str(window).upper() in {"CLOSED", "WEEKEND"}
+            and not snapshot_exists(expected_date)
+        ):
+            try:
+                from strategy_engines._engine_utils import ALL_DATA, get_all_data_snapshot
 
-    if (
-        _tt_active_date is None
-        and do_snapshot
-        and str(window).upper() in {"CLOSED", "WEEKEND"}
-        and not snapshot_exists(expected_date)
-    ):
-        try:
-            from strategy_engines._engine_utils import ALL_DATA, get_all_data_snapshot
+                data_for_snapshot = get_all_data_snapshot(copy=False) if callable(get_all_data_snapshot) else ALL_DATA
+                saved = save_closing_snapshot(data_for_snapshot, expected_date, require_live_source=True)
+                if saved > 0:
+                    st.success(f"💾 Market-data snapshot saved: {saved} tickers for {expected_date}")
+            except Exception:
+                pass
 
-            data_for_snapshot = get_all_data_snapshot() if callable(get_all_data_snapshot) else ALL_DATA
-            saved = save_closing_snapshot(data_for_snapshot, expected_date, require_live_source=True)
-            if saved > 0:
-                st.success(f"💾 Market-data snapshot saved: {saved} tickers for {expected_date}")
-        except Exception:
-            pass
+        # Warm the active-mode ML model only after preload so it can reuse the
+        # loaded history and avoid duplicate network work during scan startup.
+        if _SKLEARN_OK:
+            try:
+                get_train_function(mode)()
+            except Exception:
+                pass
 
-    # Warm the active-mode ML model only after preload so it can reuse the
-    # loaded history and avoid duplicate network work during scan startup.
-    if _SKLEARN_OK:
-        try:
-            get_train_function(mode)()
-        except Exception:
-            pass
-
-    scan_tickers = list(all_tickers)
-    scan_scope = {
-        "requested": len(scan_tickers),
-        "ready": len(scan_tickers),
-        "skipped_no_data": 0,
-        "skipped_short": 0,
-        "skipped_stale": 0,
-    }
-    try:
-        scan_tickers, scan_scope = _build_ready_scan_tickers(
-            all_tickers,
-            strict=(_tt_active_date is None),
-        )
-        skipped_total = max(
-            0,
-            int(scan_scope.get("requested", 0) or 0) - int(scan_scope.get("ready", 0) or 0),
-        )
-        if skipped_total > 0 and int(scan_scope.get("ready", 0) or 0) > 0:
-            stale_note = ""
-            if int(scan_scope.get("skipped_stale", 0) or 0) > 0:
-                stale_note = f" | stale skipped: {int(scan_scope.get('skipped_stale', 0) or 0):,}"
-            st.caption(
-                f"⚡ Fast scan mode: running stage 2 on {int(scan_scope.get('ready', 0) or 0):,} ready tickers "
-                f"and skipping {skipped_total:,} unusable names "
-                f"(no data: {int(scan_scope.get('skipped_no_data', 0) or 0):,}, "
-                f"short history: {int(scan_scope.get('skipped_short', 0) or 0):,}{stale_note})."
-            )
-    except Exception:
         scan_tickers = list(all_tickers)
+        scan_scope = {
+            "requested": len(scan_tickers),
+            "ready": len(scan_tickers),
+            "skipped_no_data": 0,
+            "skipped_short": 0,
+            "skipped_stale": 0,
+        }
+        try:
+            scan_tickers, scan_scope = _build_ready_scan_tickers(
+                all_tickers,
+                strict=(_tt_active_date is None),
+            )
+            skipped_total = max(
+                0,
+                int(scan_scope.get("requested", 0) or 0) - int(scan_scope.get("ready", 0) or 0),
+            )
+            if skipped_total > 0 and int(scan_scope.get("ready", 0) or 0) > 0:
+                stale_note = ""
+                if int(scan_scope.get("skipped_stale", 0) or 0) > 0:
+                    stale_note = f" | stale skipped: {int(scan_scope.get('skipped_stale', 0) or 0):,}"
+                st.caption(
+                    f"⚡ Fast scan mode: running stage 2 on {int(scan_scope.get('ready', 0) or 0):,} ready tickers "
+                    f"and skipping {skipped_total:,} unusable names "
+                    f"(no data: {int(scan_scope.get('skipped_no_data', 0) or 0):,}, "
+                    f"short history: {int(scan_scope.get('skipped_short', 0) or 0):,}{stale_note})."
+                )
+        except Exception:
+            scan_tickers = list(all_tickers)
 
-    try:
         results, elapsed = run_scan(scan_tickers, mode, workers=workers)
+
     finally:
         st.session_state.pop("_main_scan_running", None)
-        # Always restore — even if scan raised an exception
-        if _tt_active_date is not None and _TIME_TRAVEL_OK:
+        if _tt_restore_needed:
             _tt.restore()
-            # BUG FIX: Reset Nifty cache after restore so next live scan
-            # does not reuse the TT-truncated Nifty return value.
-            with _NIFTY_LOCK:
-                _NIFTY_20D_RET = None
+            _reset_nifty_20d_cache()
 
     _scan_time_label = (
         _tt_active_date.strftime("%d %b %Y (TT)") if _tt_active_date
@@ -11317,7 +11374,9 @@ if st.session_state.get("ail_in_one_show_panel", False):
             apply_phase4_logic_fn=apply_phase4_logic,
             apply_phase42_logic_fn=apply_phase42_logic,
             apply_gate_to_scan_df_fn=apply_gate_to_scan_df,
-            compute_market_bias_fn=compute_market_bias,
+            compute_market_bias_fn=lambda: compute_market_bias(
+                tt_cache_key=str(st.session_state.get("tt_date_val") or "live")
+            ),
             get_train_function_fn=get_train_function,
             compute_battle_scores_fn=_ail_compute_battle_scores,
             run_aura_engine_fn=_ail_run_aura_engine,
@@ -11334,7 +11393,7 @@ if st.session_state.get("show_bias_engine"):
     st.caption("📊 Market Bias Engine (Analytics)")
     with st.spinner("Crunching latest Nifty (^NSEI) indicators..."):
         _ui_tt_key = str(st.session_state.get("tt_date_val") or "live")
-        _bias_data = compute_market_bias_ui(_ui_tt_key)
+        _bias_data = compute_market_bias_ui(tt_cache_key=_ui_tt_key)
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Market Bias", _bias_data["bias"])
@@ -11423,7 +11482,7 @@ if _show_home_scanner and "results" in st.session_state:
                 if _cache_valid:
                     _mb = _cached_mb
                 else:
-                    _mb = compute_market_bias()
+                    _mb = compute_market_bias(tt_cache_key=_cur_ttkey)
                     st.session_state["market_bias_result"]  = _mb
                     st.session_state["market_bias_ts"]      = _now_ts
                     st.session_state["market_bias_tt_key"]  = _cur_ttkey
@@ -11797,12 +11856,12 @@ if _show_home_scanner and "results" in st.session_state:
                     ic2.metric("EMA 20", f"₹{row.get('EMA 20', 0):.2f}")
                     ic3.metric("EMA 50", f"₹{row.get('EMA 50', 0):.2f}")
                     ic4.metric("Vol / Avg", f"{row.get('Vol / Avg', 0):.2f}x")
-                    
+
                     st.write("")
                     rc1, rc2, rc3 = st.columns(3)
                     rc1.metric("5D Return", f"{row.get('5D Return (%)', 0):+.2f}%")
                     rc2.metric("20D Return", f"{row.get('20D Return (%)', 0):+.2f}%")
-                    
+
                     # Handle possible missing columns gracefully
                     h_val = row.get('Δ vs 20D High (%)', 0)
                     rc3.metric("Δ vs 20D Hi", f"{h_val:+.2f}%" if pd.notna(h_val) else "—")
@@ -12314,6 +12373,7 @@ else:
             _tt_battle_date = st.session_state.get("tt_date_val")
             if _tt_battle_date is not None and _TIME_TRAVEL_OK:
                 _tt.activate(_tt_battle_date)
+                _reset_nifty_20d_cache()
             try:
                 _battle_symbols = _normalize_compare_symbols(_battle_request_tickers)
                 _battle_window = str(get_current_window() or "CLOSED").upper()
@@ -12351,7 +12411,7 @@ else:
                             _mb_ttkey = st.session_state.get("market_bias_tt_key", "live")
                             _battle_ttkey = str(st.session_state.get("tt_date_val") or "live")
                             if _mb is None or _mb_ttkey != _battle_ttkey:
-                                _mb = compute_market_bias()
+                                _mb = compute_market_bias(tt_cache_key=_battle_ttkey)
                                 st.session_state["market_bias_result"]  = _mb
                                 st.session_state["market_bias_tt_key"]  = _battle_ttkey
                             _battle_df = apply_universal_grading(_battle_df, _mb)
@@ -12384,6 +12444,7 @@ else:
                 st.session_state["battle_tickers_request"] = None
                 if _tt_battle_date is not None and _TIME_TRAVEL_OK:
                     _tt.restore()
+                    _reset_nifty_20d_cache()
 
     _battle_df = st.session_state.get("battle_results_df", None)
     if isinstance(_battle_df, pd.DataFrame) and not _battle_df.empty:
