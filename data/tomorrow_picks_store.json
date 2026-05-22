@@ -8,7 +8,9 @@
     "VENUSPIPES",
     "ASIANPAINT",
     "TARSONS",
-    "SIEMENS"
+    "SIEMENS",
+    "MEGASTAR",
+    "GINNIFILA"
   ],
   "notes": "",
   "sections": {
@@ -29,7 +31,10 @@
       "TARSONS",
       "SIEMENS"
     ],
-    "breakout": []
+    "breakout": [
+      "MEGASTAR",
+      "GINNIFILA"
+    ]
   },
   "source_modes": {
     "ISFT": "AI",
@@ -40,7 +45,9 @@
     "VENUSPIPES": "AI",
     "ASIANPAINT": "AI",
     "TARSONS": "AI",
-    "SIEMENS": "AI"
+    "SIEMENS": "AI",
+    "MEGASTAR": "AI",
+    "GINNIFILA": "AI"
   },
   "source_snapshots": {
     "ISFT": {
@@ -831,6 +838,12 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "MEGASTAR": {
+      "Symbol": "MEGASTAR"
+    },
+    "GINNIFILA": {
+      "Symbol": "GINNIFILA"
     }
   }
 }
