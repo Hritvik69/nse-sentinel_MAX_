@@ -1,9 +1,9 @@
 {
-  "saved_at": "2026-05-22T15:37:55",
+  "saved_at": "2026-05-22T15:42:16",
   "signature": [
     "2026-05-22",
-    1779464040.621,
-    1779463765.547
+    1779464443.972,
+    1779464454.542
   ],
   "learning_status": {
     "trained": true,
@@ -16,7 +16,7 @@
     "accuracy_pct": 61.77,
     "validation_accuracy_pct": 61.77,
     "training_accuracy_pct": 62.18,
-    "last_trained": "2026-05-22T15:34",
+    "last_trained": "2026-05-22T15:37",
     "source": "stock_feedback",
     "message": "Model trained on 5092 samples.",
     "regime_encoder": {
@@ -184,8 +184,8 @@
       "false_bearish_pct": 41.07
     },
     "brain_status": {
-      "started_at": "2026-05-22T15:34:04",
-      "completed_at": "2026-05-22T15:37:54",
+      "started_at": "2026-05-22T15:37:56",
+      "completed_at": "2026-05-22T15:42:16",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -213,7 +213,7 @@
         "accuracy_pct": 61.77,
         "validation_accuracy_pct": 61.77,
         "training_accuracy_pct": 62.18,
-        "last_trained": "2026-05-22T15:34",
+        "last_trained": "2026-05-22T15:37",
         "source": "stock_feedback",
         "message": "Model trained on 5092 samples.",
         "regime_encoder": {
@@ -683,7 +683,7 @@
               "EMA50": 119.87,
               "Close": 119.7
             },
-            "computed_at": "2026-05-22T15:34:34"
+            "computed_at": "2026-05-22T15:38:23"
           },
           {
             "ticker": "TRANSWIND",
@@ -750,7 +750,7 @@
               "EMA50": 17.45,
               "Close": 13.85
             },
-            "computed_at": "2026-05-22T15:37:38"
+            "computed_at": "2026-05-22T15:42:00"
           },
           {
             "ticker": "AEROFLEX",
@@ -817,7 +817,7 @@
               "EMA50": 311.11,
               "Close": 403.05
             },
-            "computed_at": "2026-05-22T15:34:17"
+            "computed_at": "2026-05-22T15:38:07"
           },
           {
             "ticker": "EPACK",
@@ -884,7 +884,7 @@
               "EMA50": 249.67,
               "Close": 233.0
             },
-            "computed_at": "2026-05-22T15:35:32"
+            "computed_at": "2026-05-22T15:39:18"
           },
           {
             "ticker": "SANSTAR",
@@ -951,7 +951,7 @@
               "EMA50": 93.85,
               "Close": 116.79
             },
-            "computed_at": "2026-05-22T15:37:02"
+            "computed_at": "2026-05-22T15:41:21"
           },
           {
             "ticker": "IOLCP",
@@ -1018,7 +1018,7 @@
               "EMA50": 93.73,
               "Close": 118.73
             },
-            "computed_at": "2026-05-22T15:35:47"
+            "computed_at": "2026-05-22T15:39:33"
           },
           {
             "ticker": "IDEA",
@@ -1085,7 +1085,7 @@
               "EMA50": 11.02,
               "Close": 13.73
             },
-            "computed_at": "2026-05-22T15:35:35"
+            "computed_at": "2026-05-22T15:39:21"
           },
           {
             "ticker": "SANCO",
@@ -1152,7 +1152,7 @@
               "EMA50": 2.86,
               "Close": 3.93
             },
-            "computed_at": "2026-05-22T15:37:01"
+            "computed_at": "2026-05-22T15:41:20"
           },
           {
             "ticker": "WINSOME",
@@ -1219,7 +1219,7 @@
               "EMA50": 1.89,
               "Close": 2.25
             },
-            "computed_at": "2026-05-22T15:37:45"
+            "computed_at": "2026-05-22T15:42:06"
           },
           {
             "ticker": "RMDRIP",
@@ -1286,7 +1286,7 @@
               "EMA50": 25.34,
               "Close": 18.83
             },
-            "computed_at": "2026-05-22T15:36:49"
+            "computed_at": "2026-05-22T15:41:01"
           },
           {
             "ticker": "INNOVISION",
@@ -1353,7 +1353,7 @@
               "EMA50": 332.39,
               "Close": 306.35
             },
-            "computed_at": "2026-05-22T15:35:45"
+            "computed_at": "2026-05-22T15:39:31"
           },
           {
             "ticker": "FCL",
@@ -1420,7 +1420,7 @@
               "EMA50": 25.46,
               "Close": 33.24
             },
-            "computed_at": "2026-05-22T15:35:23"
+            "computed_at": "2026-05-22T15:39:09"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2268 tickers computed"
