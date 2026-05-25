@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-25T05:25:35",
+  "saved_at": "2026-05-25T05:27:59",
   "signature": [
     "2026-05-25",
     1779686731.365,
@@ -176,12 +176,12 @@
     "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 5498,
-      "rows_with_outcome": 5087,
-      "accuracy_pct": 52.76,
-      "bullish_precision_pct": 36.29,
-      "bearish_precision_pct": 58.95,
-      "false_bullish_pct": 63.71,
-      "false_bearish_pct": 41.05
+      "rows_with_outcome": 5379,
+      "accuracy_pct": 52.56,
+      "bullish_precision_pct": 38.52,
+      "bearish_precision_pct": 58.0,
+      "false_bullish_pct": 61.48,
+      "false_bearish_pct": 42.0
     },
     "brain_status": {
       "started_at": "2026-05-25T05:25:26",
@@ -195,12 +195,12 @@
       },
       "feedback_summary": {
         "total_logged": 5498,
-        "rows_with_outcome": 5087,
-        "accuracy_pct": 52.76,
-        "bullish_precision_pct": 36.29,
-        "bearish_precision_pct": 58.95,
-        "false_bullish_pct": 63.71,
-        "false_bearish_pct": 41.05
+        "rows_with_outcome": 5379,
+        "accuracy_pct": 52.56,
+        "bullish_precision_pct": 38.52,
+        "bearish_precision_pct": 58.0,
+        "false_bullish_pct": 61.48,
+        "false_bearish_pct": 42.0
       },
       "meta_model": {
         "trained": true,
