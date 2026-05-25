@@ -82,6 +82,7 @@ _CATEGORICAL_FEATURE_COLUMNS = [
     "import_source",
     "import_category",
     "strategy_strip",
+    "source_mode",
     "trap_risk",
     "market_bias",
     "regime",
@@ -307,6 +308,8 @@ def _encode_feature_frame(
         frame["import_category"] = "UNKNOWN"
     if "strategy_strip" not in frame.columns:
         frame["strategy_strip"] = "UNKNOWN"
+    if "source_mode" not in frame.columns:
+        frame["source_mode"] = "UNKNOWN"
     if "trap_risk" not in frame.columns:
         frame["trap_risk"] = "UNKNOWN"
     if "market_bias" not in frame.columns:
@@ -478,6 +481,7 @@ def _build_stock_training_rows() -> pd.DataFrame:
         market_bias = out.get("market_bias", _blank_series(index, "UNKNOWN")).fillna("UNKNOWN").astype(str)
         import_source = out.get("import_source", _blank_series(index, "UNKNOWN")).fillna("UNKNOWN").astype(str)
         import_category = out.get("import_category", _blank_series(index, "UNKNOWN")).fillna("UNKNOWN").astype(str)
+        source_mode = out.get("source_mode", _blank_series(index, "UNKNOWN")).fillna("UNKNOWN").astype(str)
         strategy_strip = out.apply(_derive_strategy_strip, axis=1)
         mode_series = out.get("mode", _blank_series(index, "UNKNOWN")).fillna("UNKNOWN").astype(str)
         trap_risk = out.get("trap_risk", _blank_series(index, "UNKNOWN")).fillna("UNKNOWN").astype(str)
@@ -496,6 +500,7 @@ def _build_stock_training_rows() -> pd.DataFrame:
                 "import_source": import_source,
                 "import_category": import_category,
                 "strategy_strip": strategy_strip,
+                "source_mode": source_mode,
                 "rsi": rsi,
                 "vol_avg_ratio": vol_avg_ratio,
                 "delta_ema20_pct": delta_ema20,
@@ -552,6 +557,7 @@ def _build_sector_training_rows() -> pd.DataFrame:
                 "import_source": "sector_prediction",
                 "import_category": "Sector",
                 "strategy_strip": "Sector",
+                "source_mode": "SECTOR",
                 "rsi": 50.0,
                 "vol_avg_ratio": 1.0,
                 "delta_ema20_pct": 0.0,
@@ -926,6 +932,7 @@ def _extract_feature_dict(row: dict | pd.Series) -> dict:
         "import_source": _first_present(row, ["import_source", "Import Source"], "UNKNOWN"),
         "import_category": _first_present(row, ["import_category", "Import Category"], "UNKNOWN"),
         "strategy_strip": _first_present(row, ["strategy_strip", "Strategy Strip", "Tomorrow Strip", "Strip"], "UNKNOWN"),
+        "source_mode": _first_present(row, ["source_mode", "Source Mode", "Import Source Mode"], "UNKNOWN"),
         "rsi": _safe_float(_first_present(row, ["rsi", "RSI"], 50.0), 50.0),
         "vol_avg_ratio": _safe_float(_first_present(row, ["vol_avg_ratio", "Vol / Avg", "Volume Ratio"], 1.0), 1.0),
         "delta_ema20_pct": _safe_float(

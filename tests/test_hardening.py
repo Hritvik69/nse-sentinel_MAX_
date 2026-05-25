@@ -866,6 +866,143 @@ class HardeningRegressionTests(unittest.TestCase):
             le.REGIME_ENCODER = old_regime
             le.SECTOR_ENCODER = old_sector
 
+    def test_self_improve_feedback_logger_writes_source_metadata(self) -> None:
+        import prediction_feedback_store as pfs
+
+        tmp = Path(tempfile.mkdtemp())
+        old_data_dir = pfs.DATA_DIR
+        old_log_path = pfs.LOG_PATH
+        old_push_file = pfs._push_file
+        try:
+            pfs.DATA_DIR = tmp  # type: ignore[assignment]
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._push_file = lambda *_args, **_kwargs: True  # type: ignore[assignment]
+            pfs._invalidate_cache()
+
+            frame = pd.DataFrame(
+                [
+                    {
+                        "Symbol": "AIPICK",
+                        "Import Source": "A-I-L IN ONE",
+                        "Import Category": "Momentum",
+                        "Strategy Strip": "Momentum",
+                        "Import Source Mode": "AI",
+                        "Prediction Score": 72.0,
+                        "Final Score": 74.0,
+                        "Signal": "BUY",
+                        "Conviction Tier": "High",
+                    },
+                    {
+                        "Symbol": "MANPICK",
+                        "Import Source": "Normal Screener",
+                        "Import Category": "Relax",
+                        "Strategy Strip": "Relax",
+                        "Import Source Mode": "Manual",
+                        "Prediction Score": 58.0,
+                        "Final Score": 60.0,
+                        "Signal": "BUY",
+                        "Conviction Tier": "Medium",
+                    },
+                ]
+            )
+
+            pfs.log_scan_predictions(frame, 7, {"bias": "Bullish", "regime": "TRENDING_UP"})
+            logged = pfs.read_feedback_log()
+
+            self.assertEqual(len(logged), 2)
+            by_symbol = logged.set_index("symbol")
+            self.assertEqual(by_symbol.loc["AIPICK", "source_mode"], "AI")
+            self.assertEqual(by_symbol.loc["MANPICK", "source_mode"], "Manual")
+            self.assertEqual(by_symbol.loc["AIPICK", "import_category"], "Momentum")
+            self.assertEqual(by_symbol.loc["AIPICK", "strategy_strip"], "Momentum")
+        finally:
+            pfs.DATA_DIR = old_data_dir  # type: ignore[assignment]
+            pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
+            pfs._push_file = old_push_file  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_self_improve_pending_rows_do_not_train_learning_model(self) -> None:
+        import learning_engine as le
+        import prediction_feedback_store as pfs
+
+        if not le.SKLEARN_OK:
+            self.skipTest("scikit-learn unavailable")
+
+        tmp = Path(tempfile.mkdtemp())
+        old_log_path = pfs.LOG_PATH
+        old_model, old_scaler = le.MODEL, le.SCALER
+        old_regime, old_sector = dict(le.REGIME_ENCODER), dict(le.SECTOR_ENCODER)
+        old_features = {key: dict(value) for key, value in le.FEATURE_ENCODERS.items()}
+        old_status = dict(le.TRAINING_STATUS)
+        old_save = le._save_model
+        old_sector_builder = le._build_sector_training_rows
+        empty_training = pd.DataFrame(
+            columns=le._RAW_FEATURE_COLUMNS + ["target", "source", "sample_date", "actual_next_return_pct", "is_imported_ai"]
+        )
+        try:
+            pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            rows = []
+            for idx in range(35):
+                rows.append(
+                    {
+                        "logged_at": f"2026-05-{(idx % 20) + 1:02d}T15:30:00+05:30",
+                        "market_date": f"2026-05-{(idx % 20) + 1:02d}",
+                        "prediction_id": f"pending-{idx}",
+                        "symbol": f"PEND{idx}",
+                        "sector": "IT",
+                        "mode": 7,
+                        "import_source": "A-I-L IN ONE",
+                        "import_category": "Momentum",
+                        "strategy_strip": "Momentum",
+                        "source_mode": "AI",
+                        "prediction_direction": "Bullish",
+                        "target_policy_version": "stock_next_session_v2",
+                        "prediction_score": 70,
+                        "final_score": 72,
+                        "signal": "BUY",
+                        "conviction_tier": "High",
+                        "market_bias": "Bullish",
+                        "regime": "TRENDING_UP",
+                        "rsi": 60,
+                        "vol_avg_ratio": 1.2,
+                        "delta_ema20_pct": 1.5,
+                        "trap_risk": "LOW",
+                        "pred_bullish": "1",
+                        "actual_next_return_pct": "",
+                        "correct": "",
+                    }
+                )
+            pd.DataFrame(rows).to_csv(pfs.LOG_PATH, index=False)
+            le.MODEL = None
+            le.SCALER = None
+            le.REGIME_ENCODER = {}
+            le.SECTOR_ENCODER = {}
+            le.FEATURE_ENCODERS = {}
+            le.TRAINING_STATUS = dict(old_status)
+            le._save_model = lambda *_args, **_kwargs: True  # type: ignore[assignment]
+            le._build_sector_training_rows = lambda: empty_training.copy()  # type: ignore[assignment]
+
+            result = le.train_learning_model()
+            status = result.get("status", {})
+
+            self.assertFalse(status.get("trained"))
+            self.assertEqual(int(status.get("stock_samples", 0)), 0)
+            self.assertEqual(int(status.get("samples", 0)), 0)
+            self.assertIsNone(result.get("model"))
+        finally:
+            pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
+            pfs._invalidate_cache()
+            le.MODEL, le.SCALER = old_model, old_scaler
+            le.REGIME_ENCODER = old_regime
+            le.SECTOR_ENCODER = old_sector
+            le.FEATURE_ENCODERS = old_features
+            le.TRAINING_STATUS = old_status
+            le._save_model = old_save
+            le._build_sector_training_rows = old_sector_builder  # type: ignore[assignment]
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_expanded_imported_learning_trains_with_recency_weights(self) -> None:
         import learning_engine as le
         import prediction_feedback_store as pfs
@@ -880,6 +1017,10 @@ class HardeningRegressionTests(unittest.TestCase):
         old_features = {key: dict(value) for key, value in le.FEATURE_ENCODERS.items()}
         old_status = dict(le.TRAINING_STATUS)
         old_save = le._save_model
+        old_sector_builder = le._build_sector_training_rows
+        empty_training = pd.DataFrame(
+            columns=le._RAW_FEATURE_COLUMNS + ["target", "source", "sample_date", "actual_next_return_pct", "is_imported_ai"]
+        )
         try:
             pfs.LOG_PATH = tmp / "prediction_feedback_log.csv"  # type: ignore[assignment]
             pfs._invalidate_cache()
@@ -887,6 +1028,12 @@ class HardeningRegressionTests(unittest.TestCase):
             for idx in range(42):
                 correct = idx % 3 != 0
                 bullish = idx % 2 == 0
+                if bullish:
+                    actual_return = 1.4 if correct else -1.1
+                else:
+                    actual_return = -1.4 if correct else 1.1
+                correct_text = "" if idx % 7 == 0 else ("True" if correct else "False")
+                is_ai_source = idx % 2 == 0
                 rows.append(
                     {
                         "logged_at": f"2026-05-{(idx % 20) + 1:02d}T15:30:00+05:30",
@@ -895,9 +1042,10 @@ class HardeningRegressionTests(unittest.TestCase):
                         "symbol": f"AAA{idx}",
                         "sector": "IT" if idx % 2 == 0 else "BANK",
                         "mode": 7 if idx % 2 == 0 else 3,
-                        "import_source": "Tomorrow's Picks - Momentum",
+                        "import_source": "A-I-L IN ONE" if is_ai_source else "Normal Screener",
                         "import_category": "Momentum" if idx % 2 == 0 else "Relax",
                         "strategy_strip": "Momentum" if idx % 2 == 0 else "Relax",
+                        "source_mode": "AI" if is_ai_source else "Manual",
                         "prediction_direction": "Bullish" if bullish else "Bearish",
                         "target_policy_version": "stock_next_session_v2",
                         "prediction_score": 68 + (idx % 8),
@@ -911,9 +1059,9 @@ class HardeningRegressionTests(unittest.TestCase):
                         "delta_ema20_pct": -2 + (idx % 5),
                         "trap_risk": "LOW" if idx % 4 else "MEDIUM",
                         "pred_bullish": "1" if bullish else "0",
-                        "actual_next_return_pct": "1.4" if correct else "-1.1",
-                        "correct": "True" if correct else "False",
-                        "outcome_label": "correct" if correct else "incorrect",
+                        "actual_next_return_pct": str(actual_return),
+                        "correct": correct_text,
+                        "outcome_label": "" if not correct_text else ("correct" if correct else "incorrect"),
                         "outcome_quality": "WIN" if correct else "LOSS",
                     }
                 )
@@ -925,17 +1073,60 @@ class HardeningRegressionTests(unittest.TestCase):
             le.FEATURE_ENCODERS = {}
             le.TRAINING_STATUS = dict(old_status)
             le._save_model = lambda *_args, **_kwargs: True  # type: ignore[assignment]
+            le._build_sector_training_rows = lambda: empty_training.copy()  # type: ignore[assignment]
 
             result = le.train_learning_model()
             status = result.get("status", {})
 
             self.assertTrue(status.get("trained"))
+            self.assertEqual(result.get("model").__class__.__name__, "LogisticRegression")
             self.assertGreaterEqual(int(status.get("imported_ai_samples", 0)), 40)
             self.assertGreater(int(status.get("active_feature_count", 0)), 6)
             self.assertTrue(bool(status.get("recency_weighting_active")))
-            prob = le.predict_success({"Prediction Score": 70, "Sector": "NEW", "Regime": "UNKNOWN"})
-            self.assertGreaterEqual(prob, 0.0)
-            self.assertLessEqual(prob, 100.0)
+            self.assertIn("source_mode_code", le._FEATURE_COLUMNS)
+            encoders = status.get("feature_encoders", {})
+            self.assertIn("source_mode", encoders)
+            self.assertIn("AI", encoders["source_mode"])
+            self.assertIn("MANUAL", encoders["source_mode"])
+            self.assertIn("A-I-L IN ONE", encoders["import_source"])
+            self.assertIn("MOMENTUM", encoders["import_category"])
+            self.assertIn("MOMENTUM", encoders["strategy_strip"])
+
+            scored = le.batch_predict_success(
+                pd.DataFrame(
+                    [
+                        {
+                            "Prediction Score": 76,
+                            "Final Score": 78,
+                            "Signal": "BUY",
+                            "Mode ID": 7,
+                            "Import Source": "A-I-L IN ONE",
+                            "Import Category": "Momentum",
+                            "Strategy Strip": "Momentum",
+                            "Import Source Mode": "AI",
+                            "Sector": "IT",
+                            "Regime": "TRENDING_UP",
+                            "RSI": 64,
+                            "Vol / Avg": 1.4,
+                        },
+                        {
+                            "Prediction Score": 52,
+                            "Final Score": 51,
+                            "Signal": "AVOID",
+                            "Mode ID": 3,
+                            "Import Source": "Normal Screener",
+                            "Import Category": "Relax",
+                            "Strategy Strip": "Relax",
+                            "Import Source Mode": "Manual",
+                            "Sector": "BANK",
+                            "Regime": "TRENDING_UP",
+                            "RSI": 48,
+                            "Vol / Avg": 1.0,
+                        },
+                    ]
+                )
+            )
+            self.assertTrue(scored.sub(50.0).abs().gt(0.1).any())
         finally:
             pfs.LOG_PATH = old_log_path  # type: ignore[assignment]
             pfs._invalidate_cache()
@@ -945,6 +1136,7 @@ class HardeningRegressionTests(unittest.TestCase):
             le.FEATURE_ENCODERS = old_features
             le.TRAINING_STATUS = old_status
             le._save_model = old_save
+            le._build_sector_training_rows = old_sector_builder  # type: ignore[assignment]
             shutil.rmtree(tmp, ignore_errors=True)
 
     def test_imported_ai_performance_summary_buckets(self) -> None:

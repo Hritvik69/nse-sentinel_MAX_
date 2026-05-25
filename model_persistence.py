@@ -4,6 +4,11 @@ Save and load trained sklearn models from data/learning_model.pkl.
 
 On save, the pickle is also mirrored through persistent_store so the learning
 engine survives Streamlit Cloud restarts.
+
+Loading a pickle requires a trusted SHA-256 from NSE_SENTINEL_MODEL_SHA256 or
+Streamlit secrets [model_sha256].learning_model. If that trust check is not
+configured, app startup retrains from validated feedback logs instead of
+loading an untrusted pickle.
 """
 
 from __future__ import annotations

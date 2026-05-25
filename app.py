@@ -175,7 +175,25 @@ if not st.session_state.get("_persistence_pulled", False):
         try:
             from learning_engine import load_persisted_model
 
-            load_persisted_model()
+            _loaded_learning_model = bool(load_persisted_model())
+            if not _loaded_learning_model:
+                try:
+                    from learning_engine import train_learning_model as _startup_train_learning_model
+                    from prediction_feedback_store import feedback_summary as _startup_feedback_summary
+
+                    _startup_stats = _startup_feedback_summary()
+                    if int(_startup_stats.get("rows_with_outcome", 0) or 0) > 0:
+                        _startup_bundle = _startup_train_learning_model()
+                        _startup_status = (
+                            _startup_bundle.get("status", {})
+                            if isinstance(_startup_bundle, dict)
+                            else {}
+                        )
+                        if isinstance(_startup_bundle, dict) and _startup_status.get("trained"):
+                            st.session_state["_learning_model_bundle"] = _startup_bundle
+                        st.session_state["_startup_learning_retrain_status"] = dict(_startup_status)
+                except Exception:
+                    pass
         except Exception:
             pass
         st.session_state["_persistence_health"] = _persistence_health
@@ -3452,7 +3470,7 @@ def _log_imported_symbols_for_self_learning(*, source_filter: object = _PICK_SOU
         try:
             from prediction_feedback_store import feedback_summary as _feedback_summary
 
-            _refresh_learning_after_prediction_log(_feedback_summary())
+            _sync_cached_learning_feedback_summary(_feedback_summary())
         except Exception:
             pass
         try:
@@ -3463,7 +3481,7 @@ def _log_imported_symbols_for_self_learning(*, source_filter: object = _PICK_SOU
         if result["added"]:
             result["message"] = (
                 f"Added {result['added']} imported stock(s) to self-learning. "
-                "They will train the model after the next-session outcome is available."
+                "Outcome refresh and training status will be checked now."
             )
         else:
             result["message"] = "Imported stocks were reviewed, but nothing new needed to be logged."
@@ -3481,7 +3499,7 @@ def _refresh_imported_ai_last_outcomes() -> str:
     try:
         from prediction_feedback_store import feedback_summary as _feedback_summary
 
-        _refresh_learning_after_prediction_log(_feedback_summary())
+        _sync_cached_learning_feedback_summary(_feedback_summary())
     except Exception:
         pass
 
@@ -3495,13 +3513,139 @@ def _refresh_imported_ai_last_outcomes() -> str:
     return f"Checked last outcomes by date. Pending rows: {pending}."
 
 
+def _run_self_improve_training_refresh(feedback_stats: dict | None = None) -> dict[str, object]:
+    result: dict[str, object] = {
+        "attempted": False,
+        "trained": False,
+        "validated_count": 0,
+        "pending_count": 0,
+        "samples_used": 0,
+        "imported_ai_samples": 0,
+        "message": "",
+        "status": {},
+    }
+    try:
+        stats = dict(feedback_stats) if isinstance(feedback_stats, dict) else {}
+        if not stats:
+            from prediction_feedback_store import feedback_summary as _feedback_summary
+
+            stats = dict(_feedback_summary())
+        validated = int(stats.get("rows_with_outcome", 0) or 0)
+        total_logged = int(stats.get("total_logged", 0) or 0)
+        pending = max(total_logged - validated, 0)
+        result["validated_count"] = validated
+        result["pending_count"] = pending
+        _sync_cached_learning_feedback_summary(stats)
+
+        if validated <= 0:
+            status = dict(get_training_status())
+            status["feedback_summary"] = dict(stats)
+            status["message"] = "Logged, waiting for next-session outcome."
+            st.session_state["_learning_status"] = status
+            result["status"] = status
+            result["message"] = status["message"]
+            return result
+
+        result["attempted"] = True
+        bundle = train_learning_model()
+        status = bundle.get("status", {}) if isinstance(bundle, dict) else {}
+        status = dict(status) if isinstance(status, dict) else {}
+        trained = bool(status.get("trained"))
+        samples = int(status.get("samples", 0) or 0)
+        imported_samples = int(status.get("imported_ai_samples", 0) or 0)
+        result.update(
+            {
+                "trained": trained,
+                "samples_used": samples,
+                "imported_ai_samples": imported_samples,
+                "status": status,
+                "message": str(status.get("message", "") or "").strip(),
+            }
+        )
+
+        if isinstance(bundle, dict) and trained and bundle.get("model") is not None and bundle.get("scaler") is not None:
+            st.session_state["_learning_model_bundle"] = bundle
+
+        brain_status = st.session_state.get("learning_cycle_status")
+        brain_copy = dict(brain_status) if isinstance(brain_status, dict) else {}
+        brain_copy["feedback_summary"] = dict(stats)
+        brain_copy["meta_model"] = dict(status)
+        st.session_state["learning_cycle_status"] = brain_copy
+
+        learning_status = dict(status)
+        learning_status["feedback_summary"] = dict(stats)
+        learning_status["brain_status"] = _compact_brain_status(brain_copy)
+        st.session_state["_learning_status"] = learning_status
+        fresh_sig = (
+            str(get_expected_data_date()),
+            round(_safe_file_mtime(_PREDICTION_FEEDBACK_PATH), 3),
+            round(_safe_file_mtime(_SECTOR_PREDICTION_PATH), 3),
+        )
+        st.session_state["_learning_refresh_sig"] = fresh_sig
+        try:
+            _write_learning_status_snapshot_async(
+                learning_status,
+                st.session_state.get("_signal_weight_status", {}),
+                signature=fresh_sig,
+            )
+        except Exception:
+            pass
+        return result
+    except Exception:
+        result["message"] = "Training refresh could not run right now."
+        return result
+
+
+def _format_self_improve_update_message(
+    summary: dict[str, object],
+    *,
+    outcome_message: str = "",
+    training: dict[str, object] | None = None,
+) -> str:
+    try:
+        training = training if isinstance(training, dict) else {}
+        logged = int(summary.get("added", 0) or 0)
+        already = int(summary.get("already_logged", 0) or 0)
+        validated = int(training.get("validated_count", 0) or 0)
+        pending = int(training.get("pending_count", 0) or 0)
+        trained = bool(training.get("trained", False))
+        samples = int(training.get("samples_used", 0) or 0)
+        base = (
+            f"Self Improve: logged {logged}; already tracked {already}; "
+            f"validated {validated}; trained {'yes' if trained else 'no'}; samples used {samples}."
+        )
+        details: list[str] = []
+        if logged > 0 and pending > 0:
+            details.append("Logged rows without outcomes are waiting for next-session outcome.")
+        elif validated <= 0:
+            details.append("Logged, waiting for next-session outcome.")
+        training_msg = str(training.get("message", "") or "").strip()
+        if training_msg and (not trained or "trained" not in training_msg.lower()):
+            details.append(training_msg)
+        if outcome_message:
+            details.append(str(outcome_message).strip())
+        if details:
+            return f"{base} {' '.join(details)}"
+        fallback = str(summary.get("message", "") or "").strip()
+        return f"{base} {fallback}".strip()
+    except Exception:
+        return str(summary.get("message", "") or "Self-learning update finished.")
+
+
 def _run_imported_ai_self_improve_update(
     *,
     include_outcome_refresh: bool = True,
     source_filter: object = _PICK_SOURCE_ALL,
 ) -> dict[str, object]:
     summary = _log_imported_symbols_for_self_learning(source_filter=source_filter)
-    learning_message = str(summary.get("message", "") or "Self-learning update finished.").strip()
+    if not list(summary.get("symbols", []) or []):
+        summary.setdefault("training", {})
+        summary.setdefault("validated_count", 0)
+        summary.setdefault("trained", False)
+        summary.setdefault("samples_used", 0)
+        summary.setdefault("outcome_message", "")
+        return summary
+
     outcome_message = ""
     if include_outcome_refresh:
         try:
@@ -3509,8 +3653,23 @@ def _run_imported_ai_self_improve_update(
         except Exception:
             outcome_message = ""
 
-    parts = [msg for msg in (learning_message, outcome_message) if msg]
-    summary["message"] = " ".join(parts) if parts else "Self-learning update finished."
+    training = {}
+    try:
+        from prediction_feedback_store import feedback_summary as _feedback_summary
+
+        training = _run_self_improve_training_refresh(_feedback_summary())
+    except Exception:
+        training = _run_self_improve_training_refresh({})
+
+    summary["training"] = training
+    summary["validated_count"] = int(training.get("validated_count", 0) or 0) if isinstance(training, dict) else 0
+    summary["trained"] = bool(training.get("trained", False)) if isinstance(training, dict) else False
+    summary["samples_used"] = int(training.get("samples_used", 0) or 0) if isinstance(training, dict) else 0
+    summary["message"] = _format_self_improve_update_message(
+        summary,
+        outcome_message=outcome_message,
+        training=training,
+    )
     summary["outcome_message"] = outcome_message
     return summary
 
@@ -4514,16 +4673,18 @@ def _render_imported_ai_top3_prompt_panel(panel: dict[str, object]) -> None:
             logged_today = int(panel.get("logged_today_count", 0) or 0)
             if logged_today <= 0:
                 st.warning(
-                    "Logged Today is 0. Self Improve is currently a data logger, not an immediate trainer."
+                    "Logged Today is 0. Self Improve will log imported rows, refresh outcomes, and train once validated outcomes exist."
                 )
             else:
-                st.success(f"Logged Today: {logged_today}. These rows are now feeding the tracking log.")
+                st.success(
+                    f"Logged Today: {logged_today}. Self Improve retrains immediately when validated rows are available."
+                )
             st.markdown(
                 """
 - Self Improve logs imported snapshots into the prediction feedback CSV.
-- It records signal values, scores, and later outcomes for history.
-- It does not retrain a model or change weights immediately.
-- Meaningful model updates need enough validated next-session outcomes first.
+- It refreshes available next-session outcomes before training.
+- If validated rows exist, it retrains the sklearn learning model immediately.
+- If outcomes are still pending, it reports that the rows are logged and waiting.
                 """.strip()
             )
 
@@ -4838,7 +4999,7 @@ def render_imported_ai_learning_panel() -> None:
             key="imported_ai_learning_self_improve_btn",
             use_container_width=True,
             type="primary",
-            help="Logs this imported basket into the self-learning feedback log and refreshes available next-session outcomes.",
+            help="Logs this imported basket, refreshes available outcomes, and retrains when validated rows exist.",
         )
     with _action2:
         if st.button("Open AI Prediction", key="imported_ai_learning_open_chart_btn", use_container_width=True):
