@@ -990,7 +990,7 @@
         5
       ],
       "source_modes": [
-        "AI"
+        "Manual"
       ],
       "last_imported_at": "2026-05-20T15:22:23",
       "snapshot": {
@@ -4300,5 +4300,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-25T14:20:07"
+  "updated_at": "2026-05-25T14:39:36"
 }
