@@ -223,7 +223,38 @@ def _metadata_text_list(value: object) -> list[str]:
     return out
 
 
-def _metadata_source_mode(value: object, default: str = "AI") -> str:
+_AI_SOURCE_MARKERS = ("a i l", "ail in one", "final aura", "ail final aura")
+_MANUAL_SOURCE_MARKERS = (
+    "main scan",
+    "normal scan",
+    "screener",
+    "scanner",
+    "scan pick",
+    "mode ",
+    "top 3",
+    "breakout radar",
+    "live breakout",
+    "stock aura",
+    "compare stocks",
+    "csv",
+)
+
+
+def _normalize_source_context_text(value: object) -> str:
+    return str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+
+
+def _metadata_has_ail_marker(value: object) -> bool:
+    text = _normalize_source_context_text(value)
+    return any(marker in text for marker in _AI_SOURCE_MARKERS)
+
+
+def _metadata_has_manual_marker(value: object) -> bool:
+    text = _normalize_source_context_text(value)
+    return any(marker in text for marker in _MANUAL_SOURCE_MARKERS)
+
+
+def _metadata_source_mode(value: object, default: str = "Manual") -> str:
     raw_items: list[object]
     if isinstance(value, str) and any(sep in value for sep in ("|", ",")):
         raw_items = [part.strip() for part in value.replace(",", "|").split("|")]
@@ -234,16 +265,28 @@ def _metadata_source_mode(value: object, default: str = "AI") -> str:
     primary = ""
     for item in raw_items:
         text = _clean_label(item).lower()
-        if text in {"manual", "mannual", "manually", "user", "typed", "own"}:
+        if text in {
+            "manual",
+            "mannual",
+            "manually",
+            "user",
+            "typed",
+            "own",
+            "scan",
+            "scanner",
+            "screener",
+            "normal",
+            "normal scan",
+        }:
             primary = "Manual"
-        elif text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+        elif text in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
             primary = "AI"
     if primary:
         return primary
     fallback = str(default or "").strip().lower()
-    if fallback in {"manual", "mannual"}:
+    if fallback in {"manual", "mannual", "scan", "scanner", "screener", "normal", "normal scan"}:
         return "Manual"
-    if fallback in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+    if fallback in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
         return "AI"
     return ""
 
@@ -387,6 +430,13 @@ def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
             sources = _metadata_text_list(item.get("sources", item.get("source", [])))
             modes = _metadata_text_list(item.get("modes", item.get("mode", [])))
             source_mode = _metadata_source_mode(item.get("source_modes", item.get("source_mode", [])))
+            source_context = " ".join(sources + categories)
+            if source_mode == "AI" and not _metadata_has_ail_marker(source_context):
+                source_mode = "Manual"
+            elif _metadata_has_ail_marker(source_context):
+                source_mode = "AI"
+            elif _metadata_has_manual_marker(source_context):
+                source_mode = "Manual"
             mode_defaults = _mode_import_defaults(modes[0] if modes else "")
             category_text = " | ".join(categories) or mode_defaults.get("import_category", "")
             source_text = " | ".join(sources) or mode_defaults.get("import_source", "")

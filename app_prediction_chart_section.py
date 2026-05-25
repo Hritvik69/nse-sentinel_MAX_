@@ -53,6 +53,37 @@ _PICK_SOURCE_ALL = "All"
 _PICK_SOURCE_AI = "AI"
 _PICK_SOURCE_MANUAL = "Manual"
 _PICK_SOURCE_FILTER_OPTIONS = (_PICK_SOURCE_ALL, _PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
+_AI_SOURCE_MARKERS = ("a i l", "ail in one", "final aura", "ail final aura")
+_MANUAL_SOURCE_MARKERS = (
+    "main scan",
+    "normal scan",
+    "screener",
+    "scanner",
+    "scan pick",
+    "mode ",
+    "top 3",
+    "breakout radar",
+    "live breakout",
+    "stock aura",
+    "compare stocks",
+    "csv",
+)
+_SOURCE_CONTEXT_KEYS = (
+    "Import Source",
+    "Import Category",
+    "Source",
+    "Category",
+    "source",
+    "category",
+    "sources",
+    "categories",
+    "source_label",
+    "source_bucket",
+    "Mode",
+    "Mode Name",
+    "Mode Label",
+    "Tomorrow Strip",
+)
 
 try:
     from prediction_feedback_store import read_feedback_log as _read_feedback_log
@@ -1347,16 +1378,85 @@ def _normalize_tomorrow_strip_symbol(value: object) -> str:
     return symbol
 
 
-def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_AI) -> str:
-    text = str(value or "").strip().lower()
-    if text in {"manual", "mannual", "manually", "user", "typed", "own"}:
+def _normalize_source_context_text(value: object) -> str:
+    return str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+
+
+def _source_text_has_ail_marker(value: object) -> bool:
+    text = _normalize_source_context_text(value)
+    return any(marker in text for marker in _AI_SOURCE_MARKERS)
+
+
+def _source_text_has_manual_marker(value: object) -> bool:
+    text = _normalize_source_context_text(value)
+    return any(marker in text for marker in _MANUAL_SOURCE_MARKERS)
+
+
+def _source_context_text_from_mapping(item: object) -> str:
+    if not isinstance(item, Mapping):
+        return ""
+    parts: list[str] = []
+    for key in _SOURCE_CONTEXT_KEYS:
+        raw = item.get(key)
+        if isinstance(raw, (list, tuple, set)):
+            parts.extend(str(part or "").strip() for part in raw if str(part or "").strip())
+        elif raw is not None and str(raw).strip():
+            parts.append(str(raw).strip())
+    return " ".join(parts)
+
+
+def _pick_source_mode_from_context(
+    explicit_mode: object,
+    context_text: object = "",
+    *,
+    default: str = _PICK_SOURCE_MANUAL,
+) -> str:
+    explicit = _normalize_pick_source_mode(explicit_mode, default="")
+    if explicit == _PICK_SOURCE_MANUAL:
         return _PICK_SOURCE_MANUAL
-    if text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+    if _source_text_has_ail_marker(context_text):
+        return _PICK_SOURCE_AI
+    if _source_text_has_manual_marker(context_text):
+        return _PICK_SOURCE_MANUAL
+    if explicit == _PICK_SOURCE_AI:
+        return _PICK_SOURCE_MANUAL
+    return _normalize_pick_source_mode(default, default=_PICK_SOURCE_MANUAL) or _PICK_SOURCE_MANUAL
+
+
+def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_MANUAL) -> str:
+    text = str(value or "").strip().lower()
+    if text in {
+        "manual",
+        "mannual",
+        "manually",
+        "user",
+        "typed",
+        "own",
+        "scan",
+        "scanner",
+        "screener",
+        "normal",
+        "normal scan",
+    }:
+        return _PICK_SOURCE_MANUAL
+    if text in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
         return _PICK_SOURCE_AI
     default_text = str(default or "").strip().lower()
-    if default_text in {"manual", "mannual", "manually", "user", "typed", "own"}:
+    if default_text in {
+        "manual",
+        "mannual",
+        "manually",
+        "user",
+        "typed",
+        "own",
+        "scan",
+        "scanner",
+        "screener",
+        "normal",
+        "normal scan",
+    }:
         return _PICK_SOURCE_MANUAL
-    if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+    if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
         return _PICK_SOURCE_AI
     return ""
 
@@ -1406,6 +1506,24 @@ def _tomorrow_strip_source_default(store: Mapping[str, object]) -> str:
     return _PICK_SOURCE_MANUAL
 
 
+def _tomorrow_strip_source_for_symbol(
+    symbol: str,
+    source_modes: Mapping[str, str],
+    raw_source_snapshots: object,
+    source_default: str,
+) -> str:
+    if symbol in source_modes:
+        return source_modes[symbol]
+    snapshot = {}
+    if isinstance(raw_source_snapshots, Mapping):
+        snapshot = raw_source_snapshots.get(symbol, {})
+    return _pick_source_mode_from_context(
+        source_default,
+        _source_context_text_from_mapping(snapshot),
+        default=_PICK_SOURCE_MANUAL,
+    )
+
+
 def _load_tomorrow_strip_sections(
     *,
     source_filter: object = _PICK_SOURCE_ALL,
@@ -1422,12 +1540,18 @@ def _load_tomorrow_strip_sections(
         selected = _normalize_pick_source_filter(source_filter)
         seen: set[str] = set()
         raw_source_modes = store.get("source_modes", {})
+        raw_source_snapshots = store.get("source_snapshots", {})
         source_default = _tomorrow_strip_source_default(store)
         if isinstance(raw_source_modes, Mapping):
             for raw_symbol, raw_mode in raw_source_modes.items():
                 symbol = _normalize_tomorrow_strip_symbol(raw_symbol)
                 if symbol:
-                    source_modes[symbol] = _normalize_pick_source_mode(raw_mode, default=source_default)
+                    snapshot = raw_source_snapshots.get(raw_symbol, raw_source_snapshots.get(symbol, {})) if isinstance(raw_source_snapshots, Mapping) else {}
+                    source_modes[symbol] = _pick_source_mode_from_context(
+                        raw_mode,
+                        _source_context_text_from_mapping(snapshot),
+                        default=source_default,
+                    )
         raw_sections = store.get("sections", {})
         if isinstance(raw_sections, dict):
             for bucket in _TOMORROW_SECTION_ORDER:
@@ -1436,24 +1560,34 @@ def _load_tomorrow_strip_sections(
                     continue
                 for raw in values:
                     symbol = _normalize_tomorrow_strip_symbol(raw)
-                    symbol_source = source_modes.get(symbol, source_default)
+                    symbol_source = _tomorrow_strip_source_for_symbol(
+                        symbol,
+                        source_modes,
+                        raw_source_snapshots,
+                        source_default,
+                    )
                     if selected != _PICK_SOURCE_ALL and symbol_source != selected:
                         continue
                     if symbol and symbol not in seen and len(seen) < 20:
                         sections[bucket].append(symbol)
-                        source_modes.setdefault(symbol, source_default)
+                        source_modes.setdefault(symbol, symbol_source)
                         seen.add(symbol)
 
         raw_picks = store.get("picks", [])
         if isinstance(raw_picks, (list, tuple)):
             for raw in raw_picks:
                 symbol = _normalize_tomorrow_strip_symbol(raw)
-                symbol_source = source_modes.get(symbol, source_default)
+                symbol_source = _tomorrow_strip_source_for_symbol(
+                    symbol,
+                    source_modes,
+                    raw_source_snapshots,
+                    source_default,
+                )
                 if selected != _PICK_SOURCE_ALL and symbol_source != selected:
                     continue
                 if symbol and symbol not in seen and len(seen) < 20:
                     sections["relax"].append(symbol)
-                    source_modes.setdefault(symbol, source_default)
+                    source_modes.setdefault(symbol, symbol_source)
                     seen.add(symbol)
         return sections, source_modes
     except Exception:

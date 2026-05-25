@@ -1825,18 +1825,118 @@ _PICK_SOURCE_AI = "AI"
 _PICK_SOURCE_MANUAL = "Manual"
 _PICK_SOURCE_FILTER_OPTIONS = (_PICK_SOURCE_ALL, _PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
 _PICK_SOURCE_MODES = (_PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
+_AI_SOURCE_MARKERS = ("a i l", "ail in one", "final aura", "ail final aura")
+_MANUAL_SOURCE_MARKERS = (
+    "main scan",
+    "normal scan",
+    "screener",
+    "scanner",
+    "scan pick",
+    "mode ",
+    "top 3",
+    "breakout radar",
+    "live breakout",
+    "stock aura",
+    "compare stocks",
+    "csv",
+)
+_SOURCE_CONTEXT_KEYS = (
+    "Import Source",
+    "Import Category",
+    "Source",
+    "Category",
+    "source",
+    "category",
+    "sources",
+    "categories",
+    "source_label",
+    "source_bucket",
+    "Mode",
+    "Mode Name",
+    "Mode Label",
+    "Tomorrow Strip",
+)
 
 
-def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_AI) -> str:
-    text = str(value or "").strip().lower()
-    if text in {"manual", "mannual", "manually", "user", "typed", "own"}:
+def _normalize_source_context_text(value: object) -> str:
+    return str(value or "").strip().lower().replace("_", " ").replace("-", " ")
+
+
+def _source_text_has_ail_marker(value: object) -> bool:
+    text = _normalize_source_context_text(value)
+    return any(marker in text for marker in _AI_SOURCE_MARKERS)
+
+
+def _source_text_has_manual_marker(value: object) -> bool:
+    text = _normalize_source_context_text(value)
+    return any(marker in text for marker in _MANUAL_SOURCE_MARKERS)
+
+
+def _source_context_text_from_mapping(item: object) -> str:
+    if not isinstance(item, dict):
+        return ""
+    parts: list[str] = []
+    for key in _SOURCE_CONTEXT_KEYS:
+        raw = item.get(key)
+        if isinstance(raw, (list, tuple, set)):
+            parts.extend(str(part or "").strip() for part in raw if str(part or "").strip())
+        elif raw is not None and str(raw).strip():
+            parts.append(str(raw).strip())
+    return " ".join(parts)
+
+
+def _pick_source_mode_from_context(
+    explicit_mode: object,
+    context_text: object = "",
+    *,
+    default: str = _PICK_SOURCE_MANUAL,
+) -> str:
+    explicit = _normalize_pick_source_mode(explicit_mode, default="")
+    if explicit == _PICK_SOURCE_MANUAL:
         return _PICK_SOURCE_MANUAL
-    if text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+    if _source_text_has_ail_marker(context_text):
+        return _PICK_SOURCE_AI
+    if _source_text_has_manual_marker(context_text):
+        return _PICK_SOURCE_MANUAL
+    if explicit == _PICK_SOURCE_AI:
+        return _PICK_SOURCE_MANUAL
+    return _normalize_pick_source_mode(default, default=_PICK_SOURCE_MANUAL) or _PICK_SOURCE_MANUAL
+
+
+def _normalize_pick_source_mode(value: object, default: str = _PICK_SOURCE_MANUAL) -> str:
+    text = str(value or "").strip().lower()
+    if text in {
+        "manual",
+        "mannual",
+        "manually",
+        "user",
+        "typed",
+        "own",
+        "scan",
+        "scanner",
+        "screener",
+        "normal",
+        "normal scan",
+    }:
+        return _PICK_SOURCE_MANUAL
+    if text in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
         return _PICK_SOURCE_AI
     default_text = str(default or "").strip().lower()
-    if default_text in {"manual", "mannual", "manually", "user", "typed", "own"}:
+    if default_text in {
+        "manual",
+        "mannual",
+        "manually",
+        "user",
+        "typed",
+        "own",
+        "scan",
+        "scanner",
+        "screener",
+        "normal",
+        "normal scan",
+    }:
         return _PICK_SOURCE_MANUAL
-    if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "scanner", "imported", "system"}:
+    if default_text in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
         return _PICK_SOURCE_AI
     return ""
 
@@ -1896,7 +1996,7 @@ def _normalize_tomorrow_source_modes(
     source_modes: object,
     *,
     symbols: list[object] | tuple[object, ...] | None = None,
-    default: str = _PICK_SOURCE_AI,
+    default: str = _PICK_SOURCE_MANUAL,
 ) -> dict[str, str]:
     mapping: dict[str, str] = {}
     if isinstance(source_modes, dict):
@@ -1926,7 +2026,7 @@ def _tomorrow_source_modes_from_store(store: dict | None) -> dict[str, str]:
 def _tomorrow_source_mode_for_symbol(source_modes: object, symbol: object) -> str:
     mapping = _normalize_tomorrow_source_modes(source_modes)
     normalized = _normalize_tomorrow_symbol(symbol)
-    return _normalize_pick_source_mode(mapping.get(normalized, _PICK_SOURCE_AI))
+    return _normalize_pick_source_mode(mapping.get(normalized, _PICK_SOURCE_MANUAL))
 
 
 def _filter_tomorrow_sections_by_source(
@@ -1996,6 +2096,31 @@ def _normalize_tomorrow_source_snapshots(
             clean[str(key)] = value
         clean["Symbol"] = symbol
         out[symbol] = clean
+    return out
+
+
+def _reconcile_tomorrow_source_modes(
+    source_modes: object,
+    source_snapshots: object,
+    *,
+    symbols: list[object] | tuple[object, ...] | None = None,
+    default: str = _PICK_SOURCE_MANUAL,
+) -> dict[str, str]:
+    normalized_symbols = _normalize_tomorrow_symbols(list(symbols or []), limit=40)
+    mapping = _normalize_tomorrow_source_modes(
+        source_modes,
+        symbols=normalized_symbols,
+        default=default,
+    )
+    snapshots = _normalize_tomorrow_source_snapshots(source_snapshots, symbols=normalized_symbols)
+    out: dict[str, str] = {}
+    for symbol in normalized_symbols:
+        context_text = _source_context_text_from_mapping(snapshots.get(symbol, {}))
+        out[symbol] = _pick_source_mode_from_context(
+            mapping.get(symbol, default),
+            context_text,
+            default=default,
+        )
     return out
 
 
@@ -2078,14 +2203,15 @@ def _normalize_tomorrow_store(store: dict | None) -> dict:
         and any(_normalize_tomorrow_symbol(symbol) for symbol in raw_source_modes.keys())
     )
     source_default = _PICK_SOURCE_AI if has_explicit_source_modes or not picks else _PICK_SOURCE_MANUAL
-    source_modes = _normalize_tomorrow_source_modes(
-        raw_source_modes,
-        symbols=picks,
-        default=source_default,
-    )
     source_snapshots = _normalize_tomorrow_source_snapshots(
         store.get("source_snapshots", {}),
         symbols=picks,
+    )
+    source_modes = _reconcile_tomorrow_source_modes(
+        raw_source_modes,
+        source_snapshots,
+        symbols=picks,
+        default=source_default,
     )
 
     notes_text = store.get("notes", "")
@@ -2351,7 +2477,7 @@ def _save_symbols_to_tomorrow_store(
     symbols: list[object] | tuple[object, ...] | None,
     *,
     bucket: str = "relax",
-    source_mode: str = _PICK_SOURCE_AI,
+    source_mode: str = _PICK_SOURCE_MANUAL,
     source_rows: object = None,
 ) -> dict[str, object]:
     store, storage_mode = _load_tomorrow_store()
@@ -2385,6 +2511,10 @@ def _save_symbols_to_tomorrow_store(
     for symbol, snapshot in snapshot_map.items():
         if symbol in flat_after and snapshot:
             source_snapshots[symbol] = dict(snapshot)
+    if target_source_mode == _PICK_SOURCE_MANUAL:
+        for symbol in normalized_symbols:
+            if symbol in flat_after and symbol not in snapshot_map:
+                source_snapshots[symbol] = {"Symbol": symbol}
 
     changed = (
         sections_after != store.get("sections", _tomorrow_section_defaults())
@@ -2456,7 +2586,7 @@ def _render_add_in_picks_actions(
     key_prefix: str,
     scope_label: str,
     bucket: str = "relax",
-    source_mode: str = _PICK_SOURCE_AI,
+    source_mode: str = _PICK_SOURCE_MANUAL,
     source_rows: object = None,
     helper_text: str = "",
 ) -> None:
@@ -2580,25 +2710,18 @@ def _normalize_import_text_list(values: object) -> list[str]:
 def _imported_record_source_modes(record: dict[str, object] | None) -> list[str]:
     if not isinstance(record, dict):
         return [_PICK_SOURCE_AI]
-    raw_modes = record.get("source_modes", record.get("source_mode", record.get("pick_source_mode", [])))
-    explicit = _normalize_pick_source_mode_list(raw_modes, default="")
-    if explicit:
-        return [explicit[-1]]
     return [_infer_imported_record_source_mode(record, _normalize_tomorrow_symbol(record.get("ticker") or record.get("symbol")))]
 
 
 def _infer_imported_record_source_mode(item: dict[str, object], ticker: str = "") -> str:
     raw_modes = item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", [])))
     explicit = _normalize_pick_source_mode_list(raw_modes, default="")
-    if explicit:
-        return explicit[-1]
 
     sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
     categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
     source_text = " ".join(sources + categories).lower()
-    if any(token in source_text for token in ("a-i-l", "ail ", "ai prediction", "scanner", "top 3")):
-        if "tomorrow's picks" not in source_text:
-            return _PICK_SOURCE_AI
+    if _source_text_has_ail_marker(source_text):
+        return _PICK_SOURCE_AI
 
     symbol = _normalize_tomorrow_symbol(ticker or item.get("ticker") or item.get("symbol"))
     if symbol:
@@ -2610,9 +2733,13 @@ def _infer_imported_record_source_mode(item: dict[str, object], ticker: str = ""
         except Exception:
             pass
 
+    if _source_text_has_manual_marker(source_text):
+        return _PICK_SOURCE_MANUAL
+    if explicit:
+        return _pick_source_mode_from_context(explicit[-1], source_text, default=_PICK_SOURCE_MANUAL)
     if "tomorrow's picks" in source_text or "tomorrow picks" in source_text:
         return _PICK_SOURCE_MANUAL
-    return _PICK_SOURCE_AI
+    return _PICK_SOURCE_MANUAL
 
 
 def _filter_imported_ai_records_by_source(
@@ -3064,7 +3191,7 @@ def _store_symbols_in_imported_ai_learning(
     source_label: str,
     source_bucket: object = "",
     source_rows: object = None,
-    source_mode: str = _PICK_SOURCE_AI,
+    source_mode: str = _PICK_SOURCE_MANUAL,
 ) -> dict[str, object]:
     normalized = _normalize_prediction_chart_imports(symbols, limit=40)
     if not normalized:
@@ -4992,7 +5119,7 @@ def _render_ai_prediction_import_action(
     source_label: str,
     source_bucket: object = "",
     source_rows: object = None,
-    source_mode: str = _PICK_SOURCE_AI,
+    source_mode: str = _PICK_SOURCE_MANUAL,
     helper_text: str = "",
 ) -> None:
     normalized = _normalize_prediction_chart_imports(symbols, limit=12)
@@ -6569,9 +6696,9 @@ def render_tomorrow_picks_panel() -> None:
                             )
                         with meta_col:
                             source_copy = (
-                                "Manual pick saved from Quick Add."
+                                "Manual pick saved from Quick Add or a normal screener scan."
                                 if row_source_mode == _PICK_SOURCE_MANUAL
-                                else "AI/imported pick saved from scanner, A-I-L, or import actions."
+                                else "AI pick imported from A-I-L IN ONE."
                             )
                             st.markdown(
                                 (
@@ -12158,7 +12285,7 @@ if _show_home_scanner and "results" in st.session_state:
                 key_prefix=f"scan_top3_mode_{stored_mode}",
                 scope_label="main scan",
                 bucket=_tomorrow_bucket_for_mode(stored_mode),
-                source_mode=_PICK_SOURCE_AI,
+                source_mode=_PICK_SOURCE_MANUAL,
                 source_rows=_tomorrow_df,
                 helper_text="Add these top scan picks into Tomorrow's Picks and keep them saved until you remove them.",
             )
@@ -12516,7 +12643,7 @@ else:
             key_prefix=f"battle_winner_{_normalize_tomorrow_symbol(_w_sym) or 'stock'}",
             scope_label="Compare Stocks winner",
             bucket=_tomorrow_bucket_for_mode(st.session_state.get("mode", 3)),
-            source_mode=_PICK_SOURCE_AI,
+            source_mode=_PICK_SOURCE_MANUAL,
             source_rows=_battle_df if isinstance(_battle_df, pd.DataFrame) else None,
             helper_text="Add the current best potential stock into Tomorrow's Picks without reopening the compare view.",
         )
