@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-26T04:28:28",
+  "saved_at": "2026-05-26T04:28:44",
   "signature": [
     "2026-05-26",
     1779769686.435,
@@ -191,8 +191,8 @@
       "false_bearish_pct": 43.35
     },
     "brain_status": {
-      "started_at": "2026-05-26T04:28:09",
-      "completed_at": "2026-05-26T04:28:28",
+      "started_at": "2026-05-26T04:28:28",
+      "completed_at": "2026-05-26T04:28:44",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -697,7 +697,7 @@
               "EMA50": 1435.68,
               "Close": 1936.5
             },
-            "computed_at": "2026-05-26T04:28:20"
+            "computed_at": "2026-05-26T04:28:36"
           },
           {
             "ticker": "KECL",
@@ -764,7 +764,7 @@
               "EMA50": 112.83,
               "Close": 124.5
             },
-            "computed_at": "2026-05-26T04:28:25"
+            "computed_at": "2026-05-26T04:28:41"
           },
           {
             "ticker": "MEGASTAR",
@@ -831,7 +831,7 @@
               "EMA50": 282.86,
               "Close": 282.2
             },
-            "computed_at": "2026-05-26T04:28:20"
+            "computed_at": "2026-05-26T04:28:36"
           },
           {
             "ticker": "RVTH",
@@ -898,7 +898,7 @@
               "EMA50": 649.69,
               "Close": 837.55
             },
-            "computed_at": "2026-05-26T04:28:22"
+            "computed_at": "2026-05-26T04:28:38"
           },
           {
             "ticker": "ADROITINFO",
@@ -965,7 +965,7 @@
               "EMA50": 9.49,
               "Close": 8.82
             },
-            "computed_at": "2026-05-26T04:28:16"
+            "computed_at": "2026-05-26T04:28:32"
           },
           {
             "ticker": "AEPL",
@@ -1032,7 +1032,7 @@
               "EMA50": 17.47,
               "Close": 16.95
             },
-            "computed_at": "2026-05-26T04:28:17"
+            "computed_at": "2026-05-26T04:28:33"
           },
           {
             "ticker": "E2E",
@@ -1099,7 +1099,7 @@
               "EMA50": 2943.89,
               "Close": 3866.0
             },
-            "computed_at": "2026-05-26T04:28:23"
+            "computed_at": "2026-05-26T04:28:39"
           },
           {
             "ticker": "PASUPTAC",
@@ -1166,7 +1166,7 @@
               "EMA50": 51.44,
               "Close": 61.61
             },
-            "computed_at": "2026-05-26T04:28:23"
+            "computed_at": "2026-05-26T04:28:39"
           },
           {
             "ticker": "MINDACORP",
@@ -1233,7 +1233,7 @@
               "EMA50": 533.85,
               "Close": 600.65
             },
-            "computed_at": "2026-05-26T04:28:22"
+            "computed_at": "2026-05-26T04:28:38"
           },
           {
             "ticker": "CARRARO",
@@ -1300,7 +1300,7 @@
               "EMA50": 550.16,
               "Close": 614.75
             },
-            "computed_at": "2026-05-26T04:28:23"
+            "computed_at": "2026-05-26T04:28:39"
           },
           {
             "ticker": "DCM",
@@ -1367,7 +1367,7 @@
               "EMA50": 78.46,
               "Close": 90.0
             },
-            "computed_at": "2026-05-26T04:28:21"
+            "computed_at": "2026-05-26T04:28:37"
           },
           {
             "ticker": "INA",
@@ -1434,7 +1434,7 @@
               "EMA50": 126.19,
               "Close": 143.5
             },
-            "computed_at": "2026-05-26T04:28:20"
+            "computed_at": "2026-05-26T04:28:36"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 183 tickers computed"
