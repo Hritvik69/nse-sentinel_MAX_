@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-05-27T14:59:30",
+  "saved_at": "2026-05-27T15:03:11",
   "signature": [
     "2026-05-27",
     1779893727.236,
@@ -16,7 +16,7 @@
     "accuracy_pct": 59.56,
     "validation_accuracy_pct": 59.56,
     "training_accuracy_pct": 60.03,
-    "last_trained": "2026-05-27T14:55",
+    "last_trained": "2026-05-27T14:59",
     "source": "stock_feedback",
     "message": "Model trained on 5729 samples.",
     "regime_encoder": {
@@ -191,8 +191,8 @@
       "false_bearish_pct": 43.31
     },
     "brain_status": {
-      "started_at": "2026-05-27T14:55:30",
-      "completed_at": "2026-05-27T14:59:30",
+      "started_at": "2026-05-27T14:59:32",
+      "completed_at": "2026-05-27T15:03:10",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -220,7 +220,7 @@
         "accuracy_pct": 59.56,
         "validation_accuracy_pct": 59.56,
         "training_accuracy_pct": 60.03,
-        "last_trained": "2026-05-27T14:55",
+        "last_trained": "2026-05-27T14:59",
         "source": "stock_feedback",
         "message": "Model trained on 5729 samples.",
         "regime_encoder": {
@@ -697,7 +697,7 @@
               "EMA50": 46.79,
               "Close": 67.88
             },
-            "computed_at": "2026-05-27T14:58:10"
+            "computed_at": "2026-05-27T15:01:57"
           },
           {
             "ticker": "AVSL",
@@ -764,7 +764,7 @@
               "EMA50": 119.85,
               "Close": 119.7
             },
-            "computed_at": "2026-05-27T14:56:10"
+            "computed_at": "2026-05-27T15:00:05"
           },
           {
             "ticker": "MODISONLTD",
@@ -831,7 +831,7 @@
               "EMA50": 163.84,
               "Close": 274.71
             },
-            "computed_at": "2026-05-27T14:57:41"
+            "computed_at": "2026-05-27T15:01:31"
           },
           {
             "ticker": "OMAXAUTO",
@@ -898,7 +898,7 @@
               "EMA50": 163.44,
               "Close": 251.12
             },
-            "computed_at": "2026-05-27T14:58:05"
+            "computed_at": "2026-05-27T15:01:53"
           },
           {
             "ticker": "CALSOFT",
@@ -965,7 +965,7 @@
               "EMA50": 17.45,
               "Close": 19.12
             },
-            "computed_at": "2026-05-27T14:56:16"
+            "computed_at": "2026-05-27T15:00:11"
           },
           {
             "ticker": "SUNFLAG",
@@ -1032,7 +1032,7 @@
               "EMA50": 317.0,
               "Close": 391.85
             },
-            "computed_at": "2026-05-27T14:58:52"
+            "computed_at": "2026-05-27T15:02:35"
           },
           {
             "ticker": "RAMCOIND",
@@ -1099,7 +1099,7 @@
               "EMA50": 278.8,
               "Close": 311.35
             },
-            "computed_at": "2026-05-27T14:58:19"
+            "computed_at": "2026-05-27T15:02:05"
           },
           {
             "ticker": "GALAPREC",
@@ -1166,7 +1166,7 @@
               "EMA50": 804.3,
               "Close": 944.35
             },
-            "computed_at": "2026-05-27T14:56:53"
+            "computed_at": "2026-05-27T15:00:46"
           },
           {
             "ticker": "FINPIPE",
@@ -1233,7 +1233,7 @@
               "EMA50": 173.21,
               "Close": 191.93
             },
-            "computed_at": "2026-05-27T14:56:51"
+            "computed_at": "2026-05-27T15:00:44"
           },
           {
             "ticker": "SIGMAADV",
@@ -1300,7 +1300,7 @@
               "EMA50": 264.3,
               "Close": 404.6
             },
-            "computed_at": "2026-05-27T14:58:51"
+            "computed_at": "2026-05-27T15:02:34"
           },
           {
             "ticker": "EMMVEE",
@@ -1367,7 +1367,7 @@
               "EMA50": 253.57,
               "Close": 312.1
             },
-            "computed_at": "2026-05-27T14:56:44"
+            "computed_at": "2026-05-27T15:00:37"
           },
           {
             "ticker": "HFCL",
@@ -1434,7 +1434,7 @@
               "EMA50": 117.05,
               "Close": 173.92
             },
-            "computed_at": "2026-05-27T14:57:09"
+            "computed_at": "2026-05-27T15:01:00"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2045 tickers computed"
