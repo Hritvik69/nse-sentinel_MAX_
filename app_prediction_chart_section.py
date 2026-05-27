@@ -1412,13 +1412,15 @@ def _pick_source_mode_from_context(
     default: str = _PICK_SOURCE_MANUAL,
 ) -> str:
     explicit = _normalize_pick_source_mode(explicit_mode, default="")
-    if explicit == _PICK_SOURCE_MANUAL:
-        return _PICK_SOURCE_MANUAL
-    if _source_text_has_ail_marker(context_text):
+    has_ail_marker = _source_text_has_ail_marker(context_text)
+    has_manual_marker = _source_text_has_manual_marker(context_text)
+    if has_ail_marker and (explicit != _PICK_SOURCE_MANUAL or not has_manual_marker):
         return _PICK_SOURCE_AI
-    if _source_text_has_manual_marker(context_text):
-        return _PICK_SOURCE_MANUAL
-    if explicit == _PICK_SOURCE_AI:
+    if explicit in {_PICK_SOURCE_AI, _PICK_SOURCE_MANUAL}:
+        return explicit
+    if has_ail_marker:
+        return _PICK_SOURCE_AI
+    if has_manual_marker:
         return _PICK_SOURCE_MANUAL
     return _normalize_pick_source_mode(default, default=_PICK_SOURCE_MANUAL) or _PICK_SOURCE_MANUAL
 

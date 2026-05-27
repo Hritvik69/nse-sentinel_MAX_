@@ -1843,6 +1843,18 @@ _PICK_SOURCE_AI = "AI"
 _PICK_SOURCE_MANUAL = "Manual"
 _PICK_SOURCE_FILTER_OPTIONS = (_PICK_SOURCE_ALL, _PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
 _PICK_SOURCE_MODES = (_PICK_SOURCE_AI, _PICK_SOURCE_MANUAL)
+
+
+def _positive_int_env(name: str, default: int, *, minimum: int = 1) -> int:
+    try:
+        value = int(str(_os.getenv(name, "") or "").strip())
+        return value if value >= minimum else default
+    except Exception:
+        return default
+
+
+_IMPORTED_AI_BASKET_LIMIT = _positive_int_env("NSE_SENTINEL_IMPORTED_AI_BASKET_LIMIT", 250, minimum=40)
+_PREDICTION_CHART_IMPORT_LIMIT = 40
 _AI_SOURCE_MARKERS = ("a i l", "ail in one", "final aura", "ail final aura")
 _MANUAL_SOURCE_MARKERS = (
     "main scan",
@@ -1910,13 +1922,15 @@ def _pick_source_mode_from_context(
     default: str = _PICK_SOURCE_MANUAL,
 ) -> str:
     explicit = _normalize_pick_source_mode(explicit_mode, default="")
-    if explicit == _PICK_SOURCE_MANUAL:
-        return _PICK_SOURCE_MANUAL
-    if _source_text_has_ail_marker(context_text):
+    has_ail_marker = _source_text_has_ail_marker(context_text)
+    has_manual_marker = _source_text_has_manual_marker(context_text)
+    if has_ail_marker and (explicit != _PICK_SOURCE_MANUAL or not has_manual_marker):
         return _PICK_SOURCE_AI
-    if _source_text_has_manual_marker(context_text):
-        return _PICK_SOURCE_MANUAL
-    if explicit == _PICK_SOURCE_AI:
+    if explicit in _PICK_SOURCE_MODES:
+        return explicit
+    if has_ail_marker:
+        return _PICK_SOURCE_AI
+    if has_manual_marker:
         return _PICK_SOURCE_MANUAL
     return _normalize_pick_source_mode(default, default=_PICK_SOURCE_MANUAL) or _PICK_SOURCE_MANUAL
 
@@ -1994,6 +2008,12 @@ def _primary_pick_source_mode(values: object, default: str = _PICK_SOURCE_AI) ->
     if modes:
         return modes[-1]
     return _normalize_pick_source_mode(default, default=_PICK_SOURCE_AI) or _PICK_SOURCE_AI
+
+
+def _ordered_pick_source_modes(values: object, default: str = "") -> list[str]:
+    modes = _normalize_pick_source_mode_list(values, default=default)
+    mode_set = set(modes)
+    return [mode for mode in _PICK_SOURCE_MODES if mode in mode_set]
 
 
 def _source_mode_badge(mode: object) -> str:
@@ -2659,7 +2679,10 @@ def _render_add_in_picks_actions(
         _activate_sidebar_panel("tomorrow_picks_show_panel")
 
 
-def _normalize_prediction_chart_imports(values: list[object] | tuple[object, ...] | None, limit: int = 40) -> list[str]:
+def _normalize_prediction_chart_imports(
+    values: list[object] | tuple[object, ...] | None,
+    limit: int = _PREDICTION_CHART_IMPORT_LIMIT,
+) -> list[str]:
     return _normalize_tomorrow_symbols(values, limit=limit)
 
 
@@ -2728,18 +2751,29 @@ def _normalize_import_text_list(values: object) -> list[str]:
 def _imported_record_source_modes(record: dict[str, object] | None) -> list[str]:
     if not isinstance(record, dict):
         return [_PICK_SOURCE_AI]
-    return [_infer_imported_record_source_mode(record, _normalize_tomorrow_symbol(record.get("ticker") or record.get("symbol")))]
+    return _infer_imported_record_source_modes(
+        record,
+        _normalize_tomorrow_symbol(record.get("ticker") or record.get("symbol")),
+    )
 
 
-def _infer_imported_record_source_mode(item: dict[str, object], ticker: str = "") -> str:
+def _infer_imported_record_source_modes(item: dict[str, object], ticker: str = "") -> list[str]:
     raw_modes = item.get("source_modes", item.get("source_mode", item.get("pick_source_mode", [])))
-    explicit = _normalize_pick_source_mode_list(raw_modes, default="")
+    explicit = _ordered_pick_source_modes(raw_modes, default="")
 
     sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
     categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
     source_text = " ".join(sources + categories).lower()
-    if _source_text_has_ail_marker(source_text):
-        return _PICK_SOURCE_AI
+    has_ail_marker = _source_text_has_ail_marker(source_text)
+    has_manual_marker = _source_text_has_manual_marker(source_text)
+    if has_ail_marker:
+        modes = [_PICK_SOURCE_AI]
+        if has_manual_marker and _PICK_SOURCE_MANUAL in explicit:
+            modes.append(_PICK_SOURCE_MANUAL)
+        return _ordered_pick_source_modes(modes, default=_PICK_SOURCE_AI)
+
+    if explicit:
+        return explicit
 
     symbol = _normalize_tomorrow_symbol(ticker or item.get("ticker") or item.get("symbol"))
     if symbol:
@@ -2747,17 +2781,23 @@ def _infer_imported_record_source_mode(item: dict[str, object], ticker: str = ""
             cached_store, _cached_mode = _get_cached_tomorrow_store()
             store = cached_store if isinstance(cached_store, dict) else _normalize_tomorrow_store(_load_local_tomorrow_store())
             if symbol in set(_normalize_tomorrow_symbols(store.get("picks", []), limit=20)):
-                return _tomorrow_source_mode_for_symbol(store.get("source_modes", {}), symbol)
+                mode = _tomorrow_source_mode_for_symbol(store.get("source_modes", {}), symbol)
+                normalized = _normalize_pick_source_mode(mode, default="")
+                if normalized in _PICK_SOURCE_MODES:
+                    return [normalized]
         except Exception:
             pass
 
-    if _source_text_has_manual_marker(source_text):
-        return _PICK_SOURCE_MANUAL
-    if explicit:
-        return _pick_source_mode_from_context(explicit[-1], source_text, default=_PICK_SOURCE_MANUAL)
+    if has_manual_marker:
+        return [_PICK_SOURCE_MANUAL]
     if "tomorrow's picks" in source_text or "tomorrow picks" in source_text:
-        return _PICK_SOURCE_MANUAL
-    return _PICK_SOURCE_MANUAL
+        return [_PICK_SOURCE_MANUAL]
+    return [_PICK_SOURCE_MANUAL]
+
+
+def _infer_imported_record_source_mode(item: dict[str, object], ticker: str = "") -> str:
+    modes = _infer_imported_record_source_modes(item, ticker)
+    return modes[-1] if modes else _PICK_SOURCE_MANUAL
 
 
 def _filter_imported_ai_records_by_source(
@@ -2879,7 +2919,7 @@ def _build_import_snapshot_map(source_rows: object) -> dict[str, dict[str, objec
 def _legacy_imported_ai_learning_records() -> list[dict[str, object]]:
     symbols = _normalize_prediction_chart_imports(
         st.session_state.get("prediction_chart_imported_symbols", []),
-        limit=40,
+        limit=_IMPORTED_AI_BASKET_LIMIT,
     )
     if not symbols:
         return []
@@ -2916,7 +2956,7 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
             categories = _normalize_import_text_list(item.get("categories", item.get("category", [])))
             sources = _normalize_import_text_list(item.get("sources", item.get("source", [])))
             modes = _normalize_import_mode_list(item.get("modes", item.get("mode", [])))
-            source_modes = [_infer_imported_record_source_mode(item, ticker)]
+            source_modes = _infer_imported_record_source_modes(item, ticker)
             if 7 in modes:
                 categories = _normalize_import_text_list(categories + ["Momentum"])
             imported_at = str(item.get("last_imported_at", item.get("imported_at", "")) or "")
@@ -2951,7 +2991,11 @@ def _normalize_imported_ai_learning_records(raw: object) -> list[dict[str, objec
         record["categories"] = _normalize_import_text_list(list(record.get("categories", [])) + categories)
         record["sources"] = _normalize_import_text_list(list(record.get("sources", [])) + sources)
         record["modes"] = _normalize_import_mode_list(list(record.get("modes", [])) + modes)
-        record["source_modes"] = [_primary_pick_source_mode(source_modes, default=_PICK_SOURCE_AI)]
+        merged_source_modes = _ordered_pick_source_modes(
+            list(record.get("source_modes", [])) + source_modes,
+            default="",
+        )
+        record["source_modes"] = merged_source_modes or [_PICK_SOURCE_AI]
         if imported_at:
             record["last_imported_at"] = imported_at
         if isinstance(snapshot, dict) and snapshot:
@@ -3170,7 +3214,7 @@ def _sync_imported_ai_store_to_prediction_chart(
         selected_source,
     )
     symbols = [str(record.get("ticker", "")).strip() for record in records if str(record.get("ticker", "")).strip()]
-    symbols = _normalize_prediction_chart_imports(symbols, limit=40)
+    symbols = _normalize_prediction_chart_imports(symbols, limit=_PREDICTION_CHART_IMPORT_LIMIT)
     if not symbols:
         return {"symbols": [], "mode": None, "origin": ""}
 
@@ -3211,7 +3255,7 @@ def _store_symbols_in_imported_ai_learning(
     source_rows: object = None,
     source_mode: str = _PICK_SOURCE_MANUAL,
 ) -> dict[str, object]:
-    normalized = _normalize_prediction_chart_imports(symbols, limit=40)
+    normalized = _normalize_tomorrow_symbols(symbols, limit=_IMPORTED_AI_BASKET_LIMIT)
     if not normalized:
         return {"symbols": [], "added": 0, "updated": 0, "mode": None, "source_label": str(source_label or ""), "category": ""}
 
@@ -3253,15 +3297,15 @@ def _store_symbols_in_imported_ai_learning(
             before_categories = list(record.get("categories", []))
             before_sources = list(record.get("sources", []))
             before_modes = list(record.get("modes", []))
-            before_source_modes = _normalize_pick_source_mode_list(
-                record.get("source_modes", record.get("source_mode", [])),
-                default=_PICK_SOURCE_AI,
-            )
+            before_source_modes = _imported_record_source_modes(record)
             before_snapshot = dict(record.get("snapshot", {}) or {})
             record["categories"] = _normalize_import_text_list(before_categories + ([category] if category else []))
             record["sources"] = _normalize_import_text_list(before_sources + [source_text])
             record["modes"] = _normalize_import_mode_list(before_modes + mode_list)
-            record["source_modes"] = source_mode_list
+            record["source_modes"] = _ordered_pick_source_modes(
+                before_source_modes + source_mode_list,
+                default=_PICK_SOURCE_AI,
+            )
             record["last_imported_at"] = ts
             if symbol in snapshot_map and snapshot_map.get(symbol):
                 record["snapshot"] = dict(snapshot_map.get(symbol) or {})
@@ -3274,10 +3318,14 @@ def _store_symbols_in_imported_ai_learning(
                 or dict(record.get("snapshot", {}) or {}) != before_snapshot
             ):
                 updated += 1
-        if len(ordered_symbols) >= 40:
+        if len(ordered_symbols) >= _IMPORTED_AI_BASKET_LIMIT:
             break
 
-    merged_records = [records_map[symbol] for symbol in ordered_symbols if symbol in records_map][:40]
+    merged_records = [
+        records_map[symbol]
+        for symbol in ordered_symbols
+        if symbol in records_map
+    ][:_IMPORTED_AI_BASKET_LIMIT]
     _persist_imported_ai_learning_store(merged_records, updated_at=ts)
     return {
         "symbols": [str(record.get("ticker", "")).strip() for record in merged_records if str(record.get("ticker", "")).strip()],
@@ -3392,6 +3440,8 @@ def _log_imported_symbols_for_self_learning(*, source_filter: object = _PICK_SOU
         def _record_source_mode(symbol: object) -> str:
             record = record_map.get(_normalize_tomorrow_symbol(symbol), {})
             modes = _imported_record_source_modes(record)
+            if selected_source in _PICK_SOURCE_MODES and selected_source in modes:
+                return selected_source
             return " | ".join(modes)
 
         def _record_mode(symbol: object) -> int:
@@ -4516,6 +4566,9 @@ def _build_imported_ai_learning_panel_data(
             record_sources = _normalize_import_text_list(record.get("sources", []))
             record_modes = _normalize_import_mode_list(record.get("modes", []))
             record_source_modes = _imported_record_source_modes(record)
+            display_source_modes = list(record_source_modes)
+            if selected_source in _PICK_SOURCE_MODES and selected_source in display_source_modes:
+                display_source_modes = [selected_source]
             visible_modes = [mode for mode in record_modes if mode > 0]
             stored_state = (
                 "Live Scan" if symbol in scan_map
@@ -4525,7 +4578,7 @@ def _build_imported_ai_learning_panel_data(
             rows.append(
                 {
                     "Ticker": symbol,
-                    "Source Mode": " | ".join(record_source_modes) if record_source_modes else _PICK_SOURCE_AI,
+                    "Source Mode": " | ".join(display_source_modes) if display_source_modes else _PICK_SOURCE_AI,
                     "Categories": " | ".join(record_categories) if record_categories else "-",
                     "Sources": " | ".join(record_sources[:3]) if record_sources else "-",
                     "Modes": " | ".join([f"M{mode}" for mode in visible_modes]) if visible_modes else "-",

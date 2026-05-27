@@ -263,6 +263,7 @@ def _metadata_source_mode(value: object, default: str = "Manual") -> str:
     else:
         raw_items = [value]
     primary = ""
+    context_text = " ".join(str(item or "") for item in raw_items)
     for item in raw_items:
         text = _clean_label(item).lower()
         if text in {
@@ -283,7 +284,15 @@ def _metadata_source_mode(value: object, default: str = "Manual") -> str:
             primary = "AI"
     if primary:
         return primary
+    if _metadata_has_ail_marker(context_text):
+        return "AI"
+    if _metadata_has_manual_marker(context_text):
+        return "Manual"
     fallback = str(default or "").strip().lower()
+    if _metadata_has_ail_marker(default):
+        return "AI"
+    if _metadata_has_manual_marker(default):
+        return "Manual"
     if fallback in {"manual", "mannual", "scan", "scanner", "screener", "normal", "normal scan"}:
         return "Manual"
     if fallback in {"ai", "a-i", "ail", "a-i-l", "auto", "imported", "system"}:
@@ -429,13 +438,11 @@ def _load_imported_ai_metadata_map() -> dict[str, dict[str, str]]:
             categories = _metadata_text_list(item.get("categories", item.get("category", [])))
             sources = _metadata_text_list(item.get("sources", item.get("source", [])))
             modes = _metadata_text_list(item.get("modes", item.get("mode", [])))
-            source_mode = _metadata_source_mode(item.get("source_modes", item.get("source_mode", [])))
+            source_mode = _metadata_source_mode(item.get("source_modes", item.get("source_mode", [])), default="")
             source_context = " ".join(sources + categories)
-            if source_mode == "AI" and not _metadata_has_ail_marker(source_context):
-                source_mode = "Manual"
-            elif _metadata_has_ail_marker(source_context):
+            if _metadata_has_ail_marker(source_context):
                 source_mode = "AI"
-            elif _metadata_has_manual_marker(source_context):
+            elif not source_mode and _metadata_has_manual_marker(source_context):
                 source_mode = "Manual"
             mode_defaults = _mode_import_defaults(modes[0] if modes else "")
             category_text = " | ".join(categories) or mode_defaults.get("import_category", "")
@@ -737,6 +744,26 @@ def log_scan_predictions(
                 except Exception:
                     ps_f = float("nan")
                 fs = row.get("Final Score", np.nan)
+                import_category = str(row.get("Import Category", "") or "")[:80]
+                strategy_strip = str(
+                    _first_present(
+                        row,
+                        ["Strategy Strip", "Tomorrow Strip", "Strip", "strategy_strip"],
+                        "",
+                    )
+                    or _strategy_strip_from_text(import_category, import_source)
+                )[:80]
+                raw_source_mode = _first_present(
+                    row,
+                    ["Import Source Mode", "Source Mode", "source_mode"],
+                    "",
+                )
+                source_mode = _metadata_source_mode(raw_source_mode, default="")
+                if not source_mode:
+                    source_mode = _metadata_source_mode(
+                        " | ".join([import_source, import_category, strategy_strip]),
+                        default="",
+                    )
                 rsi = _to_float(_first_present(row, ["RSI"], ""))
                 vol_avg_ratio = _to_float(_first_present(row, ["Vol / Avg", "Volume Ratio"], ""))
                 delta_ema20_pct = _to_float(
@@ -755,23 +782,9 @@ def log_scan_predictions(
                         "sector": str(row.get("Sector") or get_sector(sym) or "").strip(),
                         "mode": row_mode,
                         "import_source": import_source,
-                        "import_category": str(row.get("Import Category", "") or "")[:80],
-                        "strategy_strip": str(
-                            _first_present(
-                                row,
-                                ["Strategy Strip", "Tomorrow Strip", "Strip", "strategy_strip"],
-                                "",
-                            )
-                            or _strategy_strip_from_text(row.get("Import Category", ""), import_source)
-                        )[:80],
-                        "source_mode": _metadata_source_mode(
-                            _first_present(
-                                row,
-                                ["Import Source Mode", "Source Mode", "source_mode"],
-                                "",
-                            ),
-                            default="",
-                        )[:40],
+                        "import_category": import_category,
+                        "strategy_strip": strategy_strip,
+                        "source_mode": source_mode[:40],
                         "prediction_direction": direction,
                         "target_policy_version": _TARGET_POLICY_VERSION,
                         "prediction_score": f"{ps_f:.4f}" if np.isfinite(ps_f) else "",
