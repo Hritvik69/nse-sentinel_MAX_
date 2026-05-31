@@ -2788,7 +2788,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:16",
       "snapshot": {
         "Symbol": "ZFCVINDIA",
         "Price (\u20b9)": 14868.0,
@@ -2916,7 +2916,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:16",
       "snapshot": {
         "Symbol": "TEMBO",
         "Price (\u20b9)": 622.95,
@@ -3044,7 +3044,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:16",
       "snapshot": {
         "Symbol": "NTPC",
         "Price (\u20b9)": 398.15,
@@ -3172,7 +3172,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:16",
       "snapshot": {
         "Symbol": "SIEMENS",
         "Price (\u20b9)": "",
@@ -3300,7 +3300,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:16",
       "snapshot": {
         "Symbol": "ZENTEC",
         "Price (\u20b9)": "",
@@ -3415,5 +3415,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-31T08:35:15"
+  "updated_at": "2026-05-31T08:35:16"
 }
