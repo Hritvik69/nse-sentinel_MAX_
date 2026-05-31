@@ -2404,7 +2404,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:15",
       "snapshot": {
         "Symbol": "MURUDCERA",
         "Price (\u20b9)": 34.92,
@@ -2532,7 +2532,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:15",
       "snapshot": {
         "Symbol": "RICOAUTO",
         "Price (\u20b9)": 123.84,
@@ -2660,7 +2660,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-05-31T08:35:11",
+      "last_imported_at": "2026-05-31T08:35:15",
       "snapshot": {
         "Symbol": "BHARATGEAR",
         "Price (\u20b9)": 120.09,
@@ -3415,5 +3415,5 @@
       }
     }
   ],
-  "updated_at": "2026-05-31T08:35:11"
+  "updated_at": "2026-05-31T08:35:15"
 }
