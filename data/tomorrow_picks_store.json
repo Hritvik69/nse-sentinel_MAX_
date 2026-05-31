@@ -6,7 +6,10 @@
     "BHARATGEAR",
     "ZFCVINDIA",
     "TEMBO",
-    "NTPC"
+    "NTPC",
+    "SIEMENS",
+    "ZENTEC",
+    "PREMIERENE"
   ],
   "notes": "",
   "sections": {
@@ -24,7 +27,11 @@
       "TEMBO",
       "NTPC"
     ],
-    "breakout": []
+    "breakout": [
+      "SIEMENS",
+      "ZENTEC",
+      "PREMIERENE"
+    ]
   },
   "source_modes": {
     "PRAKASH": "Manual",
@@ -33,7 +40,10 @@
     "BHARATGEAR": "Manual",
     "ZFCVINDIA": "Manual",
     "TEMBO": "Manual",
-    "NTPC": "Manual"
+    "NTPC": "Manual",
+    "SIEMENS": "Manual",
+    "ZENTEC": "Manual",
+    "PREMIERENE": "Manual"
   },
   "source_snapshots": {
     "PRAKASH": {
@@ -668,6 +678,15 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "SIEMENS": {
+      "Symbol": "SIEMENS"
+    },
+    "ZENTEC": {
+      "Symbol": "ZENTEC"
+    },
+    "PREMIERENE": {
+      "Symbol": "PREMIERENE"
     }
   }
 }
