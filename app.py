@@ -12940,3 +12940,15 @@ elif st.session_state.get("aura_show_panel", False):
 
 st.divider()
 st.caption("NSE SENTINEL · Python + Streamlit + yFinance | For educational purposes only - not financial advice")
+st.markdown(
+    """
+<div style="text-align:center;margin:14px 0 6px 0;color:#8ab4d8;font-size:13px;">
+  <span style="color:#f0b429;font-weight:700;">More Product By Hritvik - Developer</span>
+  &nbsp;|&nbsp;
+  <a href="https://edu-test-ai-rho.vercel.app/" target="_blank" rel="noopener noreferrer" style="color:#4da3ff;text-decoration:none;font-weight:700;">Edu Test AI</a>
+  &nbsp;|&nbsp;
+  <a href="https://omni-ai-converter-web.vercel.app/" target="_blank" rel="noopener noreferrer" style="color:#4da3ff;text-decoration:none;font-weight:700;">Omni AI Converter</a>
+</div>
+    """.strip(),
+    unsafe_allow_html=True,
+)
