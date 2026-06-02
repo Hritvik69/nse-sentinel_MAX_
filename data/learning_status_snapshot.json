@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-06-02T08:15:31",
+  "saved_at": "2026-06-02T08:15:36",
   "signature": [
     "2026-06-02",
-    1780388114.74,
+    1780388131.074,
     1780387921.419
   ],
   "learning_status": {
@@ -180,8 +180,6 @@
         "UNMAPPED": 18
       }
     },
-    "validated_today": 0,
-    "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 6660,
       "rows_with_outcome": 6263,
