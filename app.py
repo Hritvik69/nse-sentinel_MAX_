@@ -2383,6 +2383,21 @@ def _odysseus_bridge_value(row: dict, *names: str, default: object = "") -> obje
     return default
 
 
+def _dashboard_pick_value(row: dict, *names: str, default: object = "") -> object:
+    value = _odysseus_bridge_value(row, *names, default=default)
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def _dashboard_pick_range(row: dict, low_key: str, high_key: str) -> str:
+    low = _dashboard_pick_value(row, low_key)
+    high = _dashboard_pick_value(row, high_key)
+    if low and high:
+        return f"{low} - {high}"
+    return str(low or high or "")
+
+
 def _dashboard_secret_value(*names: str) -> str:
     for name in names:
         value = _os.environ.get(name)
@@ -2494,11 +2509,35 @@ def _sync_odysseus_tomorrow_bridge(store: dict, *, storage_mode: str = "local") 
             snapshot = dict(source_snapshots.get(symbol) or {})
             bucket = membership.get(symbol, "relax")
             source_mode = _tomorrow_source_mode_for_symbol(source_modes, symbol)
+            entry = _dashboard_pick_range(snapshot, "Entry Low", "Entry High")
+            target = _dashboard_pick_value(snapshot, "Target 1", "Target", "target")
+            stop = _dashboard_pick_value(snapshot, "ATR SL", "Stop Loss", "Stop", "SL", "stop")
+            timing = _dashboard_pick_value(snapshot, "Entry Timing Aura", "Entry Timing", "Timing Reason")
+            notes = _dashboard_pick_value(
+                snapshot,
+                "Positive Reasons",
+                "Reason",
+                "Battle Notes",
+                "Smart Notes",
+                "AI Key Signal",
+                "Tomorrow Pick Reason",
+                "Risk Notes",
+                default=f"{_tomorrow_section_label(bucket)} strip",
+            )
             picks.append(
                 {
                     "id": f"{source_mode.lower()}-{symbol.lower()}-{index}",
                     "symbol": symbol,
                     "source": "manual" if source_mode == _PICK_SOURCE_MANUAL else "ai",
+                    "price": _dashboard_pick_value(snapshot, "Price (\u20b9)", "Price", "Close", "Last Price"),
+                    "entry": entry,
+                    "entry_low": _dashboard_pick_value(snapshot, "Entry Low"),
+                    "entry_high": _dashboard_pick_value(snapshot, "Entry High"),
+                    "target": target,
+                    "target_2": _dashboard_pick_value(snapshot, "Target 2"),
+                    "stop": stop,
+                    "risk": _dashboard_pick_value(snapshot, "Risk %", "Risk Score", "Trap Risk", "Trap Risk Score"),
+                    "timing": timing,
                     "tomorrow_score": _odysseus_bridge_value(
                         snapshot,
                         "Tomorrow Pick Score",
@@ -2515,16 +2554,17 @@ def _sync_odysseus_tomorrow_bridge(store: dict, *, storage_mode: str = "local") 
                         "Next-Day Signal",
                         default=_tomorrow_section_label(bucket),
                     ),
-                    "reason": _odysseus_bridge_value(
-                        snapshot,
-                        "AI Key Signal",
-                        "Tomorrow Pick Reason",
-                        "Risk Notes",
-                        default=f"{_tomorrow_section_label(bucket)} strip",
-                    ),
+                    "reason": notes,
+                    "notes": notes,
+                    "warnings": _dashboard_pick_value(snapshot, "Warnings", "Risk Notes", "Gate Reasons"),
+                    "verdict": _dashboard_pick_value(snapshot, "AI Verdict", "Final Verdict", "Smart Verdict", "Battle Verdict"),
                     "bucket": bucket,
                     "bucket_label": _tomorrow_section_label(bucket),
+                    "setup": _dashboard_pick_value(snapshot, "Setup Type", "AIL Category", "Mode Name", "Mode Label"),
+                    "volume": _dashboard_pick_value(snapshot, "Volume", "Vol / Avg", "Volume Trend"),
+                    "rsi": _dashboard_pick_value(snapshot, "RSI"),
                     "chart_url": tv_chart_url(symbol),
+                    "snapshot": snapshot,
                 }
             )
         payload = {
