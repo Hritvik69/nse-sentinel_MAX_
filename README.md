@@ -77,11 +77,14 @@ Queue failures and persistence errors are logged without printing secrets or tok
 ### HK Dashboard Sync
 
 Tomorrow's Picks can also publish to the HK Dashboard Supabase table after each store sync.
-Add these Streamlit secrets:
+Add these Streamlit secrets at the top level, before any `[github_store]` block:
 
 ```toml
 SUPABASE_URL = "https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
+
+[github_store]
+# existing GitHub settings stay here
 ```
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` private. Do not put it in Vercel frontend environment variables.

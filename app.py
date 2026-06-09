@@ -2388,16 +2388,45 @@ def _dashboard_secret_value(*names: str) -> str:
         value = _os.environ.get(name)
         if value:
             return str(value).strip()
+
+    def _get_secret_value(source: object, key: str) -> str:
+        try:
+            if not source:
+                return ""
+            value = source.get(key)  # type: ignore[attr-defined]
+            if value:
+                return str(value).strip()
+        except Exception:
+            return ""
+        return ""
+
     try:
+        groups = [
+            st.secrets,
+            st.secrets.get("supabase", {}),
+            st.secrets.get("dashboard", {}),
+            st.secrets.get("github_store", {}),
+        ]
+        aliases = {
+            "SUPABASE_URL": ("url", "project_url"),
+            "NEXT_PUBLIC_SUPABASE_URL": ("url", "project_url"),
+            "VITE_SUPABASE_URL": ("url", "project_url"),
+            "SUPABASE_SERVICE_ROLE_KEY": ("service_role_key", "service_key", "secret_key"),
+            "SUPABASE_SERVICE_KEY": ("service_role_key", "service_key", "secret_key"),
+        }
+        for group in groups:
+            for name in names:
+                value = _get_secret_value(group, name)
+                if value:
+                    return value
+                for alias in aliases.get(name, ()):
+                    value = _get_secret_value(group, alias)
+                    if value:
+                        return value
         for name in names:
-            value = st.secrets.get(name)
+            value = _get_secret_value(st.secrets, name.lower())
             if value:
-                return str(value).strip()
-        supabase_group = st.secrets.get("supabase", {})
-        for name in names:
-            value = supabase_group.get(name)
-            if value:
-                return str(value).strip()
+                return value
     except Exception:
         return ""
     return ""
