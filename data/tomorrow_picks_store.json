@@ -1,13 +1,23 @@
 {
-  "picks": [],
+  "picks": [
+    "HI PAPA"
+  ],
   "notes": "",
   "sections": {
-    "relax": [],
+    "relax": [
+      "HI PAPA"
+    ],
     "swing": [],
     "intraday": [],
     "momentum": [],
     "breakout": []
   },
-  "source_modes": {},
-  "source_snapshots": {}
+  "source_modes": {
+    "HI PAPA": "Manual"
+  },
+  "source_snapshots": {
+    "HI PAPA": {
+      "Symbol": "HI PAPA"
+    }
+  }
 }
