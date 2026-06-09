@@ -1471,6 +1471,7 @@ _SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 _TOMORROW_STORE_PATH = Path(_HERE) / "data" / "tomorrow_picks_store.json"
+_ODYSSEUS_TOMORROW_BRIDGE_PATH = Path(_HERE) / "data" / "odysseus_tomorrow_picks.json"
 _IMPORTED_AI_STORE_PATH = Path(_HERE) / "data" / "imported_ai_learning_store.json"
 _TICKER_MASTER_STORE_PATH = Path(_HERE) / "data" / "ticker_master_list.json"
 _TOMORROW_STORE_LOCK = threading.RLock()
@@ -2374,6 +2375,79 @@ def _save_local_tomorrow_store(store: dict) -> bool:
         return False
 
 
+def _odysseus_bridge_value(row: dict, *names: str, default: object = "") -> object:
+    for name in names:
+        value = row.get(name) if isinstance(row, dict) else None
+        if value is not None and str(value).strip() not in {"", "nan", "None"}:
+            return value
+    return default
+
+
+def _sync_odysseus_tomorrow_bridge(store: dict, *, storage_mode: str = "local") -> None:
+    try:
+        normalized = _normalize_tomorrow_store(store)
+        sections = _apply_tomorrow_sections_limit(normalized.get("sections", {}), limit=20)
+        symbols = _tomorrow_flatten_sections(sections, limit=20)
+        source_modes = _normalize_tomorrow_source_modes(normalized.get("source_modes", {}), symbols=symbols)
+        source_snapshots = _normalize_tomorrow_source_snapshots(normalized.get("source_snapshots", {}), symbols=symbols)
+        membership = _tomorrow_section_membership(sections)
+        picks: list[dict[str, object]] = []
+        for index, symbol in enumerate(symbols):
+            snapshot = dict(source_snapshots.get(symbol) or {})
+            bucket = membership.get(symbol, "relax")
+            source_mode = _tomorrow_source_mode_for_symbol(source_modes, symbol)
+            picks.append(
+                {
+                    "id": f"{source_mode.lower()}-{symbol.lower()}-{index}",
+                    "symbol": symbol,
+                    "source": "manual" if source_mode == _PICK_SOURCE_MANUAL else "ai",
+                    "tomorrow_score": _odysseus_bridge_value(
+                        snapshot,
+                        "Tomorrow Pick Score",
+                        "Prediction Score",
+                        "AI Confidence",
+                        "Final Score",
+                        "score",
+                    ),
+                    "signal": _odysseus_bridge_value(
+                        snapshot,
+                        "AI Action",
+                        "Signal",
+                        "Adjusted Signal",
+                        "Next-Day Signal",
+                        default=_tomorrow_section_label(bucket),
+                    ),
+                    "reason": _odysseus_bridge_value(
+                        snapshot,
+                        "AI Key Signal",
+                        "Tomorrow Pick Reason",
+                        "Risk Notes",
+                        default=f"{_tomorrow_section_label(bucket)} strip",
+                    ),
+                    "bucket": bucket,
+                    "bucket_label": _tomorrow_section_label(bucket),
+                    "chart_url": tv_chart_url(symbol),
+                }
+            )
+        payload = {
+            "scanner": "NSE Sentinel",
+            "mode": "tomorrow-picks-store",
+            "storage_mode": storage_mode,
+            "updated_at": datetime.now().isoformat(),
+            "picks": picks,
+            "counts": {
+                "all": len(picks),
+                "ai": sum(1 for pick in picks if pick.get("source") == "ai"),
+                "manual": sum(1 for pick in picks if pick.get("source") == "manual"),
+            },
+        }
+        _ODYSSEUS_TOMORROW_BRIDGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(_ODYSSEUS_TOMORROW_BRIDGE_PATH, payload, indent=2)
+        _queue_persistent_file(_ODYSSEUS_TOMORROW_BRIDGE_PATH)
+    except Exception:
+        _LOG.exception("Failed to sync Odysseus Tomorrow's Picks bridge")
+
+
 def _read_tomorrow_store_source() -> tuple[dict, str]:
     try:
         if _get_sheet() is not None:
@@ -2457,6 +2531,7 @@ def _persist_tomorrow_store(store: dict, *, replace: bool = False) -> None:
         _cache_tomorrow_store_session(normalized, storage_mode)
         try:
             _save_local_tomorrow_store(normalized)
+            _sync_odysseus_tomorrow_bridge(normalized, storage_mode=storage_mode)
         except Exception:
             pass
         if storage_mode == "cloud":

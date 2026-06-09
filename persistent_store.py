@@ -479,6 +479,7 @@ _SYNC_FILES = {
     "prediction_feedback_log.csv": "data/prediction_feedback_log.csv",
     "tomorrow_master_predictions.csv": "data/tomorrow_master_predictions.csv",
     "tomorrow_picks_store.json": "data/tomorrow_picks_store.json",
+    "odysseus_tomorrow_picks.json": "data/odysseus_tomorrow_picks.json",
     "imported_ai_learning_store.json": "data/imported_ai_learning_store.json",
     "learning_status_snapshot.json": "data/learning_status_snapshot.json",
     "sector_predictions.csv": "data/sector_prediction_log.csv",

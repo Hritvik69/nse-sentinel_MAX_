@@ -1,0 +1,12 @@
+{
+  "scanner": "NSE Sentinel",
+  "mode": "tomorrow-picks-store",
+  "storage_mode": "local",
+  "updated_at": "",
+  "counts": {
+    "all": 0,
+    "ai": 0,
+    "manual": 0
+  },
+  "picks": []
+}
