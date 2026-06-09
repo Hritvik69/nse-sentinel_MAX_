@@ -2,7 +2,7 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-06-09T14:36:17.148353",
+  "updated_at": "2026-06-09T16:08:47.387526",
   "picks": [
     {
       "id": "ai-asahisong-0",
@@ -27,7 +27,40 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:IGIL"
     },
     {
-      "id": "ai-kiocl-2",
+      "id": "manual-goldiam-2",
+      "symbol": "GOLDIAM",
+      "source": "manual",
+      "tomorrow_score": 58.0,
+      "signal": "\ud83d\udd34 Avoid",
+      "reason": "Candle Direction",
+      "bucket": "swing",
+      "bucket_label": "Swing",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:GOLDIAM"
+    },
+    {
+      "id": "manual-oal-3",
+      "symbol": "OAL",
+      "source": "manual",
+      "tomorrow_score": 58.0,
+      "signal": "\ud83d\udd34 Avoid",
+      "reason": "Candle Direction",
+      "bucket": "swing",
+      "bucket_label": "Swing",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:OAL"
+    },
+    {
+      "id": "manual-jma-4",
+      "symbol": "JMA",
+      "source": "manual",
+      "tomorrow_score": 56.5,
+      "signal": "\ud83d\udd34 Avoid",
+      "reason": "Ema Slope",
+      "bucket": "swing",
+      "bucket_label": "Swing",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:JMA"
+    },
+    {
+      "id": "ai-kiocl-5",
       "symbol": "KIOCL",
       "source": "ai",
       "tomorrow_score": 63.37,
@@ -38,7 +71,7 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:KIOCL"
     },
     {
-      "id": "ai-jswinfra-3",
+      "id": "ai-jswinfra-6",
       "symbol": "JSWINFRA",
       "source": "ai",
       "tomorrow_score": 60.92,
@@ -49,7 +82,7 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:JSWINFRA"
     },
     {
-      "id": "ai-relchemq-4",
+      "id": "ai-relchemq-7",
       "symbol": "RELCHEMQ",
       "source": "ai",
       "tomorrow_score": 60.38,
@@ -60,7 +93,7 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:RELCHEMQ"
     },
     {
-      "id": "ai-riil-5",
+      "id": "ai-riil-8",
       "symbol": "RIIL",
       "source": "ai",
       "tomorrow_score": 60.41,
@@ -71,18 +104,7 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:RIIL"
     },
     {
-      "id": "ai-goldiam-6",
-      "symbol": "GOLDIAM",
-      "source": "ai",
-      "tomorrow_score": 50.99,
-      "signal": "WATCH",
-      "reason": "Momentum strip",
-      "bucket": "momentum",
-      "bucket_label": "Momentum",
-      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:GOLDIAM"
-    },
-    {
-      "id": "ai-advanihotr-7",
+      "id": "ai-advanihotr-9",
       "symbol": "ADVANIHOTR",
       "source": "ai",
       "tomorrow_score": 60.0,
@@ -93,7 +115,7 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:ADVANIHOTR"
     },
     {
-      "id": "ai-kirlpnu-8",
+      "id": "ai-kirlpnu-10",
       "symbol": "KIRLPNU",
       "source": "ai",
       "tomorrow_score": 61.8,
@@ -104,7 +126,7 @@
       "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:KIRLPNU"
     },
     {
-      "id": "ai-vstind-9",
+      "id": "ai-vstind-11",
       "symbol": "VSTIND",
       "source": "ai",
       "tomorrow_score": 59.89,
@@ -116,8 +138,8 @@
     }
   ],
   "counts": {
-    "all": 10,
-    "ai": 10,
-    "manual": 0
+    "all": 12,
+    "ai": 9,
+    "manual": 3
   }
 }
