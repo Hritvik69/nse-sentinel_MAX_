@@ -3428,7 +3428,7 @@
       "source_modes": [
         "AI"
       ],
-      "last_imported_at": "2026-06-09T14:36:16",
+      "last_imported_at": "2026-06-09T15:25:00",
       "snapshot": {
         "Symbol": "ASAHISONG",
         "Price (\u20b9)": 262.8,
@@ -5818,7 +5818,7 @@
       "source_modes": [
         "AI"
       ],
-      "last_imported_at": "2026-06-09T14:36:16",
+      "last_imported_at": "2026-06-09T15:25:00",
       "snapshot": {
         "Symbol": "IGIL",
         "Price (\u20b9)": 372.05,
@@ -7478,5 +7478,5 @@
       }
     }
   ],
-  "updated_at": "2026-06-09T14:36:17"
+  "updated_at": "2026-06-09T15:25:00"
 }
