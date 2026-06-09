@@ -74,6 +74,18 @@ App writes local CSV/JSON/PKL/ZIP atomically
 
 Queue failures and persistence errors are logged without printing secrets or tokens.
 
+### HK Dashboard Sync
+
+Tomorrow's Picks can also publish to the HK Dashboard Supabase table after each store sync.
+Add these Streamlit secrets:
+
+```toml
+SUPABASE_URL = "https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
+```
+
+Keep `SUPABASE_SERVICE_ROLE_KEY` private. Do not put it in Vercel frontend environment variables.
+
 ## Files Mirrored To GitHub
 
 | File | Purpose |

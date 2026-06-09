@@ -2383,6 +2383,75 @@ def _odysseus_bridge_value(row: dict, *names: str, default: object = "") -> obje
     return default
 
 
+def _dashboard_secret_value(*names: str) -> str:
+    for name in names:
+        value = _os.environ.get(name)
+        if value:
+            return str(value).strip()
+    try:
+        for name in names:
+            value = st.secrets.get(name)
+            if value:
+                return str(value).strip()
+        supabase_group = st.secrets.get("supabase", {})
+        for name in names:
+            value = supabase_group.get(name)
+            if value:
+                return str(value).strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def _publish_dashboard_tomorrow_picks(payload: dict) -> None:
+    supabase_url = _dashboard_secret_value("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL", "VITE_SUPABASE_URL").rstrip("/")
+    service_key = _dashboard_secret_value("SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY")
+    if not supabase_url or not service_key:
+        return
+
+    rows: list[dict[str, Any]] = []
+    for pick in payload.get("picks", []):
+        symbol = str(pick.get("symbol") or "").replace(".NS", "").upper().strip()
+        if not symbol:
+            continue
+        source = str(pick.get("source") or "ai").lower().strip() or "ai"
+        try:
+            score = pick.get("tomorrow_score")
+            score = float(score) if score not in (None, "") else None
+        except Exception:
+            score = None
+        rows.append(
+            {
+                "id": f"nse-{source}-{symbol}".lower(),
+                "symbol": symbol,
+                "source": source,
+                "score": score,
+                "signal": str(pick.get("signal") or ""),
+                "scanner": payload.get("scanner") or "NSE Sentinel",
+                "mode": payload.get("mode") or "",
+                "data": pick,
+                "updated_at": payload.get("updated_at") or datetime.now().isoformat(),
+            }
+        )
+    if not rows:
+        return
+
+    try:
+        requests.post(
+            f"{supabase_url}/rest/v1/tomorrow_picks?on_conflict=symbol,source",
+            headers={
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates",
+            },
+            data=json.dumps(rows),
+            timeout=8,
+        ).raise_for_status()
+    except Exception:
+        _LOG.exception("Failed to publish Tomorrow's Picks to dashboard Supabase")
+
+
 def _sync_odysseus_tomorrow_bridge(store: dict, *, storage_mode: str = "local") -> None:
     try:
         normalized = _normalize_tomorrow_store(store)
@@ -2444,6 +2513,7 @@ def _sync_odysseus_tomorrow_bridge(store: dict, *, storage_mode: str = "local") 
         _ODYSSEUS_TOMORROW_BRIDGE_PATH.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(_ODYSSEUS_TOMORROW_BRIDGE_PATH, payload, indent=2)
         _queue_persistent_file(_ODYSSEUS_TOMORROW_BRIDGE_PATH)
+        _publish_dashboard_tomorrow_picks(payload)
     except Exception:
         _LOG.exception("Failed to sync Odysseus Tomorrow's Picks bridge")
 
