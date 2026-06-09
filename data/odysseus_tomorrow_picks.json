@@ -2,11 +2,122 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-06-09T08:57:09.437845",
-  "picks": [],
+  "updated_at": "2026-06-09T14:36:17.148353",
+  "picks": [
+    {
+      "id": "ai-asahisong-0",
+      "symbol": "ASAHISONG",
+      "source": "ai",
+      "tomorrow_score": 34.18,
+      "signal": "WATCH",
+      "reason": "Relax strip",
+      "bucket": "relax",
+      "bucket_label": "Relax",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:ASAHISONG"
+    },
+    {
+      "id": "ai-igil-1",
+      "symbol": "IGIL",
+      "source": "ai",
+      "tomorrow_score": 43.72,
+      "signal": "WATCH",
+      "reason": "Swing strip",
+      "bucket": "swing",
+      "bucket_label": "Swing",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:IGIL"
+    },
+    {
+      "id": "ai-kiocl-2",
+      "symbol": "KIOCL",
+      "source": "ai",
+      "tomorrow_score": 63.37,
+      "signal": "BUY",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:KIOCL"
+    },
+    {
+      "id": "ai-jswinfra-3",
+      "symbol": "JSWINFRA",
+      "source": "ai",
+      "tomorrow_score": 60.92,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:JSWINFRA"
+    },
+    {
+      "id": "ai-relchemq-4",
+      "symbol": "RELCHEMQ",
+      "source": "ai",
+      "tomorrow_score": 60.38,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:RELCHEMQ"
+    },
+    {
+      "id": "ai-riil-5",
+      "symbol": "RIIL",
+      "source": "ai",
+      "tomorrow_score": 60.41,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:RIIL"
+    },
+    {
+      "id": "ai-goldiam-6",
+      "symbol": "GOLDIAM",
+      "source": "ai",
+      "tomorrow_score": 50.99,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:GOLDIAM"
+    },
+    {
+      "id": "ai-advanihotr-7",
+      "symbol": "ADVANIHOTR",
+      "source": "ai",
+      "tomorrow_score": 60.0,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:ADVANIHOTR"
+    },
+    {
+      "id": "ai-kirlpnu-8",
+      "symbol": "KIRLPNU",
+      "source": "ai",
+      "tomorrow_score": 61.8,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:KIRLPNU"
+    },
+    {
+      "id": "ai-vstind-9",
+      "symbol": "VSTIND",
+      "source": "ai",
+      "tomorrow_score": 59.89,
+      "signal": "WATCH",
+      "reason": "Momentum strip",
+      "bucket": "momentum",
+      "bucket_label": "Momentum",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:VSTIND"
+    }
+  ],
   "counts": {
-    "all": 0,
-    "ai": 0,
+    "all": 10,
+    "ai": 10,
     "manual": 0
   }
 }
