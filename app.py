@@ -2453,6 +2453,8 @@ def _publish_dashboard_tomorrow_picks(payload: dict) -> None:
     if not supabase_url or not service_key:
         return
 
+    scanner_name = str(payload.get("scanner") or "NSE Sentinel")
+    updated_at = payload.get("updated_at") or datetime.now().isoformat()
     rows: list[dict[str, Any]] = []
     for pick in payload.get("picks", []):
         symbol = str(pick.get("symbol") or "").replace(".NS", "").upper().strip()
@@ -2471,27 +2473,42 @@ def _publish_dashboard_tomorrow_picks(payload: dict) -> None:
                 "source": source,
                 "score": score,
                 "signal": str(pick.get("signal") or ""),
-                "scanner": payload.get("scanner") or "NSE Sentinel",
+                "scanner": scanner_name,
                 "mode": payload.get("mode") or "",
                 "data": pick,
-                "updated_at": payload.get("updated_at") or datetime.now().isoformat(),
+                "updated_at": updated_at,
             }
         )
-    if not rows:
-        return
 
+    headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+    }
     try:
-        requests.post(
-            f"{supabase_url}/rest/v1/tomorrow_picks?on_conflict=symbol,source",
-            headers={
-                "apikey": service_key,
-                "Authorization": f"Bearer {service_key}",
-                "Content-Type": "application/json",
-                "Prefer": "resolution=merge-duplicates",
-            },
-            data=json.dumps(rows),
-            timeout=8,
-        ).raise_for_status()
+        if rows:
+            requests.post(
+                f"{supabase_url}/rest/v1/tomorrow_picks?on_conflict=symbol,source",
+                headers={**headers, "Prefer": "resolution=merge-duplicates,return=minimal"},
+                data=json.dumps(rows),
+                timeout=8,
+            ).raise_for_status()
+
+        current_symbols = sorted({str(row.get("symbol") or "").upper() for row in rows if row.get("symbol")})
+        scanner_filters = [scanner_name]
+        if scanner_name != "Odysseus/NSE Sentinel":
+            scanner_filters.append("Odysseus/NSE Sentinel")
+        for scanner_filter in scanner_filters:
+            stale_params: dict[str, str] = {"scanner": f"eq.{scanner_filter}"}
+            if current_symbols:
+                stale_params["symbol"] = f"not.in.({','.join(current_symbols)})"
+            requests.delete(
+                f"{supabase_url}/rest/v1/tomorrow_picks",
+                headers=headers,
+                params=stale_params,
+                timeout=8,
+            ).raise_for_status()
     except Exception:
         _LOG.exception("Failed to publish Tomorrow's Picks to dashboard Supabase")
 
