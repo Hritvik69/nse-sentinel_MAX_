@@ -2495,18 +2495,41 @@ def _publish_dashboard_tomorrow_picks(payload: dict) -> None:
                 timeout=8,
             ).raise_for_status()
 
-        current_symbols = sorted({str(row.get("symbol") or "").upper() for row in rows if row.get("symbol")})
+        current_ids = {str(row.get("id") or "").lower() for row in rows if row.get("id")}
         scanner_filters = [scanner_name]
         if scanner_name != "Odysseus/NSE Sentinel":
             scanner_filters.append("Odysseus/NSE Sentinel")
-        for scanner_filter in scanner_filters:
-            stale_params: dict[str, str] = {"scanner": f"eq.{scanner_filter}"}
-            if current_symbols:
-                stale_params["symbol"] = f"not.in.({','.join(current_symbols)})"
+
+        existing_response = requests.get(
+            f"{supabase_url}/rest/v1/tomorrow_picks",
+            headers=headers,
+            params={"select": "id,scanner", "limit": "500"},
+            timeout=8,
+        )
+        existing_response.raise_for_status()
+        existing_rows = existing_response.json()
+        stale_ids: list[str] = []
+        if isinstance(existing_rows, list):
+            for existing in existing_rows:
+                existing_id = str((existing or {}).get("id") or "").lower()
+                existing_scanner = str((existing or {}).get("scanner") or "")
+                if not existing_id or existing_id in current_ids:
+                    continue
+                if (
+                    existing_id.startswith("nse-")
+                    or existing_id.startswith("odysseus-")
+                    or existing_scanner in scanner_filters
+                ):
+                    stale_ids.append(existing_id)
+
+        for start in range(0, len(stale_ids), 80):
+            stale_chunk = stale_ids[start : start + 80]
+            if not stale_chunk:
+                continue
             requests.delete(
                 f"{supabase_url}/rest/v1/tomorrow_picks",
                 headers=headers,
-                params=stale_params,
+                params={"id": f"in.({','.join(stale_chunk)})"},
                 timeout=8,
             ).raise_for_status()
     except Exception:
