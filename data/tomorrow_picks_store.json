@@ -5,7 +5,9 @@
     "NELCO",
     "BHARATFORG",
     "SUDARCOLOR",
-    "CERA"
+    "CERA",
+    "CHAMBLFERT",
+    "SHRIPISTON"
   ],
   "notes": "",
   "sections": {
@@ -21,7 +23,10 @@
       "SUDARCOLOR",
       "CERA"
     ],
-    "breakout": []
+    "breakout": [
+      "CHAMBLFERT",
+      "SHRIPISTON"
+    ]
   },
   "source_modes": {
     "MANORAMA": "Manual",
@@ -29,86 +34,13 @@
     "NELCO": "Manual",
     "BHARATFORG": "Manual",
     "SUDARCOLOR": "Manual",
-    "CERA": "Manual"
+    "CERA": "Manual",
+    "CHAMBLFERT": "Manual",
+    "SHRIPISTON": "Manual"
   },
   "source_snapshots": {
     "MANORAMA": {
-      "Symbol": "MANORAMA",
-      "Price (\u20b9)": 1540.7,
-      "Volume": 310880,
-      "RSI": 62.28,
-      "EMA 20": 1460.5,
-      "EMA 50": 1426.24,
-      "Vol / Avg": 2.05,
-      "Mode ID": 6,
-      "Mode": "\ud83d\udd34 Swing",
-      "\u0394 vs 20D High (%)": 1.93,
-      "\u0394 vs EMA20 (%)": 5.49,
-      "5D Return (%)": 4.84,
-      "20D Return (%)": 14.67,
-      "Score": 53.0,
-      "_breakdown": "{'EMA Slope (Rising)': 22, 'Price > EMA20': 15, 'RSI Acceptable': 10, 'Vol Rising': 10, '20D Uptrend': 8, 'Overextended EMA': -12}",
-      "Backtest %": 50.0,
-      "ML %": 53.6,
-      "Final Score": 14.72,
-      "Trap": "",
-      "Next-Day Signal": "\u274c Weak Setup",
-      "Volume Trend": "STRONG",
-      "Setup Quality": "MEDIUM",
-      "Entry Timing": "GOOD",
-      "Trap Risk": "LOW",
-      "Breakout Quality": "MEDIUM",
-      "Support Strength": "LOW",
-      "Resistance Distance": "MEDIUM",
-      "Structure Quality": "MEDIUM",
-      "Volume Confirmation": "HIGH",
-      "Trap Probability": "LOW",
-      "Momentum Continuation": "HIGH",
-      "Grade": "D",
-      "Signal": "AVOID",
-      "Confidence": 51.8,
-      "Market Bias": "Bearish",
-      "Market Regime": "Trending Down",
-      "Prediction Score": 41.24,
-      "Conviction Tier": "Low",
-      "Setup Type": "Momentum Continuation",
-      "Reason": "Strong volume, Healthy RSI, Near breakout level",
-      "Risk Score": 6.59,
-      "Final Signal": "BUY",
-      "Action": "\ud83d\udd35 Wait",
-      "Hold Days": "\u2014",
-      "Learned Prob %": 39.7,
-      "Advanced Trap": "NONE",
-      "Expected Move": "+5% to +10%",
-      "Adjusted Signal": "STRONG BUY",
-      "Trap Check": "\u2705 Clean",
-      "Gate Passed": true,
-      "Gate Blocked": false,
-      "Gate Reasons": "G5 AI confidence below 40%; S4 bullish pick in TRENDING_DOWN regime",
-      "Gate Penalty": 15.0,
-      "Gate Score Cap": 65.0,
-      "Gate Checklist Passes": 6,
-      "Gate Buy Valid": true,
-      "Dead Cat Bounce": "NO",
-      "Gate EMA20": 1460.5013,
-      "Gate EMA50": 1426.264,
-      "Gate EMA20 Slope 5D %": 1.7612,
-      "Gate 20D Return %": 14.6695,
-      "Gate 60D Return %": 16.2441,
-      "Gate Vol Ratio": 2.0475,
-      "Decision Score": 48.2,
-      "Why This Stock?": "Meta 41.2% | Calibrated 51.8% | Regime fit 55.0% | Accuracy history 55.0%",
-      "Tomorrow Pick Score": 57.5,
-      "Tomorrow Pick Reason": "Momentum Continuation | Structure MEDIUM | Trap LOW | Score 72.5",
-      "Chart": "https://www.tradingview.com/chart/?symbol=NSE:MANORAMA",
-      "AI Direction": "Bullish",
-      "AI Confidence": 35.2,
-      "AI Action": "\ud83d\udd34 Avoid",
-      "AI Risk": "LOW",
-      "AI Hold": "-",
-      "AI Key Signal": "Bullish Pct",
-      "AI Regime": "Range Bound",
-      "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+      "Symbol": "MANORAMA"
     },
     "TASTYBITE": {
       "Symbol": "TASTYBITE",
@@ -586,6 +518,12 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "CHAMBLFERT": {
+      "Symbol": "CHAMBLFERT"
+    },
+    "SHRIPISTON": {
+      "Symbol": "SHRIPISTON"
     }
   }
 }
