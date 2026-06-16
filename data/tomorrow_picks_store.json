@@ -5,7 +5,10 @@
     "AETHER",
     "SREEL",
     "MONARCH",
-    "PREMIERPOL"
+    "PREMIERPOL",
+    "JAICORPLTD",
+    "CHAMBLFERT",
+    "PHOENIXLTD"
   ],
   "notes": "",
   "sections": {
@@ -21,7 +24,11 @@
       "MONARCH",
       "PREMIERPOL"
     ],
-    "breakout": []
+    "breakout": [
+      "JAICORPLTD",
+      "CHAMBLFERT",
+      "PHOENIXLTD"
+    ]
   },
   "source_modes": {
     "TEXINFRA": "Manual",
@@ -29,7 +36,10 @@
     "AETHER": "Manual",
     "SREEL": "Manual",
     "MONARCH": "Manual",
-    "PREMIERPOL": "Manual"
+    "PREMIERPOL": "Manual",
+    "JAICORPLTD": "Manual",
+    "CHAMBLFERT": "Manual",
+    "PHOENIXLTD": "Manual"
   },
   "source_snapshots": {
     "TEXINFRA": {
@@ -586,6 +596,15 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "JAICORPLTD": {
+      "Symbol": "JAICORPLTD"
+    },
+    "CHAMBLFERT": {
+      "Symbol": "CHAMBLFERT"
+    },
+    "PHOENIXLTD": {
+      "Symbol": "PHOENIXLTD"
     }
   }
 }
