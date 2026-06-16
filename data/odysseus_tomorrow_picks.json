@@ -2,7 +2,7 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-06-16T13:38:17.851639",
+  "updated_at": "2026-06-16T13:42:35.099111",
   "picks": [
     {
       "id": "manual-texinfra-0",
@@ -714,11 +714,98 @@
         "AI Regime": "Range Bound",
         "Gate Warning": "Top 3 share one AI key signal; capped at 75"
       }
+    },
+    {
+      "id": "manual-jaicorpltd-6",
+      "symbol": "JAICORPLTD",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:JAICORPLTD",
+      "snapshot": {
+        "Symbol": "JAICORPLTD"
+      }
+    },
+    {
+      "id": "manual-chamblfert-7",
+      "symbol": "CHAMBLFERT",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:CHAMBLFERT",
+      "snapshot": {
+        "Symbol": "CHAMBLFERT"
+      }
+    },
+    {
+      "id": "manual-phoenixltd-8",
+      "symbol": "PHOENIXLTD",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:PHOENIXLTD",
+      "snapshot": {
+        "Symbol": "PHOENIXLTD"
+      }
     }
   ],
   "counts": {
-    "all": 6,
+    "all": 9,
     "ai": 0,
-    "manual": 6
+    "manual": 9
   }
 }
