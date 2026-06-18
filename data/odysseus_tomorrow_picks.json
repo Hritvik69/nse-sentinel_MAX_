@@ -2,7 +2,7 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-06-18T12:50:48.028684",
+  "updated_at": "2026-06-18T14:33:15.307552",
   "picks": [
     {
       "id": "manual-madhav-0",
@@ -922,11 +922,98 @@
         "AI Regime": "Range Bound",
         "Gate Warning": "Top 3 share one AI key signal; capped at 75"
       }
+    },
+    {
+      "id": "manual-rba-8",
+      "symbol": "RBA",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:RBA",
+      "snapshot": {
+        "Symbol": "RBA"
+      }
+    },
+    {
+      "id": "manual-sanoficonr-9",
+      "symbol": "SANOFICONR",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:SANOFICONR",
+      "snapshot": {
+        "Symbol": "SANOFICONR"
+      }
+    },
+    {
+      "id": "manual-gptinfra-10",
+      "symbol": "GPTINFRA",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:GPTINFRA",
+      "snapshot": {
+        "Symbol": "GPTINFRA"
+      }
     }
   ],
   "counts": {
-    "all": 8,
+    "all": 11,
     "ai": 0,
-    "manual": 8
+    "manual": 11
   }
 }
