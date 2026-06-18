@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-06-18T11:57:13",
+  "saved_at": "2026-06-18T12:02:02",
   "signature": [
     "2026-06-18",
-    1781783549.495,
+    1781783844.601,
     1781783334.445
   ],
   "learning_status": {
@@ -16,7 +16,7 @@
     "accuracy_pct": 58.49,
     "validation_accuracy_pct": 58.49,
     "training_accuracy_pct": 59.28,
-    "last_trained": "2026-06-18T11:52",
+    "last_trained": "2026-06-18T11:57",
     "source": "stock_feedback",
     "message": "Model trained on 7420 samples.",
     "regime_encoder": {
@@ -192,8 +192,8 @@
       "false_bearish_pct": 40.21
     },
     "brain_status": {
-      "started_at": "2026-06-18T11:52:33",
-      "completed_at": "2026-06-18T11:57:12",
+      "started_at": "2026-06-18T11:57:14",
+      "completed_at": "2026-06-18T12:02:01",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -221,7 +221,7 @@
         "accuracy_pct": 58.49,
         "validation_accuracy_pct": 58.49,
         "training_accuracy_pct": 59.28,
-        "last_trained": "2026-06-18T11:52",
+        "last_trained": "2026-06-18T11:57",
         "source": "stock_feedback",
         "message": "Model trained on 7420 samples.",
         "regime_encoder": {
@@ -699,7 +699,7 @@
               "EMA50": 57.33,
               "Close": 26.06
             },
-            "computed_at": "2026-06-18T11:54:58"
+            "computed_at": "2026-06-18T11:59:45"
           },
           {
             "ticker": "GRMOVER",
@@ -766,7 +766,7 @@
               "EMA50": 140.82,
               "Close": 93.27
             },
-            "computed_at": "2026-06-18T11:54:13"
+            "computed_at": "2026-06-18T11:58:58"
           },
           {
             "ticker": "HYBRIDFIN",
@@ -833,7 +833,7 @@
               "EMA50": 18.12,
               "Close": 22.69
             },
-            "computed_at": "2026-06-18T11:54:24"
+            "computed_at": "2026-06-18T11:59:11"
           },
           {
             "ticker": "GRADIENTE",
@@ -900,7 +900,7 @@
               "EMA50": 5.38,
               "Close": 2.35
             },
-            "computed_at": "2026-06-18T11:57:10"
+            "computed_at": "2026-06-18T12:01:59"
           },
           {
             "ticker": "GICL",
@@ -967,7 +967,7 @@
               "EMA50": 34.56,
               "Close": 22.94
             },
-            "computed_at": "2026-06-18T11:54:01"
+            "computed_at": "2026-06-18T11:58:46"
           },
           {
             "ticker": "PARSVNATH",
@@ -1034,7 +1034,7 @@
               "EMA50": 5.11,
               "Close": 3.08
             },
-            "computed_at": "2026-06-18T11:55:31"
+            "computed_at": "2026-06-18T12:00:22"
           },
           {
             "ticker": "ROLLT",
@@ -1101,7 +1101,7 @@
               "EMA50": 2.13,
               "Close": 3.24
             },
-            "computed_at": "2026-06-18T11:55:54"
+            "computed_at": "2026-06-18T12:00:42"
           },
           {
             "ticker": "PRITIKAUTO",
@@ -1168,7 +1168,7 @@
               "EMA50": 13.95,
               "Close": 18.0
             },
-            "computed_at": "2026-06-18T11:55:48"
+            "computed_at": "2026-06-18T12:00:37"
           },
           {
             "ticker": "PIONRINV",
@@ -1235,7 +1235,7 @@
               "EMA50": 106.2,
               "Close": 92.19
             },
-            "computed_at": "2026-06-18T11:55:35"
+            "computed_at": "2026-06-18T12:00:26"
           },
           {
             "ticker": "DELPHIFX",
@@ -1302,7 +1302,7 @@
               "EMA50": 10.36,
               "Close": 8.4
             },
-            "computed_at": "2026-06-18T11:53:50"
+            "computed_at": "2026-06-18T11:58:33"
           },
           {
             "ticker": "JSLL",
@@ -1369,7 +1369,7 @@
               "EMA50": 633.94,
               "Close": 549.45
             },
-            "computed_at": "2026-06-18T11:54:49"
+            "computed_at": "2026-06-18T11:59:35"
           },
           {
             "ticker": "AQYLON",
@@ -1436,7 +1436,7 @@
               "EMA50": 77.72,
               "Close": 48.04
             },
-            "computed_at": "2026-06-18T11:52:58"
+            "computed_at": "2026-06-18T11:57:34"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2375 tickers computed"
