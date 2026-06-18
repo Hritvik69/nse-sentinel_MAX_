@@ -7,7 +7,10 @@
     "KAPSTON",
     "SUNDRMFAST",
     "KALAMANDIR",
-    "IIFLCAPS"
+    "IIFLCAPS",
+    "RBA",
+    "SANOFICONR",
+    "GPTINFRA"
   ],
   "notes": "",
   "sections": {
@@ -26,7 +29,11 @@
       "KALAMANDIR",
       "IIFLCAPS"
     ],
-    "breakout": []
+    "breakout": [
+      "RBA",
+      "SANOFICONR",
+      "GPTINFRA"
+    ]
   },
   "source_modes": {
     "MADHAV": "Manual",
@@ -36,7 +43,10 @@
     "KAPSTON": "Manual",
     "SUNDRMFAST": "Manual",
     "KALAMANDIR": "Manual",
-    "IIFLCAPS": "Manual"
+    "IIFLCAPS": "Manual",
+    "RBA": "Manual",
+    "SANOFICONR": "Manual",
+    "GPTINFRA": "Manual"
   },
   "source_snapshots": {
     "MADHAV": {
@@ -749,6 +759,15 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "RBA": {
+      "Symbol": "RBA"
+    },
+    "SANOFICONR": {
+      "Symbol": "SANOFICONR"
+    },
+    "GPTINFRA": {
+      "Symbol": "GPTINFRA"
     }
   }
 }
