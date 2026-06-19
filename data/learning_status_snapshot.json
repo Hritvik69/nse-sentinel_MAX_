@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-06-19T16:00:49",
+  "saved_at": "2026-06-19T16:05:25",
   "signature": [
     "2026-06-19",
-    1781884619.633,
+    1781884861.211,
     1781884620.797
   ],
   "learning_status": {
@@ -16,7 +16,7 @@
     "accuracy_pct": 58.11,
     "validation_accuracy_pct": 58.11,
     "training_accuracy_pct": 58.15,
-    "last_trained": "2026-06-19T15:55",
+    "last_trained": "2026-06-19T16:00",
     "source": "stock_feedback",
     "message": "Model trained on 8085 samples.",
     "regime_encoder": {
@@ -192,8 +192,8 @@
       "false_bearish_pct": 41.17
     },
     "brain_status": {
-      "started_at": "2026-06-19T15:55:10",
-      "completed_at": "2026-06-19T16:00:48",
+      "started_at": "2026-06-19T16:00:51",
+      "completed_at": "2026-06-19T16:05:24",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -221,7 +221,7 @@
         "accuracy_pct": 58.11,
         "validation_accuracy_pct": 58.11,
         "training_accuracy_pct": 58.15,
-        "last_trained": "2026-06-19T15:55",
+        "last_trained": "2026-06-19T16:00",
         "source": "stock_feedback",
         "message": "Model trained on 8085 samples.",
         "regime_encoder": {
@@ -699,7 +699,7 @@
               "EMA50": 5.26,
               "Close": 2.46
             },
-            "computed_at": "2026-06-19T16:00:42"
+            "computed_at": "2026-06-19T16:05:17"
           },
           {
             "ticker": "CEWATER",
@@ -766,7 +766,7 @@
               "EMA50": 293.44,
               "Close": 350.55
             },
-            "computed_at": "2026-06-19T15:57:18"
+            "computed_at": "2026-06-19T16:02:05"
           },
           {
             "ticker": "LEMERITE",
@@ -833,7 +833,7 @@
               "EMA50": 56.06,
               "Close": 27.27
             },
-            "computed_at": "2026-06-19T15:58:46"
+            "computed_at": "2026-06-19T16:03:22"
           },
           {
             "ticker": "TIL",
@@ -900,7 +900,7 @@
               "EMA50": 195.73,
               "Close": 232.67
             },
-            "computed_at": "2026-06-19T16:00:24"
+            "computed_at": "2026-06-19T16:04:58"
           },
           {
             "ticker": "GRMOVER",
@@ -967,7 +967,7 @@
               "EMA50": 138.97,
               "Close": 93.31
             },
-            "computed_at": "2026-06-19T15:57:59"
+            "computed_at": "2026-06-19T16:02:34"
           },
           {
             "ticker": "SADHNANIQ",
@@ -1034,7 +1034,7 @@
               "EMA50": 2.47,
               "Close": 2.85
             },
-            "computed_at": "2026-06-19T15:59:47"
+            "computed_at": "2026-06-19T16:04:22"
           },
           {
             "ticker": "GICL",
@@ -1101,7 +1101,7 @@
               "EMA50": 34.09,
               "Close": 22.6
             },
-            "computed_at": "2026-06-19T15:58:11"
+            "computed_at": "2026-06-19T16:02:45"
           },
           {
             "ticker": "NIBE",
@@ -1168,7 +1168,7 @@
               "EMA50": 1335.75,
               "Close": 1815.4
             },
-            "computed_at": "2026-06-19T15:59:01"
+            "computed_at": "2026-06-19T16:03:37"
           },
           {
             "ticker": "NELCO",
@@ -1235,7 +1235,7 @@
               "EMA50": 701.02,
               "Close": 940.35
             },
-            "computed_at": "2026-06-19T15:58:59"
+            "computed_at": "2026-06-19T16:03:35"
           },
           {
             "ticker": "PARSVNATH",
@@ -1302,7 +1302,7 @@
               "EMA50": 5.03,
               "Close": 3.02
             },
-            "computed_at": "2026-06-19T15:59:28"
+            "computed_at": "2026-06-19T16:04:04"
           },
           {
             "ticker": "GTECJAINX",
@@ -1369,7 +1369,7 @@
               "EMA50": 23.96,
               "Close": 24.19
             },
-            "computed_at": "2026-06-19T15:58:00"
+            "computed_at": "2026-06-19T16:02:35"
           },
           {
             "ticker": "AEROENTER",
@@ -1436,7 +1436,7 @@
               "EMA50": 99.59,
               "Close": 135.87
             },
-            "computed_at": "2026-06-19T15:56:00"
+            "computed_at": "2026-06-19T16:01:19"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2382 tickers computed"
