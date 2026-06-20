@@ -1,9 +1,9 @@
 {
-  "saved_at": "2026-06-20T10:11:09",
+  "saved_at": "2026-06-20T10:12:55",
   "signature": [
     "2026-06-19",
-    1781884861.211,
-    1781884620.797
+    1781950252.257,
+    1781950238.199
   ],
   "learning_status": {
     "trained": true,
@@ -16,9 +16,9 @@
     "accuracy_pct": 58.11,
     "validation_accuracy_pct": 58.11,
     "training_accuracy_pct": 58.15,
-    "last_trained": "2026-06-19T16:00",
+    "last_trained": "2026-06-20T10:10",
     "source": "stock_feedback",
-    "message": "Model trained on 8085 samples.",
+    "message": "Training already in progress.",
     "regime_encoder": {
       "UNKNOWN": 0,
       "HIGH VOLATILITY / CHOPPY": 1,
@@ -180,8 +180,6 @@
         "UNMAPPED": 18
       }
     },
-    "validated_today": 0,
-    "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 8361,
       "rows_with_outcome": 8085,
@@ -221,9 +219,9 @@
         "accuracy_pct": 58.11,
         "validation_accuracy_pct": 58.11,
         "training_accuracy_pct": 58.15,
-        "last_trained": "2026-06-19T16:00",
+        "last_trained": "2026-06-20T10:10",
         "source": "stock_feedback",
-        "message": "Model trained on 8085 samples.",
+        "message": "Training already in progress.",
         "regime_encoder": {
           "UNKNOWN": 0,
           "HIGH VOLATILITY / CHOPPY": 1,
