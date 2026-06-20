@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-06-20T10:14:01",
+  "saved_at": "2026-06-20T10:14:07",
   "signature": [
     "2026-06-19",
-    1781950378.95,
+    1781950430.114,
     1781950238.199
   ],
   "learning_status": {
@@ -16,7 +16,7 @@
     "accuracy_pct": 58.2,
     "validation_accuracy_pct": 58.2,
     "training_accuracy_pct": 58.16,
-    "last_trained": "2026-06-20T10:13",
+    "last_trained": "2026-06-20T10:14",
     "source": "stock_feedback",
     "message": "Model trained on 8085 samples.",
     "regime_encoder": {
@@ -219,7 +219,7 @@
         "accuracy_pct": 58.2,
         "validation_accuracy_pct": 58.2,
         "training_accuracy_pct": 58.16,
-        "last_trained": "2026-06-20T10:13",
+        "last_trained": "2026-06-20T10:14",
         "source": "stock_feedback",
         "message": "Model trained on 8085 samples.",
         "regime_encoder": {
