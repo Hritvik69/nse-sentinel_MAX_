@@ -5,7 +5,10 @@
     "ARIHANTSUP",
     "ADANIPORTS",
     "ARVINDFASN",
-    "LAGNAM"
+    "LAGNAM",
+    "ABCAPITAL",
+    "INDUSINDBK",
+    "SHALPAINTS"
   ],
   "notes": "",
   "sections": {
@@ -21,7 +24,11 @@
       "ARVINDFASN",
       "LAGNAM"
     ],
-    "breakout": []
+    "breakout": [
+      "ABCAPITAL",
+      "INDUSINDBK",
+      "SHALPAINTS"
+    ]
   },
   "source_modes": {
     "KICL": "Manual",
@@ -29,7 +36,10 @@
     "ARIHANTSUP": "Manual",
     "ADANIPORTS": "Manual",
     "ARVINDFASN": "Manual",
-    "LAGNAM": "Manual"
+    "LAGNAM": "Manual",
+    "ABCAPITAL": "Manual",
+    "INDUSINDBK": "Manual",
+    "SHALPAINTS": "Manual"
   },
   "source_snapshots": {
     "KICL": {
@@ -586,6 +596,15 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "ABCAPITAL": {
+      "Symbol": "ABCAPITAL"
+    },
+    "INDUSINDBK": {
+      "Symbol": "INDUSINDBK"
+    },
+    "SHALPAINTS": {
+      "Symbol": "SHALPAINTS"
     }
   }
 }
