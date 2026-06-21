@@ -2,7 +2,7 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-06-21T12:32:13.271493",
+  "updated_at": "2026-06-21T12:33:16.307848",
   "picks": [
     {
       "id": "manual-kicl-0",
@@ -714,11 +714,98 @@
         "AI Regime": "Range Bound",
         "Gate Warning": "Top 3 share one AI key signal; capped at 75"
       }
+    },
+    {
+      "id": "manual-abcapital-6",
+      "symbol": "ABCAPITAL",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:ABCAPITAL",
+      "snapshot": {
+        "Symbol": "ABCAPITAL"
+      }
+    },
+    {
+      "id": "manual-indusindbk-7",
+      "symbol": "INDUSINDBK",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:INDUSINDBK",
+      "snapshot": {
+        "Symbol": "INDUSINDBK"
+      }
+    },
+    {
+      "id": "manual-shalpaints-8",
+      "symbol": "SHALPAINTS",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:SHALPAINTS",
+      "snapshot": {
+        "Symbol": "SHALPAINTS"
+      }
     }
   ],
   "counts": {
-    "all": 6,
+    "all": 9,
     "ai": 0,
-    "manual": 6
+    "manual": 9
   }
 }
