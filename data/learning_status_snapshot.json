@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-06-27T09:54:07",
+  "saved_at": "2026-06-27T09:54:27",
   "signature": [
     "2026-06-26",
     1782554025.946,
@@ -16,7 +16,7 @@
     "accuracy_pct": 55.45,
     "validation_accuracy_pct": 55.45,
     "training_accuracy_pct": 57.01,
-    "last_trained": "2026-06-27T09:53",
+    "last_trained": "2026-06-27T09:54",
     "source": "stock_feedback",
     "message": "Model trained on 8618 samples.",
     "regime_encoder": {
@@ -194,8 +194,8 @@
       "false_bearish_pct": 42.01
     },
     "brain_status": {
-      "started_at": "2026-06-27T09:53:49",
-      "completed_at": "2026-06-27T09:54:07",
+      "started_at": "2026-06-27T09:54:07",
+      "completed_at": "2026-06-27T09:54:26",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -223,7 +223,7 @@
         "accuracy_pct": 55.45,
         "validation_accuracy_pct": 55.45,
         "training_accuracy_pct": 57.01,
-        "last_trained": "2026-06-27T09:53",
+        "last_trained": "2026-06-27T09:54",
         "source": "stock_feedback",
         "message": "Model trained on 8618 samples.",
         "regime_encoder": {
@@ -703,7 +703,7 @@
               "EMA50": 955.45,
               "Close": 932.5
             },
-            "computed_at": "2026-06-27T09:53:55"
+            "computed_at": "2026-06-27T09:54:13"
           },
           {
             "ticker": "MUKTAARTS",
@@ -770,7 +770,7 @@
               "EMA50": 59.4,
               "Close": 60.99
             },
-            "computed_at": "2026-06-27T09:53:59"
+            "computed_at": "2026-06-27T09:54:18"
           },
           {
             "ticker": "RELINFRA",
@@ -837,7 +837,7 @@
               "EMA50": 79.25,
               "Close": 77.48
             },
-            "computed_at": "2026-06-27T09:53:55"
+            "computed_at": "2026-06-27T09:54:13"
           },
           {
             "ticker": "PGIL",
@@ -904,7 +904,7 @@
               "EMA50": 1668.44,
               "Close": 2071.0
             },
-            "computed_at": "2026-06-27T09:54:04"
+            "computed_at": "2026-06-27T09:54:23"
           },
           {
             "ticker": "MASKINVEST",
@@ -971,7 +971,7 @@
               "EMA50": 150.41,
               "Close": 152.4
             },
-            "computed_at": "2026-06-27T09:54:05"
+            "computed_at": "2026-06-27T09:54:24"
           },
           {
             "ticker": "SAMMAANCAP",
@@ -1038,7 +1038,7 @@
               "EMA50": 164.28,
               "Close": 169.81
             },
-            "computed_at": "2026-06-27T09:54:05"
+            "computed_at": "2026-06-27T09:54:23"
           },
           {
             "ticker": "V2RETAIL",
@@ -1105,7 +1105,7 @@
               "EMA50": 224.48,
               "Close": 221.23
             },
-            "computed_at": "2026-06-27T09:54:07"
+            "computed_at": "2026-06-27T09:54:26"
           },
           {
             "ticker": "ANGELONE",
@@ -1172,7 +1172,7 @@
               "EMA50": 322.61,
               "Close": 335.25
             },
-            "computed_at": "2026-06-27T09:54:05"
+            "computed_at": "2026-06-27T09:54:24"
           },
           {
             "ticker": "DCXINDIA",
@@ -1239,7 +1239,7 @@
               "EMA50": 193.89,
               "Close": 191.3
             },
-            "computed_at": "2026-06-27T09:54:01"
+            "computed_at": "2026-06-27T09:54:19"
           },
           {
             "ticker": "WIPL",
@@ -1306,7 +1306,7 @@
               "EMA50": 154.95,
               "Close": 174.52
             },
-            "computed_at": "2026-06-27T09:54:01"
+            "computed_at": "2026-06-27T09:54:20"
           },
           {
             "ticker": "360ONE",
@@ -1373,7 +1373,7 @@
               "EMA50": 1091.58,
               "Close": 1085.4
             },
-            "computed_at": "2026-06-27T09:53:58"
+            "computed_at": "2026-06-27T09:54:17"
           },
           {
             "ticker": "MEGASTAR",
@@ -1440,7 +1440,7 @@
               "EMA50": 303.35,
               "Close": 351.85
             },
-            "computed_at": "2026-06-27T09:53:58"
+            "computed_at": "2026-06-27T09:54:16"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 197 tickers computed"
