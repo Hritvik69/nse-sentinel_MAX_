@@ -1,5 +1,5 @@
 {
-  "saved_at": "2026-06-27T09:54:27",
+  "saved_at": "2026-06-27T09:54:31",
   "signature": [
     "2026-06-26",
     1782554025.946,
@@ -182,8 +182,6 @@
         "UNMAPPED": 18
       }
     },
-    "validated_today": 0,
-    "sector_validated_today": 0,
     "feedback_summary": {
       "total_logged": 8624,
       "rows_with_outcome": 8618,
