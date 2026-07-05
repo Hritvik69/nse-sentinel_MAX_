@@ -11289,7 +11289,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "KICL",
         "Price (\u20b9)": 5212.0,
@@ -11417,7 +11417,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "ERIS",
         "Price (\u20b9)": 1448.4,
@@ -11545,7 +11545,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "ARIHANTSUP",
         "Price (\u20b9)": 270.8,
@@ -11673,7 +11673,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "ADANIPORTS",
         "Price (\u20b9)": 1835.3,
@@ -11801,7 +11801,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "LAGNAM",
         "Price (\u20b9)": 82.48,
@@ -11929,7 +11929,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "ARVINDFASN",
         "Price (\u20b9)": 484.05,
@@ -12057,7 +12057,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "ABCAPITAL",
         "Price (\u20b9)": "",
@@ -12185,7 +12185,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "INDUSINDBK",
         "Price (\u20b9)": "",
@@ -12313,7 +12313,7 @@
       "source_modes": [
         "Manual"
       ],
-      "last_imported_at": "2026-06-27T09:51:30",
+      "last_imported_at": "2026-07-05T11:29:03",
       "snapshot": {
         "Symbol": "SHALPAINTS",
         "Price (\u20b9)": "",
@@ -12428,5 +12428,5 @@
       }
     }
   ],
-  "updated_at": "2026-06-27T09:51:30"
+  "updated_at": "2026-07-05T11:29:03"
 }
