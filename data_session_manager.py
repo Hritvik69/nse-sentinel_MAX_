@@ -6,6 +6,7 @@ import logging
 import shutil
 import tempfile
 import threading
+import random
 import uuid
 import zipfile
 from functools import lru_cache
@@ -167,6 +168,46 @@ def _time_travel_active() -> bool:
         return bool(_tt())
     except Exception:
         return False
+
+
+def _csv_data_newer_than_snapshot(snapshot_date: date | None) -> bool:
+    """
+    Check if individual CSV files in the data/ folder have data more recent
+    than the given snapshot date. This ensures we prefer fresh CSV data over
+    old snapshots on weekends.
+    """
+    if snapshot_date is None:
+        return False
+    try:
+        from data_downloader import _csv_read_path
+        _DATA_DIR = _ROOT / "data"
+        if not _DATA_DIR.exists():
+            return False
+
+        newest_date: date | None = None
+        csv_files = list(_DATA_DIR.glob("*.csv"))
+        if not csv_files:
+            return False
+
+        sample_size = min(20, len(csv_files))
+        import random
+        sampled = random.sample(csv_files, sample_size)
+
+        for csv_path in sampled:
+            try:
+                df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+                if df is not None and not df.empty:
+                    last_row_date = pd.to_datetime(df.index[-1]).date()
+                    if newest_date is None or last_row_date > newest_date:
+                        newest_date = last_row_date
+            except Exception:
+                continue
+
+        if newest_date is not None and newest_date > snapshot_date:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _coerce_date(value: object) -> date:
@@ -511,23 +552,49 @@ def get_scan_data_plan() -> dict[str, object]:
         save_snapshot_after_scan = False
 
         if has_snapshot:
-            source_label = "WEEKEND (Snapshot Loaded)"
-            summary = (
-                f"Weekend session. Using last trading day snapshot "
-                f"({expected_date.isoformat()}). Live refresh is disabled."
-            )
+            # Check if individual CSV files have fresher data than this snapshot
+            if _csv_data_newer_than_snapshot(expected_date):
+                # CSV data is more recent - skip the old snapshot
+                use_snapshot             = False
+                force_live_refresh       = False
+                source_label             = "WEEKEND (CSV Data Loaded)"
+                summary = (
+                    f"Weekend session. CSV data ({expected_date.isoformat()}+) "
+                    "is more recent than snapshot. Using CSV files instead."
+                )
+            else:
+                source_label = "WEEKEND (Snapshot Loaded)"
+                summary = (
+                    f"Weekend session. Using last trading day snapshot "
+                    f"({expected_date.isoformat()}). Live refresh is disabled."
+                )
         else:
             # Best-effort: try to find the nearest available snapshot
             fallback_date = _latest_snapshot_on_or_before(expected_date)
             if fallback_date is not None:
-                expected_date = fallback_date
-                has_snapshot  = True
-                snap_path     = get_snapshot_path(expected_date)
-                source_label  = "WEEKEND (Fallback Snapshot Loaded)"
-                summary = (
-                    f"Weekend session. No snapshot found for the expected date. "
-                    f"Using nearest available snapshot ({expected_date.isoformat()})."
-                )
+                # Check if CSV data is fresher than the fallback snapshot
+                if _csv_data_newer_than_snapshot(fallback_date):
+                    # CSV data is more recent - don't use the old snapshot
+                    expected_date = fallback_date
+                    has_snapshot  = False
+                    use_snapshot   = False
+                    force_live_refresh = False
+                    snap_path = get_snapshot_path(expected_date)
+                    source_label   = "WEEKEND (CSV Data Loaded)"
+                    summary = (
+                        f"Weekend session. CSV data is more recent than "
+                        f"nearest snapshot ({fallback_date.isoformat()}). "
+                        "Using CSV files instead."
+                    )
+                else:
+                    expected_date = fallback_date
+                    has_snapshot  = True
+                    snap_path     = get_snapshot_path(expected_date)
+                    source_label  = "WEEKEND (Fallback Snapshot Loaded)"
+                    summary = (
+                        f"Weekend session. No snapshot found for the expected date. "
+                        f"Using nearest available snapshot ({expected_date.isoformat()})."
+                    )
             else:
                 # Absolute last resort — fetch live and save
                 use_snapshot             = False
