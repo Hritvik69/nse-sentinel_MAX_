@@ -2,7 +2,7 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-07-05T12:56:25.660244",
+  "updated_at": "2026-07-05T13:12:21.150205",
   "picks": [
     {
       "id": "manual-ujjivansfb-0",
@@ -818,11 +818,98 @@
         "AI Regime": "Range Bound",
         "Gate Warning": "Top 3 share one AI key signal; capped at 75"
       }
+    },
+    {
+      "id": "manual-tokyoplast-7",
+      "symbol": "TOKYOPLAST",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:TOKYOPLAST",
+      "snapshot": {
+        "Symbol": "TOKYOPLAST"
+      }
+    },
+    {
+      "id": "manual-hemiprop-8",
+      "symbol": "HEMIPROP",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:HEMIPROP",
+      "snapshot": {
+        "Symbol": "HEMIPROP"
+      }
+    },
+    {
+      "id": "manual-pplpharma-9",
+      "symbol": "PPLPHARMA",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:PPLPHARMA",
+      "snapshot": {
+        "Symbol": "PPLPHARMA"
+      }
     }
   ],
   "counts": {
-    "all": 7,
+    "all": 10,
     "ai": 0,
-    "manual": 7
+    "manual": 10
   }
 }
