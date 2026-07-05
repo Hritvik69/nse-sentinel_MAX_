@@ -6,7 +6,10 @@
     "SOBHA",
     "ZUARI",
     "MODIRUBBER",
-    "CAPITALSFB"
+    "CAPITALSFB",
+    "TOKYOPLAST",
+    "HEMIPROP",
+    "PPLPHARMA"
   ],
   "notes": "",
   "sections": {
@@ -24,7 +27,11 @@
       "MODIRUBBER",
       "CAPITALSFB"
     ],
-    "breakout": []
+    "breakout": [
+      "TOKYOPLAST",
+      "HEMIPROP",
+      "PPLPHARMA"
+    ]
   },
   "source_modes": {
     "UJJIVANSFB": "Manual",
@@ -33,7 +40,10 @@
     "SOBHA": "Manual",
     "ZUARI": "Manual",
     "MODIRUBBER": "Manual",
-    "CAPITALSFB": "Manual"
+    "CAPITALSFB": "Manual",
+    "TOKYOPLAST": "Manual",
+    "HEMIPROP": "Manual",
+    "PPLPHARMA": "Manual"
   },
   "source_snapshots": {
     "UJJIVANSFB": {
@@ -668,6 +678,15 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "TOKYOPLAST": {
+      "Symbol": "TOKYOPLAST"
+    },
+    "HEMIPROP": {
+      "Symbol": "HEMIPROP"
+    },
+    "PPLPHARMA": {
+      "Symbol": "PPLPHARMA"
     }
   }
 }
