@@ -1,9 +1,9 @@
 {
-  "saved_at": "2026-07-19T14:56:48",
+  "saved_at": "2026-07-19T15:01:25",
   "signature": [
     "2026-06-26",
-    1784472770.551,
-    1784472087.771
+    1784473097.161,
+    1784473103.344
   ],
   "learning_status": {
     "trained": true,
@@ -16,7 +16,7 @@
     "accuracy_pct": 55.33,
     "validation_accuracy_pct": 55.33,
     "training_accuracy_pct": 56.65,
-    "last_trained": "2026-07-19T14:53",
+    "last_trained": "2026-07-19T14:56",
     "source": "stock_feedback",
     "message": "Model trained on 9230 samples.",
     "regime_encoder": {
@@ -194,8 +194,8 @@
       "false_bearish_pct": 42.19
     },
     "brain_status": {
-      "started_at": "2026-07-19T14:52:51",
-      "completed_at": "2026-07-19T14:56:47",
+      "started_at": "2026-07-19T14:56:49",
+      "completed_at": "2026-07-19T15:01:24",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -223,7 +223,7 @@
         "accuracy_pct": 55.33,
         "validation_accuracy_pct": 55.33,
         "training_accuracy_pct": 56.65,
-        "last_trained": "2026-07-19T14:53",
+        "last_trained": "2026-07-19T14:56",
         "source": "stock_feedback",
         "message": "Model trained on 9230 samples.",
         "regime_encoder": {
@@ -703,7 +703,7 @@
               "EMA50": 4.04,
               "Close": 2.49
             },
-            "computed_at": "2026-07-19T14:55:03"
+            "computed_at": "2026-07-19T14:59:40"
           },
           {
             "ticker": "NATIONSTD",
@@ -770,7 +770,7 @@
               "EMA50": 1024.3,
               "Close": 413.5
             },
-            "computed_at": "2026-07-19T14:55:24"
+            "computed_at": "2026-07-19T15:00:01"
           },
           {
             "ticker": "ROLLT",
@@ -837,7 +837,7 @@
               "EMA50": 2.42,
               "Close": 2.17
             },
-            "computed_at": "2026-07-19T14:55:53"
+            "computed_at": "2026-07-19T15:00:30"
           },
           {
             "ticker": "TICL",
@@ -904,7 +904,7 @@
               "EMA50": 17.32,
               "Close": 10.28
             },
-            "computed_at": "2026-07-19T14:56:25"
+            "computed_at": "2026-07-19T15:01:03"
           },
           {
             "ticker": "HYBRIDFIN",
@@ -971,7 +971,7 @@
               "EMA50": 19.15,
               "Close": 18.03
             },
-            "computed_at": "2026-07-19T14:54:39"
+            "computed_at": "2026-07-19T14:59:16"
           },
           {
             "ticker": "TCIFINANCE",
@@ -1038,7 +1038,7 @@
               "EMA50": 17.07,
               "Close": 15.7
             },
-            "computed_at": "2026-07-19T14:56:23"
+            "computed_at": "2026-07-19T15:01:00"
           },
           {
             "ticker": "HARDWYN",
@@ -1105,7 +1105,7 @@
               "EMA50": 23.06,
               "Close": 15.8
             },
-            "computed_at": "2026-07-19T14:54:33"
+            "computed_at": "2026-07-19T14:59:10"
           },
           {
             "ticker": "KALYANKJIL",
@@ -1172,7 +1172,7 @@
               "EMA50": 411.33,
               "Close": 574.4
             },
-            "computed_at": "2026-07-19T14:54:55"
+            "computed_at": "2026-07-19T14:59:32"
           },
           {
             "ticker": "SASKEN",
@@ -1239,7 +1239,7 @@
               "EMA50": 1994.26,
               "Close": 1886.2
             },
-            "computed_at": "2026-07-19T14:56:00"
+            "computed_at": "2026-07-19T15:00:37"
           },
           {
             "ticker": "VIJIFIN",
@@ -1306,7 +1306,7 @@
               "EMA50": 5.55,
               "Close": 8.42
             },
-            "computed_at": "2026-07-19T14:56:37"
+            "computed_at": "2026-07-19T15:01:15"
           },
           {
             "ticker": "MTARTECH",
@@ -1373,7 +1373,7 @@
               "EMA50": 6902.07,
               "Close": 6046.0
             },
-            "computed_at": "2026-07-19T14:55:21"
+            "computed_at": "2026-07-19T14:59:58"
           },
           {
             "ticker": "GVPIL",
@@ -1440,7 +1440,7 @@
               "EMA50": 825.61,
               "Close": 792.95
             },
-            "computed_at": "2026-07-19T14:54:32"
+            "computed_at": "2026-07-19T14:59:09"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2373 tickers computed"
