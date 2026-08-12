@@ -2,7 +2,7 @@
   "scanner": "NSE Sentinel",
   "mode": "tomorrow-picks-store",
   "storage_mode": "local",
-  "updated_at": "2026-08-12T15:26:08.866730",
+  "updated_at": "2026-08-12T15:32:43.351132",
   "picks": [
     {
       "id": "manual-manalipetc-0",
@@ -315,11 +315,98 @@
         "AI Regime": "Range Bound",
         "Gate Warning": "Top 3 share one AI key signal; capped at 75"
       }
+    },
+    {
+      "id": "manual-fineorg-3",
+      "symbol": "FINEORG",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:FINEORG",
+      "snapshot": {
+        "Symbol": "FINEORG"
+      }
+    },
+    {
+      "id": "manual-sbfc-4",
+      "symbol": "SBFC",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:SBFC",
+      "snapshot": {
+        "Symbol": "SBFC"
+      }
+    },
+    {
+      "id": "manual-zuariind-5",
+      "symbol": "ZUARIIND",
+      "source": "manual",
+      "price": "",
+      "entry": "",
+      "entry_low": "",
+      "entry_high": "",
+      "target": "",
+      "target_2": "",
+      "stop": "",
+      "risk": "",
+      "timing": "",
+      "tomorrow_score": "",
+      "signal": "Breakout",
+      "reason": "Breakout strip",
+      "notes": "Breakout strip",
+      "warnings": "",
+      "verdict": "",
+      "bucket": "breakout",
+      "bucket_label": "Breakout",
+      "setup": "",
+      "volume": "",
+      "rsi": "",
+      "chart_url": "https://www.tradingview.com/chart/?symbol=NSE:ZUARIIND",
+      "snapshot": {
+        "Symbol": "ZUARIIND"
+      }
     }
   ],
   "counts": {
-    "all": 3,
+    "all": 6,
     "ai": 0,
-    "manual": 3
+    "manual": 6
   }
 }
