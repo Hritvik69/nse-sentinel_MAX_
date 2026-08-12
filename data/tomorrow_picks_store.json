@@ -2,7 +2,10 @@
   "picks": [
     "MANALIPETC",
     "PRECWIRE",
-    "HNDFDS"
+    "HNDFDS",
+    "FINEORG",
+    "SBFC",
+    "ZUARIIND"
   ],
   "notes": "",
   "sections": {
@@ -14,12 +17,19 @@
     ],
     "intraday": [],
     "momentum": [],
-    "breakout": []
+    "breakout": [
+      "FINEORG",
+      "SBFC",
+      "ZUARIIND"
+    ]
   },
   "source_modes": {
     "MANALIPETC": "Manual",
     "PRECWIRE": "Manual",
-    "HNDFDS": "Manual"
+    "HNDFDS": "Manual",
+    "FINEORG": "Manual",
+    "SBFC": "Manual",
+    "ZUARIIND": "Manual"
   },
   "source_snapshots": {
     "MANALIPETC": {
@@ -255,6 +265,15 @@
       "AI Key Signal": "Bullish Pct",
       "AI Regime": "Range Bound",
       "Gate Warning": "Top 3 share one AI key signal; capped at 75"
+    },
+    "FINEORG": {
+      "Symbol": "FINEORG"
+    },
+    "SBFC": {
+      "Symbol": "SBFC"
+    },
+    "ZUARIIND": {
+      "Symbol": "ZUARIIND"
     }
   }
 }
