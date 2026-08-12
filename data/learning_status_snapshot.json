@@ -1,9 +1,9 @@
 {
-  "saved_at": "2026-08-12T15:11:14",
+  "saved_at": "2026-08-12T15:16:20",
   "signature": [
     "2026-08-12",
-    1786547214.023,
-    1786546898.755
+    1786547574.019,
+    1786547571.588
   ],
   "learning_status": {
     "trained": true,
@@ -16,7 +16,7 @@
     "accuracy_pct": 54.28,
     "validation_accuracy_pct": 54.28,
     "training_accuracy_pct": 55.49,
-    "last_trained": "2026-08-12T15:07",
+    "last_trained": "2026-08-12T15:11",
     "source": "stock_feedback",
     "message": "Model trained on 9628 samples.",
     "regime_encoder": {
@@ -194,8 +194,8 @@
       "false_bearish_pct": 42.52
     },
     "brain_status": {
-      "started_at": "2026-08-12T15:06:55",
-      "completed_at": "2026-08-12T15:11:13",
+      "started_at": "2026-08-12T15:11:15",
+      "completed_at": "2026-08-12T15:16:19",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -223,7 +223,7 @@
         "accuracy_pct": 54.28,
         "validation_accuracy_pct": 54.28,
         "training_accuracy_pct": 55.49,
-        "last_trained": "2026-08-12T15:07",
+        "last_trained": "2026-08-12T15:11",
         "source": "stock_feedback",
         "message": "Model trained on 9628 samples.",
         "regime_encoder": {
@@ -703,7 +703,7 @@
               "EMA50": 626.5,
               "Close": 164.5
             },
-            "computed_at": "2026-08-12T15:09:29"
+            "computed_at": "2026-08-12T15:14:37"
           },
           {
             "ticker": "SSDL",
@@ -770,7 +770,74 @@
               "EMA50": 55.98,
               "Close": 65.03
             },
-            "computed_at": "2026-08-12T15:10:33"
+            "computed_at": "2026-08-12T15:15:38"
+          },
+          {
+            "ticker": "DIVGIITTS",
+            "direction": "Sideways",
+            "confidence": 49.54,
+            "raw_score": 52.13,
+            "score": 52.13,
+            "action": "\ud83d\udd34 Avoid",
+            "hold_days": "-",
+            "risk": "HIGH",
+            "regime": "RANGE_BOUND",
+            "regime_snapshot": {
+              "regime": "Range Bound",
+              "description": "Mean reversion regime. Breakouts need extra confirmation.",
+              "color": "#8ab4d8",
+              "emoji": "\u25c6",
+              "ema_aligned": true
+            },
+            "key_signal": "bullish_pct",
+            "sector": "UNKNOWN",
+            "mode_score": 27.3,
+            "ml_probability": 46.29,
+            "meta_model_output": 47.6,
+            "mtf_alignment": 93.1,
+            "regime_fit": 55.0,
+            "sector_accuracy": 55.0,
+            "signals": {
+              "ema_slope": 100.0,
+              "price_vs_ema": 100.0,
+              "candle_direction": 100.0,
+              "body_strength": 38.86,
+              "volume_confirm": 100.0,
+              "volatility": 26.61,
+              "momentum": 90.33,
+              "sector_strength": 93.1,
+              "bullish_pct": 100.0,
+              "money_flow": 75.0,
+              "participation": 95.86
+            },
+            "weights": {
+              "ema_slope": 0.061453,
+              "price_vs_ema": 0.107263,
+              "candle_direction": 0.078212,
+              "body_strength": 0.06257,
+              "consecutive": 0.046927,
+              "volume_confirm": 0.100559,
+              "volatility": 0.058101,
+              "momentum": 0.02905,
+              "sector_strength": 0.134078,
+              "bullish_pct": 0.134078,
+              "money_flow": 0.098324,
+              "participation": 0.089385
+            },
+            "atr": 63.06,
+            "label_tag": "Strong Momentum",
+            "indicators": {
+              "RSI": 82.42,
+              "Vol / Avg": 14.09,
+              "5D Return (%)": 22.92,
+              "20D Return (%)": 29.71,
+              "\u0394 vs EMA20 (%)": 22.5,
+              "\u0394 vs 20D High (%)": 0.0,
+              "EMA20": 1005.65,
+              "EMA50": 931.87,
+              "Close": 1231.95
+            },
+            "computed_at": "2026-08-12T15:13:12"
           },
           {
             "ticker": "SKMEGGPROD",
@@ -837,7 +904,7 @@
               "EMA50": 265.55,
               "Close": 257.38
             },
-            "computed_at": "2026-08-12T15:10:24"
+            "computed_at": "2026-08-12T15:15:29"
           },
           {
             "ticker": "THANGAMAYL",
@@ -904,7 +971,74 @@
               "EMA50": 5620.43,
               "Close": 5328.0
             },
-            "computed_at": "2026-08-12T15:10:46"
+            "computed_at": "2026-08-12T15:15:50"
+          },
+          {
+            "ticker": "DOLPHIN",
+            "direction": "Sideways",
+            "confidence": 48.67,
+            "raw_score": 51.63,
+            "score": 51.63,
+            "action": "\ud83d\udd34 Avoid",
+            "hold_days": "-",
+            "risk": "HIGH",
+            "regime": "RANGE_BOUND",
+            "regime_snapshot": {
+              "regime": "Range Bound",
+              "description": "Mean reversion regime. Breakouts need extra confirmation.",
+              "color": "#8ab4d8",
+              "emoji": "\u25c6",
+              "ema_aligned": true
+            },
+            "key_signal": "bullish_pct",
+            "sector": "UNKNOWN",
+            "mode_score": 27.3,
+            "ml_probability": 45.62,
+            "meta_model_output": 47.5,
+            "mtf_alignment": 90.9,
+            "regime_fit": 55.0,
+            "sector_accuracy": 55.0,
+            "signals": {
+              "ema_slope": 100.0,
+              "price_vs_ema": 100.0,
+              "candle_direction": 100.0,
+              "body_strength": 75.72,
+              "volume_confirm": 100.0,
+              "volatility": 28.87,
+              "momentum": 90.69,
+              "sector_strength": 90.9,
+              "bullish_pct": 100.0,
+              "money_flow": 75.0,
+              "participation": 94.54
+            },
+            "weights": {
+              "ema_slope": 0.061453,
+              "price_vs_ema": 0.107263,
+              "candle_direction": 0.078212,
+              "body_strength": 0.06257,
+              "consecutive": 0.046927,
+              "volume_confirm": 0.100559,
+              "volatility": 0.058101,
+              "momentum": 0.02905,
+              "sector_strength": 0.134078,
+              "bullish_pct": 0.134078,
+              "money_flow": 0.098324,
+              "participation": 0.089385
+            },
+            "atr": 23.81,
+            "label_tag": "Strong Momentum",
+            "indicators": {
+              "RSI": 83.07,
+              "Vol / Avg": 11.71,
+              "5D Return (%)": 22.91,
+              "20D Return (%)": 24.66,
+              "\u0394 vs EMA20 (%)": 21.58,
+              "\u0394 vs 20D High (%)": 0.0,
+              "EMA20": 406.62,
+              "EMA50": 396.87,
+              "Close": 494.35
+            },
+            "computed_at": "2026-08-12T15:13:21"
           },
           {
             "ticker": "MARKSANS",
@@ -971,7 +1105,7 @@
               "EMA50": 257.0,
               "Close": 312.6
             },
-            "computed_at": "2026-08-12T15:09:23"
+            "computed_at": "2026-08-12T15:14:30"
           },
           {
             "ticker": "SUPREMEENG",
@@ -1038,7 +1172,7 @@
               "EMA50": 1.72,
               "Close": 2.41
             },
-            "computed_at": "2026-08-12T15:10:37"
+            "computed_at": "2026-08-12T15:15:42"
           },
           {
             "ticker": "ORISSAMINE",
@@ -1105,7 +1239,7 @@
               "EMA50": 4049.46,
               "Close": 4839.4
             },
-            "computed_at": "2026-08-12T15:09:52"
+            "computed_at": "2026-08-12T15:14:58"
           },
           {
             "ticker": "SYNCOMF",
@@ -1172,17 +1306,17 @@
               "EMA50": 13.82,
               "Close": 15.88
             },
-            "computed_at": "2026-08-12T15:10:40"
+            "computed_at": "2026-08-12T15:15:45"
           },
           {
-            "ticker": "DIVGIITTS",
-            "direction": "Sideways",
-            "confidence": 47.82,
-            "raw_score": 51.05,
-            "score": 51.05,
-            "action": "\ud83d\udd34 Avoid",
+            "ticker": "FLUOROCHEM",
+            "direction": "Bullish",
+            "confidence": 48.11,
+            "raw_score": 64.71,
+            "score": 64.71,
+            "action": "\ud83d\udd35 Wait",
             "hold_days": "-",
-            "risk": "HIGH",
+            "risk": "LOW",
             "regime": "RANGE_BOUND",
             "regime_snapshot": {
               "regime": "Range Bound",
@@ -1192,25 +1326,25 @@
               "ema_aligned": true
             },
             "key_signal": "bullish_pct",
-            "sector": "UNKNOWN",
-            "mode_score": 27.3,
-            "ml_probability": 46.29,
-            "meta_model_output": 42.9,
-            "mtf_alignment": 93.1,
+            "sector": "CHEMICAL",
+            "mode_score": 89.78,
+            "ml_probability": 60.62,
+            "meta_model_output": 30.8,
+            "mtf_alignment": 74.0,
             "regime_fit": 55.0,
             "sector_accuracy": 55.0,
             "signals": {
-              "ema_slope": 100.0,
-              "price_vs_ema": 100.0,
+              "ema_slope": 71.59,
+              "price_vs_ema": 77.13,
               "candle_direction": 100.0,
-              "body_strength": 38.86,
+              "body_strength": 44.14,
               "volume_confirm": 100.0,
-              "volatility": 26.61,
-              "momentum": 90.33,
-              "sector_strength": 93.1,
+              "volatility": 38.04,
+              "momentum": 59.65,
+              "sector_strength": 74.0,
               "bullish_pct": 100.0,
               "money_flow": 75.0,
-              "participation": 95.86
+              "participation": 84.4
             },
             "weights": {
               "ema_slope": 0.061453,
@@ -1226,20 +1360,20 @@
               "money_flow": 0.098324,
               "participation": 0.089385
             },
-            "atr": 63.06,
+            "atr": 164.1,
             "label_tag": "Strong Momentum",
             "indicators": {
-              "RSI": 82.42,
-              "Vol / Avg": 14.09,
-              "5D Return (%)": 22.92,
-              "20D Return (%)": 29.71,
-              "\u0394 vs EMA20 (%)": 22.5,
-              "\u0394 vs 20D High (%)": 0.0,
-              "EMA20": 1005.65,
-              "EMA50": 931.87,
-              "Close": 1231.95
+              "RSI": 61.39,
+              "Vol / Avg": 4.25,
+              "5D Return (%)": 1.51,
+              "20D Return (%)": 16.36,
+              "\u0394 vs EMA20 (%)": 3.52,
+              "\u0394 vs 20D High (%)": -1.02,
+              "EMA20": 4410.48,
+              "EMA50": 4154.4,
+              "Close": 4565.8
             },
-            "computed_at": "2026-08-12T15:08:15"
+            "computed_at": "2026-08-12T15:13:34"
           },
           {
             "ticker": "TCPLPACK",
@@ -1306,141 +1440,7 @@
               "EMA50": 3083.55,
               "Close": 4394.9
             },
-            "computed_at": "2026-08-12T15:10:43"
-          },
-          {
-            "ticker": "WSTCSTPAPR",
-            "direction": "Sideways",
-            "confidence": 47.39,
-            "raw_score": 54.19,
-            "score": 54.19,
-            "action": "\ud83d\udd35 Wait",
-            "hold_days": "-",
-            "risk": "MEDIUM",
-            "regime": "RANGE_BOUND",
-            "regime_snapshot": {
-              "regime": "Range Bound",
-              "description": "Mean reversion regime. Breakouts need extra confirmation.",
-              "color": "#8ab4d8",
-              "emoji": "\u25c6",
-              "ema_aligned": true
-            },
-            "key_signal": "bullish_pct",
-            "sector": "UNKNOWN",
-            "mode_score": 35.9,
-            "ml_probability": 44.02,
-            "meta_model_output": 44.9,
-            "mtf_alignment": 99.9,
-            "regime_fit": 55.0,
-            "sector_accuracy": 55.0,
-            "signals": {
-              "ema_slope": 100.0,
-              "price_vs_ema": 100.0,
-              "candle_direction": 100.0,
-              "body_strength": 31.69,
-              "volume_confirm": 100.0,
-              "volatility": 35.2,
-              "momentum": 77.78,
-              "sector_strength": 99.9,
-              "bullish_pct": 100.0,
-              "money_flow": 75.0,
-              "participation": 99.94
-            },
-            "weights": {
-              "ema_slope": 0.061453,
-              "price_vs_ema": 0.107263,
-              "candle_direction": 0.078212,
-              "body_strength": 0.06257,
-              "consecutive": 0.046927,
-              "volume_confirm": 0.100559,
-              "volatility": 0.058101,
-              "momentum": 0.02905,
-              "sector_strength": 0.134078,
-              "bullish_pct": 0.134078,
-              "money_flow": 0.098324,
-              "participation": 0.089385
-            },
-            "atr": 24.82,
-            "label_tag": "Strong Momentum",
-            "indicators": {
-              "RSI": 74.67,
-              "Vol / Avg": 8.37,
-              "5D Return (%)": 6.32,
-              "20D Return (%)": 18.1,
-              "\u0394 vs EMA20 (%)": 9.36,
-              "\u0394 vs 20D High (%)": 0.0,
-              "EMA20": 571.1,
-              "EMA50": 541.27,
-              "Close": 624.55
-            },
-            "computed_at": "2026-08-12T15:11:04"
-          },
-          {
-            "ticker": "ARIES",
-            "direction": "Sideways",
-            "confidence": 47.2,
-            "raw_score": 50.31,
-            "score": 50.31,
-            "action": "\ud83d\udd34 Avoid",
-            "hold_days": "-",
-            "risk": "HIGH",
-            "regime": "RANGE_BOUND",
-            "regime_snapshot": {
-              "regime": "Range Bound",
-              "description": "Mean reversion regime. Breakouts need extra confirmation.",
-              "color": "#8ab4d8",
-              "emoji": "\u25c6",
-              "ema_aligned": true
-            },
-            "key_signal": "bullish_pct",
-            "sector": "UNKNOWN",
-            "mode_score": 27.3,
-            "ml_probability": 46.15,
-            "meta_model_output": 42.9,
-            "mtf_alignment": 85.6,
-            "regime_fit": 55.0,
-            "sector_accuracy": 55.0,
-            "signals": {
-              "ema_slope": 100.0,
-              "price_vs_ema": 100.0,
-              "candle_direction": 100.0,
-              "body_strength": 53.92,
-              "volume_confirm": 100.0,
-              "volatility": 29.43,
-              "momentum": 89.74,
-              "sector_strength": 85.6,
-              "bullish_pct": 100.0,
-              "money_flow": 75.0,
-              "participation": 91.36
-            },
-            "weights": {
-              "ema_slope": 0.061453,
-              "price_vs_ema": 0.107263,
-              "candle_direction": 0.078212,
-              "body_strength": 0.06257,
-              "consecutive": 0.046927,
-              "volume_confirm": 0.100559,
-              "volatility": 0.058101,
-              "momentum": 0.02905,
-              "sector_strength": 0.134078,
-              "bullish_pct": 0.134078,
-              "money_flow": 0.098324,
-              "participation": 0.089385
-            },
-            "atr": 18.85,
-            "label_tag": "Strong Momentum",
-            "indicators": {
-              "RSI": 81.35,
-              "Vol / Avg": 14.1,
-              "5D Return (%)": 15.81,
-              "20D Return (%)": 16.42,
-              "\u0394 vs EMA20 (%)": 14.08,
-              "\u0394 vs 20D High (%)": 0.0,
-              "EMA20": 348.3,
-              "EMA50": 345.57,
-              "Close": 397.35
-            },
-            "computed_at": "2026-08-12T15:07:35"
+            "computed_at": "2026-08-12T15:15:48"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 2399 tickers computed"
