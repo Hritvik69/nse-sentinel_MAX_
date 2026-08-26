@@ -9669,13 +9669,13 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-08-12T20:46:21+05:30,2026-08-12,9f25697110b2ad1f5891cbdf,JKIPL,,6,,,,,Bullish,stock_next_session_v2,62.4800,65.1400,WATCH,High,Sideways / no edge,Ranging,52.5000,2.5300,,LOW,1,-0.4902,False,incorrect,LOSS
 2026-08-12T20:46:21+05:30,2026-08-12,a09e3a9bb835e0a8ad480020,AARTECH,,6,,,,,Bullish,stock_next_session_v2,66.6000,64.3200,WATCH,High,Sideways / no edge,Ranging,57.3600,7.7500,,LOW,1,2.9625,True,correct,BIG_WIN
 2026-08-12T20:46:21+05:30,2026-08-12,ce5b564087297e884974cbd2,5PAISA,,6,,,,,Bullish,stock_next_session_v2,55.5800,64.1000,WATCH,Medium,Sideways / no edge,Ranging,61.2100,1.2500,,LOW,1,1.1885,True,correct,WIN
-2026-08-12T20:46:21+05:30,2026-08-12,fbeaa794f63aea332751dce4,SWARAJ,,6,,,,,Bearish,stock_next_session_v2,54.5500,62.4400,WATCH,Medium,Sideways / no edge,Ranging,65.0300,1.6100,,LOW,0,,,,
+2026-08-12T20:46:21+05:30,2026-08-12,fbeaa794f63aea332751dce4,SWARAJ,,6,,,,,Bearish,stock_next_session_v2,54.5500,62.4400,WATCH,Medium,Sideways / no edge,Ranging,65.0300,1.6100,,LOW,0,0.4597,False,incorrect,WIN
 2026-08-12T20:46:21+05:30,2026-08-12,19597c45cfc8c9d037cb54fd,BHARATSE,,6,,,,,Bullish,stock_next_session_v2,64.7300,62.3800,WATCH,Medium,Sideways / no edge,Ranging,58.2900,1.5300,,LOW,1,4.2331,True,correct,BIG_WIN
 2026-08-12T20:46:21+05:30,2026-08-12,b138a31bdd48c71d1c543381,JAYSREETEA,,6,,,,,Bullish,stock_next_session_v2,56.4600,62.1600,WATCH,Medium,Sideways / no edge,Ranging,64.5700,2.9500,,LOW,1,-0.6398,False,incorrect,LOSS
 2026-08-12T20:46:21+05:30,2026-08-12,5e92a0ead3051209b4c7715b,SUNDRMBRAK,,6,,,,,Bullish,stock_next_session_v2,65.5500,61.6800,WATCH,High,Sideways / no edge,Ranging,54.0200,1.5200,,LOW,1,4.8285,True,correct,BIG_WIN
 2026-08-12T20:46:21+05:30,2026-08-12,7d4f6fb62bbbad69afee07b7,DRAGARWQ,,6,,,,,Bearish,stock_next_session_v2,54.1700,60.6000,WATCH,Medium,Sideways / no edge,Ranging,65.5000,2.5800,,LOW,0,2.0051,False,incorrect,BIG_WIN
 2026-08-12T20:46:21+05:30,2026-08-12,8817266121a822c11b33520d,CHEMBOND,,6,,,,,Bullish,stock_next_session_v2,59.9500,59.7000,WATCH,High,Sideways / no edge,Ranging,53.0000,1.3400,,LOW,1,0.2841,True,correct,WIN
-2026-08-12T20:46:21+05:30,2026-08-12,e1f928cd0e6b0667ced26f24,VOEPL,,6,,,,,Bearish,stock_next_session_v2,50.6300,56.4800,WATCH,Medium,Sideways / no edge,Ranging,62.4400,1.3500,,LOW,0,,,,
+2026-08-12T20:46:21+05:30,2026-08-12,e1f928cd0e6b0667ced26f24,VOEPL,,6,,,,,Bearish,stock_next_session_v2,50.6300,56.4800,WATCH,Medium,Sideways / no edge,Ranging,62.4400,1.3500,,LOW,0,-3.7790,True,correct,BIG_LOSS
 2026-08-12T20:46:21+05:30,2026-08-12,2e7389afd8c0a55001a184fc,SALSTEEL,,6,,,,,Bearish,stock_next_session_v2,51.4800,56.2600,WATCH,Medium,Sideways / no edge,Ranging,59.4600,5.0200,,LOW,0,9.9921,False,incorrect,BIG_WIN
 2026-08-12T20:46:21+05:30,2026-08-12,609b4d9d2b2854b1f780c3d5,EMCURE,,6,,,,,Bearish,stock_next_session_v2,48.8400,55.8400,WATCH,Medium,Sideways / no edge,Ranging,67.5400,1.3800,,LOW,0,0.0000,True,correct,FLAT
 2026-08-12T20:46:21+05:30,2026-08-12,f46642513467459ddb11a88b,POWERINDIA,,6,,,,,Bearish,stock_next_session_v2,36.0300,55.4800,WATCH,Low,Sideways / no edge,Ranging,63.1200,1.2600,,HIGH,0,-1.2291,True,correct,LOSS
@@ -9699,68 +9699,68 @@ logged_at,market_date,prediction_id,symbol,sector,mode,import_source,import_cate
 2026-08-12T20:46:21+05:30,2026-08-12,8fab8db5e7f910cb14ac869a,KPIL,,6,,,,,Bearish,stock_next_session_v2,40.8100,32.6000,AVOID,Low,Sideways / no edge,Ranging,66.5000,28.3200,,LOW,0,-2.2695,True,correct,BIG_LOSS
 2026-08-12T20:46:21+05:30,2026-08-12,65a7c7d9ce85bb88b159e839,MANINDS,,6,,,,,Bearish,stock_next_session_v2,27.8100,32.6000,AVOID,Low,Sideways / no edge,Ranging,66.8800,52.9800,,HIGH,0,-3.7585,True,correct,BIG_LOSS
 2026-08-12T20:46:21+05:30,2026-08-12,c80894baa0a2f24e9b41c98f,KRN,,6,,,,,Bearish,stock_next_session_v2,25.0400,30.3400,AVOID,Low,Sideways / no edge,Ranging,65.8400,4.2200,,HIGH,0,4.9929,False,incorrect,BIG_WIN
-2026-08-18T20:37:51+05:30,2026-08-18,fda631ed5b2ac8b1eddcf7e5,SHRIPISTON,,6,,,,,Bullish,stock_next_session_v2,69.6300,75.4700,BUY,High,Bearish bias,Ranging,61.3800,2.0100,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,32e86457a2afda8200a87519,AEROENTER,,6,,,,,Bullish,stock_next_session_v2,69.5000,74.9500,BUY,High,Bearish bias,Ranging,56.6800,2.0600,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,015dfc6ea23ac888b2b03149,BLUEJET,,6,,,,,Bullish,stock_next_session_v2,68.4300,74.4900,BUY,High,Bearish bias,Ranging,60.4500,1.5800,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,5f080710a2d1a46d01518ad1,SUDARSCHEM,CHEMICAL,6,,,,,Bullish,stock_next_session_v2,60.8500,73.2500,BUY,Medium,Bearish bias,Ranging,61.4300,1.3600,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,3e2a289d073e05607c6915b4,PATELRMART,,6,,,,,Bullish,stock_next_session_v2,67.1900,73.0700,BUY,High,Bearish bias,Ranging,57.5900,2.7900,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,922ad338e767739790a179da,BLACKBUCK,,6,,,,,Bullish,stock_next_session_v2,67.5200,72.4700,BUY,High,Bearish bias,Ranging,61.7100,1.5200,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,a997a4011442b23eead2c103,BOROLTD,,6,,,,,Bullish,stock_next_session_v2,67.3100,71.8900,BUY,High,Bearish bias,Ranging,59.4200,1.6600,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,0546d06f2940b30cf7ed02e2,PETRONET,ENERGY,6,,,,,Bullish,stock_next_session_v2,67.0400,71.6700,BUY,High,Bearish bias,Ranging,59.4300,1.6400,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,cddb2c09a232cd953eda5027,MITCON,,6,,,,,Bullish,stock_next_session_v2,64.7200,71.4100,BUY,High,Bearish bias,Ranging,58.0600,1.2000,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,149465f0992701c7894383c6,5PAISA,,6,,,,,Bullish,stock_next_session_v2,67.8700,71.3300,BUY,High,Bearish bias,Ranging,59.6600,3.8800,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,b6181713ff92947257d17858,SJS,,6,,,,,Bullish,stock_next_session_v2,57.3300,70.9900,BUY,Medium,Bearish bias,Ranging,61.9700,1.1700,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,44a60feb32c2271b5aab0ff2,LTF,,6,,,,,Bullish,stock_next_session_v2,66.8000,70.3500,BUY,High,Bearish bias,Ranging,60.4000,2.1400,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,8e0a0acc2a9d69ae8bcb4fab,ENGINERSIN,,6,,,,,Bullish,stock_next_session_v2,55.9200,69.4300,WATCH,Medium,Bearish bias,Ranging,57.8500,1.1800,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,c397b01ad8e4360024ebf84c,INDOTECH,,6,,,,,Bearish,stock_next_session_v2,52.8600,67.9500,WATCH,Medium,Bearish bias,Ranging,64.2800,1.2600,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,68670fb9729d7cca6dd8ba34,SIYSIL,,6,,,,,Bullish,stock_next_session_v2,64.8400,67.8300,WATCH,High,Bearish bias,Ranging,57.9500,1.7100,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,a046b5dffdbf91a1cd735c86,INDIQUBE,,6,,,,,Bullish,stock_next_session_v2,61.8900,67.4700,WATCH,Medium,Bearish bias,Ranging,62.3000,1.4000,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,733affc8cc2d0184b6267bb4,BHAGCHEM,,6,,,,,Bullish,stock_next_session_v2,63.7300,66.9300,WATCH,High,Bearish bias,Ranging,55.2000,1.8700,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,2450d6b410aaf94160bb8653,COHANCE,,6,,,,,Bullish,stock_next_session_v2,63.0300,65.8500,WATCH,High,Bearish bias,Ranging,58.2200,1.5500,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,164ae5bd73823a2b95bf9c0a,SYRMA,,6,,,,,Bullish,stock_next_session_v2,59.8500,65.2900,WATCH,Medium,Bearish bias,Ranging,63.4900,1.4200,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,a8773946a66bbc6fc3f37387,COCHINSHIP,DEFENCE,6,,,,,Bullish,stock_next_session_v2,59.4100,65.0300,WATCH,High,Bearish bias,Ranging,55.3700,1.2800,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,d14026f6fc43f5a1a7e42ef1,DIXON,CONSUMER_DURABLES,6,,,,,Bearish,stock_next_session_v2,52.6600,64.7300,WATCH,Medium,Bearish bias,Ranging,57.3000,1.1500,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,89a7fab47885d04c371301d6,MINDACORP,,6,,,,,Bullish,stock_next_session_v2,60.0600,62.8100,WATCH,Medium,Bearish bias,Ranging,63.5600,2.5000,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,68f1bcc74ad088617185ed9c,RITCO,,6,,,,,Bullish,stock_next_session_v2,56.3500,62.3300,WATCH,Medium,Bearish bias,Ranging,63.8800,1.9200,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,41218074c73dd99839f494d5,CHENNPETRO,,6,,,,,Bearish,stock_next_session_v2,41.3500,60.1900,WATCH,Low,Bearish bias,Ranging,64.9400,1.2600,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,1296f151405baf180e03ef6d,DATAPATTNS,,6,,,,,Bearish,stock_next_session_v2,52.3500,58.1500,WATCH,Medium,Bearish bias,Ranging,61.1800,1.2200,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,cefcf3225af09e5e54cf7af7,GFLLIMITED,,6,,,,,Bearish,stock_next_session_v2,51.9800,57.8500,WATCH,Medium,Bearish bias,Ranging,60.3300,1.2300,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,4f9fcfe066a3f7186a17e582,SIRCA,,6,,,,,Bullish,stock_next_session_v2,56.4600,57.8300,WATCH,Medium,Bearish bias,Ranging,63.5600,2.5100,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,2860ea990fd913a4f0f0c1e1,DCMNVL,,6,,,,,Bearish,stock_next_session_v2,43.1600,56.9700,WATCH,Medium,Bearish bias,Ranging,67.7700,1.9800,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,0e24d1b45fc2355d22245b8d,THAKDEV,,6,,,,,Bearish,stock_next_session_v2,50.6300,56.8500,WATCH,Medium,Bearish bias,Ranging,58.4100,1.8900,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,1853cf3cecdfa8244de14bfb,ALICON,,6,,,,,Bearish,stock_next_session_v2,48.6400,56.7500,WATCH,Medium,Bearish bias,Ranging,63.9900,3.1100,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,8da38ca28c6f6beae171402e,PAR,,6,,,,,Bullish,stock_next_session_v2,57.5200,56.4500,WATCH,High,Bearish bias,Ranging,55.0200,1.2800,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,0a201f376c033282911b7c92,HARSHA,,6,,,,,Bullish,stock_next_session_v2,55.6300,56.2300,WATCH,Medium,Bearish bias,Ranging,60.2200,1.2100,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,98df60330bed30ad9ba36b89,MRPL,,6,,,,,Bullish,stock_next_session_v2,57.9600,55.9900,WATCH,Medium,Bearish bias,Ranging,57.7700,3.9900,,LOW,1,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,2485fe08ea31dbe189c65964,AARTECH,,6,,,,,Bearish,stock_next_session_v2,54.6000,54.2700,AVOID,Medium,Bearish bias,Ranging,61.3000,7.9600,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,00801e7aabcb970833afd1a8,IPCALAB,PHARMA,6,,,,,Bearish,stock_next_session_v2,45.6800,53.9300,AVOID,Medium,Bearish bias,Ranging,62.4400,1.2800,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,96b1cb458adfd82c82ff7682,OIL,,6,,,,,Bearish,stock_next_session_v2,47.2500,53.2700,AVOID,Medium,Bearish bias,Ranging,65.0900,1.4900,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,9b34e6b90efc3e3d85b98edf,MAZDOCK,DEFENCE,6,,,,,Bearish,stock_next_session_v2,47.2500,53.2700,AVOID,Medium,Bearish bias,Ranging,67.2200,1.3700,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,1aec757a43962b9ab41dc2e3,HFCL,TELECOM,6,,,,,Bearish,stock_next_session_v2,38.0800,51.9100,AVOID,Low,Bearish bias,Ranging,61.9400,1.3400,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,1ef951510b18203f59afd31d,BEML,PSU,6,,,,,Bearish,stock_next_session_v2,37.6800,48.9300,AVOID,Low,Bearish bias,Ranging,66.7500,1.7300,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,c70536e6e5fd3c464c89186d,WINDMACHIN,,6,,,,,Bearish,stock_next_session_v2,46.4800,48.8700,AVOID,Medium,Bearish bias,Ranging,63.9300,7.8600,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,5b48a9afb09cfc7596a30e19,INGERRAND,,6,,,,,Bearish,stock_next_session_v2,48.7800,47.9900,AVOID,Medium,Bearish bias,Ranging,62.5700,1.7000,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,ba9dd1c9a891a35da67e4b0a,AEROFLEX,,6,,,,,Bearish,stock_next_session_v2,34.2300,46.0100,AVOID,Low,Bearish bias,Ranging,64.1700,2.1500,,HIGH,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,c62328f140c8fff6688395ba,AETHER,,6,,,,,Bearish,stock_next_session_v2,40.5600,45.8700,AVOID,Low,Bearish bias,Ranging,67.5000,1.1500,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,a6df37f0a41af735163fd4e2,AEQUS,,6,,,,,Bearish,stock_next_session_v2,35.8600,44.8900,AVOID,Low,Bearish bias,Ranging,64.7800,2.0900,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,7ade25382583ef6ac7b83b60,VISHNU,,6,,,,,Bearish,stock_next_session_v2,54.4900,43.5700,AVOID,Medium,Bearish bias,Ranging,62.8500,3.8900,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,807b1ad6036f58453334d24c,MANAKCOAT,,6,,,,,Bearish,stock_next_session_v2,53.7900,43.5100,AVOID,Medium,Bearish bias,Ranging,60.8000,3.3500,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,1c4666f100e6e8fdb90d114c,IFCI,,6,,,,,Bearish,stock_next_session_v2,33.9700,43.3500,AVOID,Low,Bearish bias,Ranging,64.6500,2.9500,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,e724efe0dadd41940de56dd4,GLOBAL,,6,,,,,Bearish,stock_next_session_v2,43.5000,42.1500,AVOID,Medium,Bearish bias,Ranging,63.7100,2.4900,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,717735af149954aa0d294293,JINDRILL,,6,,,,,Bearish,stock_next_session_v2,32.2700,41.3500,AVOID,Low,Bearish bias,Ranging,63.4500,76.6600,,HIGH,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,c1330a7ed094e581fcd03da7,TOTAL,,6,,,,,Bearish,stock_next_session_v2,31.8500,41.2100,AVOID,Low,Bearish bias,Ranging,67.6500,1.3400,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,22e2e2a737e97af14a4660ef,MCX,,6,,,,,Bearish,stock_next_session_v2,30.4900,40.6100,AVOID,Low,Bearish bias,Ranging,65.9000,1.4600,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,8e3ad4e31d67cabeafcb12d8,BDL,,6,,,,,Bearish,stock_next_session_v2,42.6300,40.2100,AVOID,Medium,Bearish bias,Ranging,66.6000,1.7900,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,4ac54627d82c952c13400a70,POLICYBZR,,6,,,,,Bearish,stock_next_session_v2,35.8000,38.4100,AVOID,Low,Bearish bias,Ranging,65.7300,1.1100,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,4df9665acca4f4e377877f47,MAHAPEXLTD,,6,,,,,Bearish,stock_next_session_v2,30.8000,35.1500,AVOID,Low,Bearish bias,Ranging,67.0100,2.0000,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,15d64dd2077e53f84b8c57df,DCMSRIND,,6,,,,,Bearish,stock_next_session_v2,30.0200,34.5100,AVOID,Low,Bearish bias,Ranging,67.2800,1.8600,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,f253ae899385f52ed1007b9d,DYNAMATECH,,6,,,,,Bearish,stock_next_session_v2,26.8000,34.3300,AVOID,Low,Bearish bias,Ranging,66.1400,1.8500,,HIGH,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,8510b403e9c4d6419fd1f759,GHCLTEXTIL,,6,,,,,Bearish,stock_next_session_v2,29.1100,33.7700,AVOID,Low,Bearish bias,Ranging,67.2000,1.6000,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,9c5febefc29f36bee5c2898d,TASTYBITE,,6,,,,,Bearish,stock_next_session_v2,26.6700,33.4100,AVOID,Low,Bearish bias,Ranging,66.1600,1.5000,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,9525ca7f056b85f93c213790,ACE,,6,,,,,Bearish,stock_next_session_v2,25.8600,32.0300,AVOID,Low,Bearish bias,Ranging,67.5600,2.1800,,HIGH,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,a141eb2e89d2695fa0225b33,QPOWER,,6,,,,,Bearish,stock_next_session_v2,28.1700,31.4700,AVOID,Low,Bearish bias,Ranging,66.0600,2.2000,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,94410ba7b7fef15819100530,MANALIPETC,,6,,,,,Bearish,stock_next_session_v2,32.2500,29.0900,AVOID,Low,Bearish bias,Ranging,65.5200,2.6500,,LOW,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,845dc71016f33b90b4cf61bf,NITINSPIN,,6,,,,,Bearish,stock_next_session_v2,27.7700,28.8500,AVOID,Low,Bearish bias,Ranging,65.1000,32.5700,,MEDIUM,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,e9c2d7bdf82c42c7d9c643ce,WELSPUNLIV,,6,,,,,Bearish,stock_next_session_v2,24.6300,28.7300,AVOID,Low,Bearish bias,Ranging,65.2600,9.5800,,HIGH,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,1d46ad311e78e627772199df,NEOGEN,CHEMICAL,6,,,,,Bearish,stock_next_session_v2,24.5300,28.6500,AVOID,Low,Bearish bias,Ranging,66.4200,8.4200,,HIGH,0,,,,
-2026-08-18T20:37:51+05:30,2026-08-18,0cdc8658f177865608ddbdbf,ASAHIINDIA,,6,,,,,Bearish,stock_next_session_v2,31.4200,26.1100,AVOID,Low,Bearish bias,Ranging,66.1000,3.8600,,LOW,0,,,,
+2026-08-18T20:37:51+05:30,2026-08-18,fda631ed5b2ac8b1eddcf7e5,SHRIPISTON,,6,,,,,Bullish,stock_next_session_v2,69.6300,75.4700,BUY,High,Bearish bias,Ranging,61.3800,2.0100,,LOW,1,-1.2220,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,32e86457a2afda8200a87519,AEROENTER,,6,,,,,Bullish,stock_next_session_v2,69.5000,74.9500,BUY,High,Bearish bias,Ranging,56.6800,2.0600,,LOW,1,-0.5730,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,015dfc6ea23ac888b2b03149,BLUEJET,,6,,,,,Bullish,stock_next_session_v2,68.4300,74.4900,BUY,High,Bearish bias,Ranging,60.4500,1.5800,,LOW,1,-2.4619,False,incorrect,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,5f080710a2d1a46d01518ad1,SUDARSCHEM,CHEMICAL,6,,,,,Bullish,stock_next_session_v2,60.8500,73.2500,BUY,Medium,Bearish bias,Ranging,61.4300,1.3600,,LOW,1,0.3803,True,correct,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,3e2a289d073e05607c6915b4,PATELRMART,,6,,,,,Bullish,stock_next_session_v2,67.1900,73.0700,BUY,High,Bearish bias,Ranging,57.5900,2.7900,,LOW,1,4.2582,True,correct,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,922ad338e767739790a179da,BLACKBUCK,,6,,,,,Bullish,stock_next_session_v2,67.5200,72.4700,BUY,High,Bearish bias,Ranging,61.7100,1.5200,,LOW,1,4.6790,True,correct,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,a997a4011442b23eead2c103,BOROLTD,,6,,,,,Bullish,stock_next_session_v2,67.3100,71.8900,BUY,High,Bearish bias,Ranging,59.4200,1.6600,,LOW,1,-0.8908,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,0546d06f2940b30cf7ed02e2,PETRONET,ENERGY,6,,,,,Bullish,stock_next_session_v2,67.0400,71.6700,BUY,High,Bearish bias,Ranging,59.4300,1.6400,,LOW,1,0.6638,True,correct,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,cddb2c09a232cd953eda5027,MITCON,,6,,,,,Bullish,stock_next_session_v2,64.7200,71.4100,BUY,High,Bearish bias,Ranging,58.0600,1.2000,,LOW,1,-1.2125,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,149465f0992701c7894383c6,5PAISA,,6,,,,,Bullish,stock_next_session_v2,67.8700,71.3300,BUY,High,Bearish bias,Ranging,59.6600,3.8800,,LOW,1,4.4553,True,correct,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,b6181713ff92947257d17858,SJS,,6,,,,,Bullish,stock_next_session_v2,57.3300,70.9900,BUY,Medium,Bearish bias,Ranging,61.9700,1.1700,,LOW,1,0.3120,True,correct,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,44a60feb32c2271b5aab0ff2,LTF,,6,,,,,Bullish,stock_next_session_v2,66.8000,70.3500,BUY,High,Bearish bias,Ranging,60.4000,2.1400,,LOW,1,-2.9837,False,incorrect,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,8e0a0acc2a9d69ae8bcb4fab,ENGINERSIN,,6,,,,,Bullish,stock_next_session_v2,55.9200,69.4300,WATCH,Medium,Bearish bias,Ranging,57.8500,1.1800,,LOW,1,-3.2192,False,incorrect,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,c397b01ad8e4360024ebf84c,INDOTECH,,6,,,,,Bearish,stock_next_session_v2,52.8600,67.9500,WATCH,Medium,Bearish bias,Ranging,64.2800,1.2600,,LOW,0,-2.0851,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,68670fb9729d7cca6dd8ba34,SIYSIL,,6,,,,,Bullish,stock_next_session_v2,64.8400,67.8300,WATCH,High,Bearish bias,Ranging,57.9500,1.7100,,LOW,1,-1.7010,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,a046b5dffdbf91a1cd735c86,INDIQUBE,,6,,,,,Bullish,stock_next_session_v2,61.8900,67.4700,WATCH,Medium,Bearish bias,Ranging,62.3000,1.4000,,LOW,1,2.6988,True,correct,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,733affc8cc2d0184b6267bb4,BHAGCHEM,,6,,,,,Bullish,stock_next_session_v2,63.7300,66.9300,WATCH,High,Bearish bias,Ranging,55.2000,1.8700,,LOW,1,0.0174,True,correct,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,2450d6b410aaf94160bb8653,COHANCE,,6,,,,,Bullish,stock_next_session_v2,63.0300,65.8500,WATCH,High,Bearish bias,Ranging,58.2200,1.5500,,LOW,1,-1.8344,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,164ae5bd73823a2b95bf9c0a,SYRMA,,6,,,,,Bullish,stock_next_session_v2,59.8500,65.2900,WATCH,Medium,Bearish bias,Ranging,63.4900,1.4200,,LOW,1,-0.3533,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,a8773946a66bbc6fc3f37387,COCHINSHIP,DEFENCE,6,,,,,Bullish,stock_next_session_v2,59.4100,65.0300,WATCH,High,Bearish bias,Ranging,55.3700,1.2800,,LOW,1,-0.0067,False,incorrect,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,d14026f6fc43f5a1a7e42ef1,DIXON,CONSUMER_DURABLES,6,,,,,Bearish,stock_next_session_v2,52.6600,64.7300,WATCH,Medium,Bearish bias,Ranging,57.3000,1.1500,,LOW,0,2.2049,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,89a7fab47885d04c371301d6,MINDACORP,,6,,,,,Bullish,stock_next_session_v2,60.0600,62.8100,WATCH,Medium,Bearish bias,Ranging,63.5600,2.5000,,LOW,1,-0.8521,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,68f1bcc74ad088617185ed9c,RITCO,,6,,,,,Bullish,stock_next_session_v2,56.3500,62.3300,WATCH,Medium,Bearish bias,Ranging,63.8800,1.9200,,LOW,1,0.0000,False,incorrect,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,41218074c73dd99839f494d5,CHENNPETRO,,6,,,,,Bearish,stock_next_session_v2,41.3500,60.1900,WATCH,Low,Bearish bias,Ranging,64.9400,1.2600,,MEDIUM,0,2.5855,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,1296f151405baf180e03ef6d,DATAPATTNS,,6,,,,,Bearish,stock_next_session_v2,52.3500,58.1500,WATCH,Medium,Bearish bias,Ranging,61.1800,1.2200,,LOW,0,0.7811,False,incorrect,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,cefcf3225af09e5e54cf7af7,GFLLIMITED,,6,,,,,Bearish,stock_next_session_v2,51.9800,57.8500,WATCH,Medium,Bearish bias,Ranging,60.3300,1.2300,,LOW,0,10.8161,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,4f9fcfe066a3f7186a17e582,SIRCA,,6,,,,,Bullish,stock_next_session_v2,56.4600,57.8300,WATCH,Medium,Bearish bias,Ranging,63.5600,2.5100,,LOW,1,-0.0904,False,incorrect,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,2860ea990fd913a4f0f0c1e1,DCMNVL,,6,,,,,Bearish,stock_next_session_v2,43.1600,56.9700,WATCH,Medium,Bearish bias,Ranging,67.7700,1.9800,,MEDIUM,0,-1.3461,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,0e24d1b45fc2355d22245b8d,THAKDEV,,6,,,,,Bearish,stock_next_session_v2,50.6300,56.8500,WATCH,Medium,Bearish bias,Ranging,58.4100,1.8900,,LOW,0,-3.0945,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,1853cf3cecdfa8244de14bfb,ALICON,,6,,,,,Bearish,stock_next_session_v2,48.6400,56.7500,WATCH,Medium,Bearish bias,Ranging,63.9900,3.1100,,LOW,0,-0.5681,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,8da38ca28c6f6beae171402e,PAR,,6,,,,,Bullish,stock_next_session_v2,57.5200,56.4500,WATCH,High,Bearish bias,Ranging,55.0200,1.2800,,LOW,1,-0.3753,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,0a201f376c033282911b7c92,HARSHA,,6,,,,,Bullish,stock_next_session_v2,55.6300,56.2300,WATCH,Medium,Bearish bias,Ranging,60.2200,1.2100,,LOW,1,0.0344,True,correct,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,98df60330bed30ad9ba36b89,MRPL,,6,,,,,Bullish,stock_next_session_v2,57.9600,55.9900,WATCH,Medium,Bearish bias,Ranging,57.7700,3.9900,,LOW,1,-0.5241,False,incorrect,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,2485fe08ea31dbe189c65964,AARTECH,,6,,,,,Bearish,stock_next_session_v2,54.6000,54.2700,AVOID,Medium,Bearish bias,Ranging,61.3000,7.9600,,LOW,0,-4.4764,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,00801e7aabcb970833afd1a8,IPCALAB,PHARMA,6,,,,,Bearish,stock_next_session_v2,45.6800,53.9300,AVOID,Medium,Bearish bias,Ranging,62.4400,1.2800,,LOW,0,1.1477,False,incorrect,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,96b1cb458adfd82c82ff7682,OIL,,6,,,,,Bearish,stock_next_session_v2,47.2500,53.2700,AVOID,Medium,Bearish bias,Ranging,65.0900,1.4900,,LOW,0,-1.1759,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,9b34e6b90efc3e3d85b98edf,MAZDOCK,DEFENCE,6,,,,,Bearish,stock_next_session_v2,47.2500,53.2700,AVOID,Medium,Bearish bias,Ranging,67.2200,1.3700,,LOW,0,-0.8968,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,1aec757a43962b9ab41dc2e3,HFCL,TELECOM,6,,,,,Bearish,stock_next_session_v2,38.0800,51.9100,AVOID,Low,Bearish bias,Ranging,61.9400,1.3400,,MEDIUM,0,-1.5215,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,1ef951510b18203f59afd31d,BEML,PSU,6,,,,,Bearish,stock_next_session_v2,37.6800,48.9300,AVOID,Low,Bearish bias,Ranging,66.7500,1.7300,,MEDIUM,0,0.0712,False,incorrect,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,c70536e6e5fd3c464c89186d,WINDMACHIN,,6,,,,,Bearish,stock_next_session_v2,46.4800,48.8700,AVOID,Medium,Bearish bias,Ranging,63.9300,7.8600,,LOW,0,-1.4425,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,5b48a9afb09cfc7596a30e19,INGERRAND,,6,,,,,Bearish,stock_next_session_v2,48.7800,47.9900,AVOID,Medium,Bearish bias,Ranging,62.5700,1.7000,,LOW,0,-1.0573,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,ba9dd1c9a891a35da67e4b0a,AEROFLEX,,6,,,,,Bearish,stock_next_session_v2,34.2300,46.0100,AVOID,Low,Bearish bias,Ranging,64.1700,2.1500,,HIGH,0,-2.4082,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,c62328f140c8fff6688395ba,AETHER,,6,,,,,Bearish,stock_next_session_v2,40.5600,45.8700,AVOID,Low,Bearish bias,Ranging,67.5000,1.1500,,LOW,0,0.3979,False,incorrect,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,a6df37f0a41af735163fd4e2,AEQUS,,6,,,,,Bearish,stock_next_session_v2,35.8600,44.8900,AVOID,Low,Bearish bias,Ranging,64.7800,2.0900,,MEDIUM,0,1.0006,False,incorrect,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,7ade25382583ef6ac7b83b60,VISHNU,,6,,,,,Bearish,stock_next_session_v2,54.4900,43.5700,AVOID,Medium,Bearish bias,Ranging,62.8500,3.8900,,LOW,0,-2.4157,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,807b1ad6036f58453334d24c,MANAKCOAT,,6,,,,,Bearish,stock_next_session_v2,53.7900,43.5100,AVOID,Medium,Bearish bias,Ranging,60.8000,3.3500,,LOW,0,-0.4946,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,1c4666f100e6e8fdb90d114c,IFCI,,6,,,,,Bearish,stock_next_session_v2,33.9700,43.3500,AVOID,Low,Bearish bias,Ranging,64.6500,2.9500,,MEDIUM,0,0.3933,False,incorrect,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,e724efe0dadd41940de56dd4,GLOBAL,,6,,,,,Bearish,stock_next_session_v2,43.5000,42.1500,AVOID,Medium,Bearish bias,Ranging,63.7100,2.4900,,LOW,0,-1.4203,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,717735af149954aa0d294293,JINDRILL,,6,,,,,Bearish,stock_next_session_v2,32.2700,41.3500,AVOID,Low,Bearish bias,Ranging,63.4500,76.6600,,HIGH,0,-2.4649,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,c1330a7ed094e581fcd03da7,TOTAL,,6,,,,,Bearish,stock_next_session_v2,31.8500,41.2100,AVOID,Low,Bearish bias,Ranging,67.6500,1.3400,,MEDIUM,0,2.7275,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,22e2e2a737e97af14a4660ef,MCX,,6,,,,,Bearish,stock_next_session_v2,30.4900,40.6100,AVOID,Low,Bearish bias,Ranging,65.9000,1.4600,,MEDIUM,0,-2.2039,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,8e3ad4e31d67cabeafcb12d8,BDL,,6,,,,,Bearish,stock_next_session_v2,42.6300,40.2100,AVOID,Medium,Bearish bias,Ranging,66.6000,1.7900,,LOW,0,-3.1587,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,4ac54627d82c952c13400a70,POLICYBZR,,6,,,,,Bearish,stock_next_session_v2,35.8000,38.4100,AVOID,Low,Bearish bias,Ranging,65.7300,1.1100,,LOW,0,2.0092,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,4df9665acca4f4e377877f47,MAHAPEXLTD,,6,,,,,Bearish,stock_next_session_v2,30.8000,35.1500,AVOID,Low,Bearish bias,Ranging,67.0100,2.0000,,MEDIUM,0,0.2283,False,incorrect,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,15d64dd2077e53f84b8c57df,DCMSRIND,,6,,,,,Bearish,stock_next_session_v2,30.0200,34.5100,AVOID,Low,Bearish bias,Ranging,67.2800,1.8600,,MEDIUM,0,6.2846,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,f253ae899385f52ed1007b9d,DYNAMATECH,,6,,,,,Bearish,stock_next_session_v2,26.8000,34.3300,AVOID,Low,Bearish bias,Ranging,66.1400,1.8500,,HIGH,0,-0.2974,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,8510b403e9c4d6419fd1f759,GHCLTEXTIL,,6,,,,,Bearish,stock_next_session_v2,29.1100,33.7700,AVOID,Low,Bearish bias,Ranging,67.2000,1.6000,,MEDIUM,0,-1.2037,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,9c5febefc29f36bee5c2898d,TASTYBITE,,6,,,,,Bearish,stock_next_session_v2,26.6700,33.4100,AVOID,Low,Bearish bias,Ranging,66.1600,1.5000,,MEDIUM,0,2.4599,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,9525ca7f056b85f93c213790,ACE,,6,,,,,Bearish,stock_next_session_v2,25.8600,32.0300,AVOID,Low,Bearish bias,Ranging,67.5600,2.1800,,HIGH,0,-0.3039,True,correct,LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,a141eb2e89d2695fa0225b33,QPOWER,,6,,,,,Bearish,stock_next_session_v2,28.1700,31.4700,AVOID,Low,Bearish bias,Ranging,66.0600,2.2000,,MEDIUM,0,-2.2489,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,94410ba7b7fef15819100530,MANALIPETC,,6,,,,,Bearish,stock_next_session_v2,32.2500,29.0900,AVOID,Low,Bearish bias,Ranging,65.5200,2.6500,,LOW,0,2.4486,False,incorrect,BIG_WIN
+2026-08-18T20:37:51+05:30,2026-08-18,845dc71016f33b90b4cf61bf,NITINSPIN,,6,,,,,Bearish,stock_next_session_v2,27.7700,28.8500,AVOID,Low,Bearish bias,Ranging,65.1000,32.5700,,MEDIUM,0,-3.8474,True,correct,BIG_LOSS
+2026-08-18T20:37:51+05:30,2026-08-18,e9c2d7bdf82c42c7d9c643ce,WELSPUNLIV,,6,,,,,Bearish,stock_next_session_v2,24.6300,28.7300,AVOID,Low,Bearish bias,Ranging,65.2600,9.5800,,HIGH,0,1.9405,False,incorrect,WIN
+2026-08-18T20:37:51+05:30,2026-08-18,1d46ad311e78e627772199df,NEOGEN,CHEMICAL,6,,,,,Bearish,stock_next_session_v2,24.5300,28.6500,AVOID,Low,Bearish bias,Ranging,66.4200,8.4200,,HIGH,0,0.0129,False,incorrect,FLAT
+2026-08-18T20:37:51+05:30,2026-08-18,0cdc8658f177865608ddbdbf,ASAHIINDIA,,6,,,,,Bearish,stock_next_session_v2,31.4200,26.1100,AVOID,Low,Bearish bias,Ranging,66.1000,3.8600,,LOW,0,-0.5972,True,correct,LOSS
