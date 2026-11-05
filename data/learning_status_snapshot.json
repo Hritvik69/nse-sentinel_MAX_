@@ -1,8 +1,8 @@
 {
-  "saved_at": "2026-11-05T18:30:41",
+  "saved_at": "2026-11-05T18:33:05",
   "signature": [
     "2026-11-05",
-    1793903318.228,
+    1793903449.48,
     1793903248.454
   ],
   "learning_status": {
@@ -16,7 +16,7 @@
     "accuracy_pct": 55.01,
     "validation_accuracy_pct": 55.01,
     "training_accuracy_pct": 56.1,
-    "last_trained": "2026-11-05T18:28",
+    "last_trained": "2026-11-05T18:30",
     "source": "stock_feedback",
     "message": "Model trained on 9859 samples.",
     "regime_encoder": {
@@ -194,8 +194,8 @@
       "false_bearish_pct": 42.46
     },
     "brain_status": {
-      "started_at": "2026-11-05T18:28:29",
-      "completed_at": "2026-11-05T18:30:41",
+      "started_at": "2026-11-05T18:30:42",
+      "completed_at": "2026-11-05T18:33:05",
       "feedback": {
         "filled_stock": 0,
         "filled_sector": 0,
@@ -223,7 +223,7 @@
         "accuracy_pct": 55.01,
         "validation_accuracy_pct": 55.01,
         "training_accuracy_pct": 56.1,
-        "last_trained": "2026-11-05T18:28",
+        "last_trained": "2026-11-05T18:30",
         "source": "stock_feedback",
         "message": "Model trained on 9859 samples.",
         "regime_encoder": {
@@ -703,7 +703,7 @@
               "EMA50": 218.91,
               "Close": 76.98
             },
-            "computed_at": "2026-11-05T18:29:05"
+            "computed_at": "2026-11-05T18:31:27"
           },
           {
             "ticker": "ARCIL",
@@ -770,7 +770,7 @@
               "EMA50": 134.8,
               "Close": 125.42
             },
-            "computed_at": "2026-11-05T18:30:28"
+            "computed_at": "2026-11-05T18:32:52"
           },
           {
             "ticker": "GENESYS",
@@ -837,7 +837,7 @@
               "EMA50": 232.14,
               "Close": 180.35
             },
-            "computed_at": "2026-11-05T18:29:38"
+            "computed_at": "2026-11-05T18:32:00"
           },
           {
             "ticker": "EUROTEXIND",
@@ -904,7 +904,7 @@
               "EMA50": 13.19,
               "Close": 11.8
             },
-            "computed_at": "2026-11-05T18:29:21"
+            "computed_at": "2026-11-05T18:31:43"
           },
           {
             "ticker": "OCCLLTD",
@@ -971,7 +971,7 @@
               "EMA50": 172.89,
               "Close": 162.58
             },
-            "computed_at": "2026-11-05T18:29:59"
+            "computed_at": "2026-11-05T18:32:22"
           },
           {
             "ticker": "SPENCERS",
@@ -1038,7 +1038,7 @@
               "EMA50": 24.89,
               "Close": 19.21
             },
-            "computed_at": "2026-11-05T18:30:15"
+            "computed_at": "2026-11-05T18:32:38"
           },
           {
             "ticker": "GTECJAINX",
@@ -1105,7 +1105,7 @@
               "EMA50": 29.3,
               "Close": 28.35
             },
-            "computed_at": "2026-11-05T18:29:33"
+            "computed_at": "2026-11-05T18:31:55"
           },
           {
             "ticker": "WELINV",
@@ -1172,7 +1172,7 @@
               "EMA50": 2056.29,
               "Close": 1999.9
             },
-            "computed_at": "2026-11-05T18:30:27"
+            "computed_at": "2026-11-05T18:32:50"
           },
           {
             "ticker": "KILITCH",
@@ -1239,7 +1239,7 @@
               "EMA50": 207.05,
               "Close": 208.47
             },
-            "computed_at": "2026-11-05T18:29:47"
+            "computed_at": "2026-11-05T18:32:09"
           },
           {
             "ticker": "TICL",
@@ -1306,7 +1306,7 @@
               "EMA50": 7.9,
               "Close": 6.5
             },
-            "computed_at": "2026-11-05T18:30:20"
+            "computed_at": "2026-11-05T18:32:43"
           },
           {
             "ticker": "BNAGROCHEM",
@@ -1373,7 +1373,7 @@
               "EMA50": 175.06,
               "Close": 121.72
             },
-            "computed_at": "2026-11-05T18:29:02"
+            "computed_at": "2026-11-05T18:31:23"
           },
           {
             "ticker": "LASERPOWER",
@@ -1440,7 +1440,7 @@
               "EMA50": 252.2,
               "Close": 219.28
             },
-            "computed_at": "2026-11-05T18:30:33"
+            "computed_at": "2026-11-05T18:32:56"
           }
         ],
         "message": "\ud83d\udd2e Tomorrow predictions: 1681 tickers computed"
